@@ -4,4 +4,8 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "lihil>=0.2.39",
+    "pydantic>=2.12.5",
+    "uvicorn>=0.40.0",
+]

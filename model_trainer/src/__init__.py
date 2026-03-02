@@ -1,0 +1,1 @@
+"""Bird classification training package."""
