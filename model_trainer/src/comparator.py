@@ -12,7 +12,9 @@ def _load_summary(path: Path) -> dict:
     return payload
 
 
-def compare_summaries(summary_paths: list[Path], output_csv: Path, output_json: Path) -> dict:
+def compare_summaries(
+    summary_paths: list[Path], output_csv: Path, output_json: Path
+) -> dict:
     """比较多个 summary.json 文件，生成排名和统计信息，并将结果保存为 CSV 和 JSON 格式。"""
     rows = []
     for summary_path in summary_paths:
@@ -43,5 +45,7 @@ def compare_summaries(summary_paths: list[Path], output_csv: Path, output_json: 
         "winner_best_val_accuracy": rows[0]["best_val_accuracy"],
         "rows": rows,
     }
-    output_json.write_text(json.dumps(comparison, indent=2, ensure_ascii=False), encoding="utf-8")
+    output_json.write_text(
+        json.dumps(comparison, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     return comparison

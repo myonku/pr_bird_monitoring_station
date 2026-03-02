@@ -9,6 +9,8 @@ import torch
 from torch import nn
 from torch.amp.grad_scaler import GradScaler
 
+from model_trainer.src.logger import RunLogger
+
 
 def _accuracy(logits: torch.Tensor, targets: torch.Tensor) -> float:
     predictions = torch.argmax(logits, dim=1)
@@ -65,7 +67,12 @@ def train_one_epoch(
 
 
 @torch.no_grad()
-def evaluate(model: nn.Module, loader, criterion, device: str) -> dict[str, Any | float]:
+def evaluate(
+    model: nn.Module,
+    loader: torch.utils.data.DataLoader,
+    criterion: nn.Module,
+    device: str,
+) -> dict[str, Any | float]:
     """评估模型在验证集上的性能，返回损失和准确率。"""
     model.eval()
     total_loss = 0.0
@@ -101,7 +108,7 @@ def fit(
     epochs: int,
     use_amp: bool,
     checkpoint_dir: Path,
-    logger,
+    logger: RunLogger,
 ) -> dict[str, Any]:
     """训练模型，并在每个 epoch 结束时评估验证集性能，保存最佳和最后的 checkpoint。"""
     checkpoint_dir.mkdir(parents=True, exist_ok=True)

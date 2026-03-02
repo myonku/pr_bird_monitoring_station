@@ -1,6 +1,7 @@
 # Bird Classification Trainer (CUB_200_2011)
 
 该分区提供了一个可扩展的鸟类识别训练框架，支持：
+
 - `MobileNetV3` 与 `EfficientNet-Lite`（`efficientnet_lite0`）
 - 训练 + 验证（验证集使用 `dataset/test`）
 - 多模型结果对比导出（CSV/JSON）
@@ -74,8 +75,7 @@ uv run python main.py compare --summaries logs/run_a/summary.json logs/run_b/sum
 
 ## 输出说明
 
-- 模型：`models/<run_id>/best.pt`、`models/<run_id>/last.pt`
+- 模型：`models/<run_id>/{model_name}_best.pt`、`models/<run_id>/{model_name}_last.pt`
 - 训练日志：`logs/<run_id>/metrics.jsonl`
 - 运行摘要：`logs/<run_id>/summary.json`
 - 双模型对比：`logs/comparison_train_both.csv`、`logs/comparison_train_both.json`
-

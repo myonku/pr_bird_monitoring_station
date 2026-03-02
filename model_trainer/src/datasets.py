@@ -87,6 +87,7 @@ def build_dataloaders(
     image_size: int,
     pin_memory: bool,
 ) -> tuple[DataLoader, DataLoader, dict[str, int]]:
+    """构建训练和验证数据加载器，返回 train_loader、val_loader 以及类别名称到索引的映射字典。"""
     train_dataset = CUB200Dataset(
         root=dataset_root,
         split="train",
