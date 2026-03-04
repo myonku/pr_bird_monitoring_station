@@ -1,7 +1,7 @@
 # Some segments of this file are generated from templates, and may be overwritten.
 logs/
 data/
-models/
+output_models/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

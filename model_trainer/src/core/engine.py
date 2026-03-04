@@ -9,7 +9,7 @@ import torch
 from torch import nn
 from torch.amp.grad_scaler import GradScaler
 
-from model_trainer.src.logger import RunLogger
+from src.logger import RunLogger
 
 
 def _accuracy(logits: torch.Tensor, targets: torch.Tensor) -> float:

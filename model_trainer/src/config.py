@@ -7,6 +7,7 @@ from typing import Literal
 
 @dataclass(slots=True)
 class TrainConfig:
+    """训练配置类，用于存储模型训练所需的所有参数。"""
     model_name: Literal["mobilenet_v3", "efficientnet_lite"]
     dataset_root: Path
     epochs: int = 20
@@ -20,7 +21,7 @@ class TrainConfig:
     use_amp: bool = True
     seed: int = 42
     run_name: str | None = None
-    models_dir: Path = Path("models")
+    models_dir: Path = Path("output_models")
     logs_dir: Path = Path("logs")
 
     def to_dict(self) -> dict:

@@ -10,12 +10,12 @@ import numpy as np
 import torch
 from torch import nn
 
-from src.comparator import compare_summaries
-from model_trainer.src.config import TrainConfig
-from src.datasets import build_dataloaders
-from src.engine import fit
+from model_trainer.src.core.comparator import compare_summaries
+from src.config import TrainConfig
+from model_trainer.src.core.datasets import build_dataloaders
+from model_trainer.src.core.engine import fit
 from src.logger import RunLogger
-from src.model_factory import SUPPORTED_MODELS, build_model
+from model_trainer.src.core.model_factory import SUPPORTED_MODELS, build_model
 
 
 def _set_seed(seed: int) -> None:
