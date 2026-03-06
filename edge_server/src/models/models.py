@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 import time
 import uuid
 
@@ -8,12 +8,20 @@ import uuid
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
+@dataclass
+class DeviceInfo:
+    """设备基本信息，用于会话验证"""
+    device_id: str
+    model: str
+    firmware_version: str
+    location: str | None = None
+    dev_secret: str | None = None
 
 @dataclass
 class CaptureContext:
     """捕拍上下文信息"""
     device_id: str
-    trigger_type: str  # e.g. "pir", "manual", "scheduled"
+    trigger_type: Literal["motion", "scheduled", "manual"] = "motion"
     sensor_snapshot: dict[str, Any] = field(default_factory=dict)
     captured_at_ms: int = field(default_factory=_now_ms)
 
