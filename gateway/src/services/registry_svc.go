@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,8 +10,8 @@ import (
 	"time"
 
 	"gateway/src"
+	"gateway/src/models"
 	"gateway/src/repo"
-	"gateway/src/types"
 
 	"github.com/google/uuid"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -51,12 +50,12 @@ func NewRegistryService(
 }
 
 // Register 注册服务实例。
-func (r *RegistryService) Register(instance types.ServiceInstance, ttl int64) error {
+func (r *RegistryService) Register(instance models.ServiceInstance, ttl int64) error {
 	if r.etcd == nil {
-		return errors.New("etcd client is nil")
+		return &models.ErrNilEtcdClient
 	}
 	if instance.Name == "" || instance.ID == uuid.Nil {
-		return errors.New("instance name and id are required")
+		return &models.ErrInstanceNameOrIdRequired
 	}
 
 	r.stopKeepAlive(instance.Name, instance.ID.String())
@@ -84,12 +83,12 @@ func (r *RegistryService) Register(instance types.ServiceInstance, ttl int64) er
 }
 
 // UnRegister 注销服务实例。
-func (r *RegistryService) UnRegister(instance types.ServiceInstance) error {
+func (r *RegistryService) UnRegister(instance models.ServiceInstance) error {
 	if r.etcd == nil {
-		return errors.New("etcd client is nil")
+		return &models.ErrNilEtcdClient
 	}
 	if instance.Name == "" || instance.ID == uuid.Nil {
-		return errors.New("instance name and id are required")
+		return &models.ErrInstanceNameOrIdRequired
 	}
 
 	key := r.instanceKey(instance.Name, instance.ID.String())
@@ -102,12 +101,12 @@ func (r *RegistryService) UnRegister(instance types.ServiceInstance) error {
 }
 
 // GetServiceInstances 获取服务实例列表。
-func (r *RegistryService) GetServiceInstances(serviceName string) ([]types.ServiceInstance, error) {
+func (r *RegistryService) GetServiceInstances(serviceName string) ([]models.ServiceInstance, error) {
 	if r.etcd == nil {
-		return nil, errors.New("etcd client is nil")
+		return nil, &models.ErrNilEtcdClient
 	}
 	if serviceName == "" {
-		return nil, errors.New("serviceName is required")
+		return nil, &models.ErrServiceNameRequired
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), r.opTimeout)
@@ -118,9 +117,9 @@ func (r *RegistryService) GetServiceInstances(serviceName string) ([]types.Servi
 		return nil, err
 	}
 
-	instances := make([]types.ServiceInstance, 0, len(resp.Kvs))
+	instances := make([]models.ServiceInstance, 0, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
-		var inst types.ServiceInstance
+		var inst models.ServiceInstance
 		if unmarshalErr := json.Unmarshal(kv.Value, &inst); unmarshalErr != nil {
 			continue
 		}
@@ -132,12 +131,12 @@ func (r *RegistryService) GetServiceInstances(serviceName string) ([]types.Servi
 }
 
 // GetServiceSnapShot 获取指定服务快照。
-func (r *RegistryService) GetServiceSnapShot(serviceName string) (types.ServiceSnapshot, error) {
+func (r *RegistryService) GetServiceSnapShot(serviceName string) (models.ServiceSnapshot, error) {
 	if r.etcd == nil {
-		return types.ServiceSnapshot{}, errors.New("etcd client is nil")
+		return models.ServiceSnapshot{}, &models.ErrNilEtcdClient
 	}
 	if serviceName == "" {
-		return types.ServiceSnapshot{}, errors.New("serviceName is required")
+		return models.ServiceSnapshot{}, &models.ErrServiceNameRequired
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), r.opTimeout)
@@ -145,12 +144,12 @@ func (r *RegistryService) GetServiceSnapShot(serviceName string) (types.ServiceS
 
 	resp, err := r.etcd.Get(ctx, r.servicePrefix(serviceName), clientv3.WithPrefix())
 	if err != nil {
-		return types.ServiceSnapshot{}, err
+		return models.ServiceSnapshot{}, err
 	}
 
-	instances := make([]*types.ServiceInstance, 0, len(resp.Kvs))
+	instances := make([]*models.ServiceInstance, 0, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
-		var inst types.ServiceInstance
+		var inst models.ServiceInstance
 		if unmarshalErr := json.Unmarshal(kv.Value, &inst); unmarshalErr != nil {
 			continue
 		}
@@ -160,7 +159,7 @@ func (r *RegistryService) GetServiceSnapShot(serviceName string) (types.ServiceS
 
 	sort.Slice(instances, func(i, j int) bool { return instances[i].ID.String() < instances[j].ID.String() })
 
-	return types.ServiceSnapshot{
+	return models.ServiceSnapshot{
 		Name:      serviceName,
 		Instances: instances,
 		Revision:  resp.Header.Revision,

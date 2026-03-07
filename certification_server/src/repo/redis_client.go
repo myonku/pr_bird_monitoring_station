@@ -7,7 +7,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"gateway/src/models"
+	"certification_server/src/models"
 )
 
 // RedisClient 提供与Redis交互的常见操作。

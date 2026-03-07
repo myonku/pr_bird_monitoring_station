@@ -1,11 +1,10 @@
 package services
 
 import (
-	"errors"
 	"sync/atomic"
 
 	"gateway/src"
-	"gateway/src/types"
+	"gateway/src/models"
 	"gateway/src/utils"
 )
 
@@ -22,26 +21,26 @@ func NewDiscoveryAdapter(registry src.IRegistry) src.IDiscoveryAdapter {
 	return &DiscoveryAdapter{registry: registry}
 }
 
-// ChooseEndpoint 选择服务实例 endpoint。
+// ChooseEndpoint 选择服务实例。
 func (d *DiscoveryAdapter) ChooseEndpoint(
-	serviceName string, affinityKey string, requireTags []string) (string, error) {
+	serviceName string, affinityKey string, requireTags []string) (models.ServiceInstance, error) {
 
 	if d.registry == nil {
-		return "", errors.New("registry is nil")
+		return models.ServiceInstance{}, &models.ErrNilRegistryClient
 	}
 	if serviceName == "" {
-		return "", errors.New("serviceName is required")
+		return models.ServiceInstance{}, &models.ErrServiceNameRequired
 	}
 
 	instances, err := d.registry.GetServiceInstances(serviceName)
 	if err != nil {
-		return "", err
+		return models.ServiceInstance{}, err
 	}
 	if len(instances) == 0 {
-		return "", errors.New("no service instances available")
+		return models.ServiceInstance{}, &models.ErrNoAvaliableInstances
 	}
 
-	ptrs := make([]*types.ServiceInstance, 0, len(instances))
+	ptrs := make([]*models.ServiceInstance, 0, len(instances))
 	for i := range instances {
 		instCopy := instances[i]
 		ptrs = append(ptrs, &instCopy)
@@ -49,10 +48,10 @@ func (d *DiscoveryAdapter) ChooseEndpoint(
 
 	filtered := utils.FilterByTags(ptrs, requireTags)
 	if len(filtered) == 0 {
-		return "", errors.New("no service instances match required tags")
+		return models.ServiceInstance{}, &models.ErrNoMatchingTags
 	}
 
-	var selected *types.ServiceInstance
+	var selected *models.ServiceInstance
 	if affinityKey != "" {
 		selected = utils.PickHashAffinity(filtered, affinityKey)
 	} else {
@@ -61,7 +60,7 @@ func (d *DiscoveryAdapter) ChooseEndpoint(
 	}
 
 	if selected == nil || selected.Endpoint == "" {
-		return "", errors.New("selected service instance is invalid")
+		return models.ServiceInstance{}, &models.ErrInvalidInstance
 	}
-	return selected.Endpoint, nil
+	return *selected, nil
 }

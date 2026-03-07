@@ -2,13 +2,12 @@ package repo
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 
-	"gateway/src/types"
+	"gateway/src/models"
 )
 
 // EtcdClient 提供与 Etcd 交互的常见操作。
@@ -18,9 +17,9 @@ type EtcdClient struct {
 }
 
 // NewEtcdClient 创建并验证 Etcd 连接。
-func NewEtcdClient(cfg *types.EtcdClientConfig) (*EtcdClient, error) {
+func NewEtcdClient(cfg *models.EtcdClientConfig) (*EtcdClient, error) {
 	if len(cfg.Endpoints) == 0 {
-		return nil, errors.New("etcd endpoints are required")
+		return nil, &models.ErrEndpointsRequired
 	}
 	if cfg.DialTimeout <= 0 {
 		cfg.DialTimeout = 5 * time.Second
@@ -70,7 +69,7 @@ func (c *EtcdClient) Ping(ctx context.Context) error {
 	defer cancel()
 	endpoints := c.client.Endpoints()
 	if len(endpoints) == 0 {
-		return errors.New("no etcd endpoints available")
+		return &models.ErrNilEndpoints
 	}
 	_, err := c.client.Status(ctx, endpoints[0])
 	return err
@@ -94,7 +93,7 @@ func (c *EtcdClient) PutWithTTL(
 	ttlSeconds int64,
 ) (*clientv3.PutResponse, clientv3.LeaseID, error) {
 	if ttlSeconds <= 0 {
-		return nil, 0, errors.New("ttlSeconds must be > 0")
+		return nil, 0, &models.ErrorNegativeEtcdTTL
 	}
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -201,7 +200,7 @@ func (c *EtcdClient) Watch(
 // GrantLease 创建租约。
 func (c *EtcdClient) GrantLease(ctx context.Context, ttlSeconds int64) (clientv3.LeaseID, error) {
 	if ttlSeconds <= 0 {
-		return 0, errors.New("ttlSeconds must be > 0")
+		return 0, &models.ErrorNegativeEtcdTTL
 	}
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -238,7 +237,7 @@ func (c *EtcdClient) AcquireLock(
 	ttlSeconds int,
 ) (*concurrency.Session, *concurrency.Mutex, error) {
 	if lockName == "" {
-		return nil, nil, errors.New("lockName is required")
+		return nil, nil, &models.ErrLockNameRequired
 	}
 	if ctx == nil {
 		ctx = context.Background()

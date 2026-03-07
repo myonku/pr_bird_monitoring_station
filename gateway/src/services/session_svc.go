@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"gateway/src"
+	"gateway/src/models"
 	"gateway/src/repo"
-	"gateway/src/types"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -38,19 +38,19 @@ func NewSessionService(
 
 // SetSession 写入或更新会话信息。
 func (s *SessionService) SetSession(
-	ctx context.Context, session types.GatewaySession, ttl time.Duration) error {
+	ctx context.Context, session models.GatewaySession, ttl time.Duration) error {
 
 	if s.redis == nil {
-		return errors.New("redis client is nil")
+		return &models.ErrNilRedisClient
 	}
 	if session.ID == uuid.Nil {
-		return errors.New("session id is required")
+		return &models.ErrSessionIdRequired
 	}
 	if ttl <= 0 {
 		ttl = s.defaultTTL
 	}
 	if ttl <= 0 {
-		return errors.New("session ttl must be greater than 0")
+		return &models.ErrNegativeSessionTTL
 	}
 
 	payload, err := json.Marshal(session)
@@ -63,26 +63,26 @@ func (s *SessionService) SetSession(
 
 // GetSession 获取会话信息。
 func (s *SessionService) GetSession(
-	ctx context.Context, sessionID uuid.UUID) (types.GatewaySession, error) {
+	ctx context.Context, sessionID uuid.UUID) (models.GatewaySession, error) {
 
 	if s.redis == nil {
-		return types.GatewaySession{}, errors.New("redis client is nil")
+		return models.GatewaySession{}, &models.ErrNilRedisClient
 	}
 	if sessionID == uuid.Nil {
-		return types.GatewaySession{}, errors.New("session id is required")
+		return models.GatewaySession{}, &models.ErrSessionIdRequired
 	}
 
 	raw, err := s.redis.Get(ctx, s.sessionKey(sessionID))
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return types.GatewaySession{}, fmt.Errorf("session %s not found", sessionID.String())
+			return models.GatewaySession{}, &models.ErrorSessionNotFound
 		}
-		return types.GatewaySession{}, err
+		return models.GatewaySession{}, err
 	}
 
-	var session types.GatewaySession
+	var session models.GatewaySession
 	if err = json.Unmarshal([]byte(raw), &session); err != nil {
-		return types.GatewaySession{}, fmt.Errorf("unmarshal session: %w", err)
+		return models.GatewaySession{}, fmt.Errorf("unmarshal session: %w", err)
 	}
 	return session, nil
 }
@@ -90,10 +90,10 @@ func (s *SessionService) GetSession(
 // DeleteSession 删除会话。
 func (s *SessionService) DeleteSession(ctx context.Context, sessionID uuid.UUID) error {
 	if s.redis == nil {
-		return errors.New("redis client is nil")
+		return &models.ErrNilRedisClient
 	}
 	if sessionID == uuid.Nil {
-		return errors.New("session id is required")
+		return &models.ErrSessionIdRequired
 	}
 	_, err := s.redis.Del(ctx, s.sessionKey(sessionID))
 	return err
@@ -102,10 +102,10 @@ func (s *SessionService) DeleteSession(ctx context.Context, sessionID uuid.UUID)
 // TTL 获取会话剩余时间。
 func (s *SessionService) TTL(ctx context.Context, sessionID uuid.UUID) (time.Duration, error) {
 	if s.redis == nil {
-		return 0, errors.New("redis client is nil")
+		return 0, &models.ErrNilRedisClient
 	}
 	if sessionID == uuid.Nil {
-		return 0, errors.New("session id is required")
+		return 0, &models.ErrSessionIdRequired
 	}
 	return s.redis.TTL(ctx, s.sessionKey(sessionID))
 }
@@ -113,13 +113,13 @@ func (s *SessionService) TTL(ctx context.Context, sessionID uuid.UUID) (time.Dur
 // RefreshSession 刷新会话过期时间。
 func (s *SessionService) RefreshSession(ctx context.Context, sessionID uuid.UUID, ttl time.Duration) error {
 	if s.redis == nil {
-		return errors.New("redis client is nil")
+		return &models.ErrNilRedisClient
 	}
 	if sessionID == uuid.Nil {
-		return errors.New("session id is required")
+		return &models.ErrSessionIdRequired
 	}
 	if ttl <= 0 {
-		return errors.New("ttl must be greater than 0")
+		return &models.ErrNegativeSessionTTL
 	}
 	_, err := s.redis.Expire(ctx, s.sessionKey(sessionID), ttl)
 	return err
