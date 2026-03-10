@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"gateway/src"
+	"gateway/src/interfaces"
 	"gateway/src/models"
 	"gateway/src/repo"
 
@@ -17,7 +17,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
-var _ src.IRegistry = (*RegistryService)(nil)
+var _ interfaces.IRegistry = (*RegistryService)(nil)
 
 // RegistryService 基于 Etcd 实现服务注册与发现数据源。
 type RegistryService struct {
@@ -32,7 +32,7 @@ type RegistryService struct {
 
 // NewRegistryService 创建注册服务。
 func NewRegistryService(
-	etcdClient *repo.EtcdClient, keyRoot string, opTimeout time.Duration) src.IRegistry {
+	etcdClient *repo.EtcdClient, keyRoot string, opTimeout time.Duration) interfaces.IRegistry {
 
 	if keyRoot == "" {
 		keyRoot = "gateway/registry"

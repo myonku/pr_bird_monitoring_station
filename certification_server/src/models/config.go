@@ -45,4 +45,16 @@ type RedisClientConfig struct {
 	OpTimeout        time.Duration
 	DefaultTTL       time.Duration
 	TLSConfig        *tls.Config
+	// CircuitBreaker 为 Redis 客户端熔断配置，可选。
+	CircuitBreaker *CircuitBreakerConfig
+}
+
+// CircuitBreakerConfig 定义熔断器配置参数。
+type CircuitBreakerConfig struct {
+	// FailureThreshold 触发熔断的连续失败次数。
+	FailureThreshold int
+	// SuccessThreshold 熔断器半开状态下允许的连续成功次数。
+	RecoveryTimeout time.Duration
+	// HalfOpenMaxCalls 半开状态下允许的最大调用次数，超过后继续熔断。
+	HalfOpenMaxCalls int
 }

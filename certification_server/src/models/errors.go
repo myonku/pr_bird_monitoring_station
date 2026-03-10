@@ -33,3 +33,10 @@ var (
 	ErrMasterNameRequired Error = *NewError(RedisErr, "redis master name is required for sentinel mode")
 	ErrorUnsupportedMode  Error = *NewError(RedisErr, "unsupported redis mode")
 )
+
+var (
+	ErrCircuitOpen      Error = *NewError(CircuitErr, "circuit breaker is open")
+	ErrHalfOpenMaxCalls Error = *NewError(CircuitErr, "circuit breaker half-open max calls reached")
+	ErrCallFuncNil      Error = *NewError(CircuitErr, "call func is nil")
+	ErrNoCircuitBreaker Error = *NewError(CircuitErr, "circuit breaker is nil")
+)

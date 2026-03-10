@@ -8,11 +8,13 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"gateway/src/models"
+	"gateway/src/utils"
 )
 
 // RedisClient 提供与Redis交互的常见操作。
 type RedisClient struct {
 	client     redis.UniversalClient
+	breaker    *utils.CircuitBreaker
 	opTimeout  time.Duration
 	defaultTTL time.Duration
 }
@@ -78,6 +80,7 @@ func NewRedisClient(cfg *models.RedisClientConfig) (*RedisClient, error) {
 
 	return &RedisClient{
 		client:     client,
+		breaker:    utils.NewCircuitBreaker("redis-client", cfg.CircuitBreaker),
 		opTimeout:  cfg.OpTimeout,
 		defaultTTL: cfg.DefaultTTL,
 	}, nil
@@ -98,9 +101,12 @@ func (c *RedisClient) Close() error {
 
 // Ping 探测连接健康。
 func (c *RedisClient) Ping(ctx context.Context) error {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Ping(ctx).Err()
+	_, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return nil, c.client.Ping(execCtx).Err()
+	})
+	return err
 }
 
 // Set 写入键值。
@@ -108,23 +114,38 @@ func (c *RedisClient) Set(ctx context.Context, key string, value any, ttl time.D
 	if ttl <= 0 {
 		ttl = c.defaultTTL
 	}
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Set(ctx, key, value, ttl).Err()
+	_, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return nil, c.client.Set(execCtx, key, value, ttl).Err()
+	})
+	return err
 }
 
 // Get 读取字符串值。
 func (c *RedisClient) Get(ctx context.Context, key string) (string, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Get(ctx, key).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.Get(execCtx, key).Result()
+	})
+	if err != nil {
+		return "", err
+	}
+	return res.(string), nil
 }
 
 // MGet 批量读取。
 func (c *RedisClient) MGet(ctx context.Context, keys ...string) ([]any, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.MGet(ctx, keys...).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.MGet(execCtx, keys...).Result()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.([]any), nil
 }
 
 // MSet 批量写入。
@@ -136,162 +157,288 @@ func (c *RedisClient) MSet(ctx context.Context, kv map[string]any) error {
 	for k, v := range kv {
 		args = append(args, k, v)
 	}
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.MSet(ctx, args...).Err()
+	_, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return nil, c.client.MSet(execCtx, args...).Err()
+	})
+	return err
 }
 
 // Del 删除键。
 func (c *RedisClient) Del(ctx context.Context, keys ...string) (int64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Del(ctx, keys...).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.Del(execCtx, keys...).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(int64), nil
 }
 
 // Exists 检查键是否存在。
 func (c *RedisClient) Exists(ctx context.Context, keys ...string) (int64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Exists(ctx, keys...).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.Exists(execCtx, keys...).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(int64), nil
 }
 
 // Expire 设置过期时间。
 func (c *RedisClient) Expire(ctx context.Context, key string, ttl time.Duration) (bool, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Expire(ctx, key, ttl).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.Expire(execCtx, key, ttl).Result()
+	})
+	if err != nil {
+		return false, err
+	}
+	return res.(bool), nil
 }
 
 // TTL 读取剩余过期时间。
 func (c *RedisClient) TTL(ctx context.Context, key string) (time.Duration, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.TTL(ctx, key).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.TTL(execCtx, key).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(time.Duration), nil
 }
 
 // IncrBy 对整数值做增量。
 func (c *RedisClient) IncrBy(ctx context.Context, key string, delta int64) (int64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.IncrBy(ctx, key, delta).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.IncrBy(execCtx, key, delta).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(int64), nil
 }
 
 // HSet 批量写入 Hash 字段。
 func (c *RedisClient) HSet(ctx context.Context, key string, values map[string]any) (int64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.HSet(ctx, key, values).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.HSet(execCtx, key, values).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(int64), nil
 }
 
 // HGet 读取 Hash 字段。
 func (c *RedisClient) HGet(ctx context.Context, key, field string) (string, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.HGet(ctx, key, field).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.HGet(execCtx, key, field).Result()
+	})
+	if err != nil {
+		return "", err
+	}
+	return res.(string), nil
 }
 
 // HGetAll 读取全部 Hash 字段。
 func (c *RedisClient) HGetAll(ctx context.Context, key string) (map[string]string, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.HGetAll(ctx, key).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.HGetAll(execCtx, key).Result()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.(map[string]string), nil
 }
 
 // HDel 删除 Hash 字段。
 func (c *RedisClient) HDel(ctx context.Context, key string, fields ...string) (int64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.HDel(ctx, key, fields...).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.HDel(execCtx, key, fields...).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(int64), nil
 }
 
 // LPush 从左侧写入列表。
 func (c *RedisClient) LPush(ctx context.Context, key string, values ...any) (int64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.LPush(ctx, key, values...).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.LPush(execCtx, key, values...).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(int64), nil
 }
 
 // RPush 从右侧写入列表。
 func (c *RedisClient) RPush(ctx context.Context, key string, values ...any) (int64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.RPush(ctx, key, values...).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.RPush(execCtx, key, values...).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(int64), nil
 }
 
 // LPop 从左侧弹出。
 func (c *RedisClient) LPop(ctx context.Context, key string) (string, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.LPop(ctx, key).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.LPop(execCtx, key).Result()
+	})
+	if err != nil {
+		return "", err
+	}
+	return res.(string), nil
 }
 
 // RPop 从右侧弹出。
 func (c *RedisClient) RPop(ctx context.Context, key string) (string, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.RPop(ctx, key).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.RPop(execCtx, key).Result()
+	})
+	if err != nil {
+		return "", err
+	}
+	return res.(string), nil
 }
 
 // SAdd 向集合新增成员。
 func (c *RedisClient) SAdd(ctx context.Context, key string, members ...any) (int64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.SAdd(ctx, key, members...).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.SAdd(execCtx, key, members...).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(int64), nil
 }
 
 // SRem 删除集合成员。
 func (c *RedisClient) SRem(ctx context.Context, key string, members ...any) (int64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.SRem(ctx, key, members...).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.SRem(execCtx, key, members...).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(int64), nil
 }
 
 // SMembers 读取集合全部成员。
 func (c *RedisClient) SMembers(ctx context.Context, key string) ([]string, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.SMembers(ctx, key).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.SMembers(execCtx, key).Result()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.([]string), nil
 }
 
 // Publish 向频道发布消息。
 func (c *RedisClient) Publish(ctx context.Context, channel string, message any) (int64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Publish(ctx, channel, message).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.Publish(execCtx, channel, message).Result()
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.(int64), nil
 }
 
 // Subscribe 订阅频道，需调用方在不使用时主动 Close。
 func (c *RedisClient) Subscribe(ctx context.Context, channels ...string) (*redis.PubSub, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	pubSub := c.client.Subscribe(ctx, channels...)
-	if _, err := pubSub.Receive(ctx); err != nil {
-		_ = pubSub.Close()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		pubSub := c.client.Subscribe(execCtx, channels...)
+		if _, receiveErr := pubSub.Receive(execCtx); receiveErr != nil {
+			_ = pubSub.Close()
+			return nil, receiveErr
+		}
+		return pubSub, nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	return pubSub, nil
+	return res.(*redis.PubSub), nil
 }
 
 // Eval 执行 Lua 脚本。
 func (c *RedisClient) Eval(ctx context.Context, script string, keys []string, args ...any) (any, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Eval(ctx, script, keys, args...).Result()
+	return c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.Eval(execCtx, script, keys, args...).Result()
+	})
 }
 
 // Do 执行原生命令。
 func (c *RedisClient) Do(ctx context.Context, args ...any) (any, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Do(ctx, args...).Result()
+	return c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		return c.client.Do(execCtx, args...).Result()
+	})
 }
 
 // Scan 扫描键空间。
 func (c *RedisClient) Scan(
 	ctx context.Context, cursor uint64, match string, count int64) ([]string, uint64, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Scan(ctx, cursor, match, count).Result()
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		execCtx, cancel := c.withTimeout(execCtx)
+		defer cancel()
+		keys, nextCursor, runErr := c.client.Scan(execCtx, cursor, match, count).Result()
+		if runErr != nil {
+			return nil, runErr
+		}
+		return scanResult{keys: keys, cursor: nextCursor}, nil
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	final := res.(scanResult)
+	return final.keys, final.cursor, nil
 }
 
 func (c *RedisClient) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -325,4 +472,19 @@ func normalizeRedisAddrs(cfg *models.RedisClientConfig) []string {
 		addrs = append(addrs, strings.TrimSpace(cfg.Addr))
 	}
 	return addrs
+}
+
+func (c *RedisClient) execute(ctx context.Context, fn func(context.Context) (any, error)) (any, error) {
+	if c != nil && c.breaker != nil {
+		return c.breaker.CallWithResult(ctx, fn)
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return fn(ctx)
+}
+
+type scanResult struct {
+	keys   []string
+	cursor uint64
 }

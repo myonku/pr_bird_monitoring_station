@@ -24,10 +24,6 @@ func LoadConfig(cfg_path string) (*ProjectConfig, error) {
 type ProjectConfig struct {
 }
 
-// 限流配置结构体
-type RateLimitConfig struct {
-}
-
 // EtcdClientConfig 定义 EtcdClient 的连接参数。
 type EtcdClientConfig struct {
 	Endpoints        []string
@@ -79,6 +75,8 @@ type RedisClientConfig struct {
 	OpTimeout        time.Duration
 	DefaultTTL       time.Duration
 	TLSConfig        *tls.Config
+	// CircuitBreaker 为 Redis 客户端熔断配置，可选。
+	CircuitBreaker *CircuitBreakerConfig
 }
 
 // CircuitBreakerConfig 定义熔断器配置参数。

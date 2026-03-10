@@ -3,21 +3,21 @@ package services
 import (
 	"sync/atomic"
 
-	"gateway/src"
+	"gateway/src/interfaces"
 	"gateway/src/models"
 	"gateway/src/utils"
 )
 
-var _ src.IDiscoveryAdapter = (*DiscoveryAdapter)(nil)
+var _ interfaces.IDiscoveryAdapter = (*DiscoveryAdapter)(nil)
 
 // DiscoveryAdapter 将服务快照转换为具体 endpoint 选择。
 type DiscoveryAdapter struct {
-	registry src.IRegistry
+	registry interfaces.IRegistry
 	counter  atomic.Uint64
 }
 
 // NewDiscoveryAdapter 创建服务发现适配器。
-func NewDiscoveryAdapter(registry src.IRegistry) src.IDiscoveryAdapter {
+func NewDiscoveryAdapter(registry interfaces.IRegistry) interfaces.IDiscoveryAdapter {
 	return &DiscoveryAdapter{registry: registry}
 }
 
