@@ -5,6 +5,7 @@ type ErrType string
 const (
 	KafkaErr          ErrType = "KafkaErr"
 	RedisErr          ErrType = "RedisErr"
+	MySQLErr          ErrType = "MySQLErr"
 	CircuitErr        ErrType = "CircuitErr"
 	EtcdErr           ErrType = "EtcdErr"
 	SessionServiceErr ErrType = "SessionServiceErr"
@@ -32,6 +33,14 @@ var (
 	ErrAddrRequired       Error = *NewError(RedisErr, "redis address is required for standalone mode")
 	ErrMasterNameRequired Error = *NewError(RedisErr, "redis master name is required for sentinel mode")
 	ErrorUnsupportedMode  Error = *NewError(RedisErr, "unsupported redis mode")
+)
+
+var (
+	ErrNilMySQLClient    Error = *NewError(MySQLErr, "mysql client is nil")
+	ErrMySQLConfigNeeded Error = *NewError(MySQLErr, "mysql config is required")
+	ErrMySQLDSNRequired  Error = *NewError(MySQLErr, "mysql dsn is required")
+	ErrMySQLNoAvailable  Error = *NewError(MySQLErr, "no mysql instance is available")
+	ErrTxFuncNil         Error = *NewError(MySQLErr, "transaction func is nil")
 )
 
 var (

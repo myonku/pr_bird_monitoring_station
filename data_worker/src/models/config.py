@@ -11,6 +11,20 @@ class ProjectConfig(Struct):
     mysql: MySQLConfig | None = None
     kafka: KafkaConfig | None = None
     mongo: MongoConfig | None = None
+    etcd: EtcdConfig | None = None
+    
+
+class EtcdConfig(Struct, kw_only=True):
+    """Etcd 配置模型"""
+
+    HOSTS: list[str]
+    USERNAME: str | None = None
+    PASSWORD: str | None = None
+    TLS_ENABLED: bool = False
+    CA_CERT: str | None = None
+    CERT_FILE: str | None = None
+    KEY_FILE: str | None = None
+    NAMESPACE: str = "/bms"
 
 
 class RedisConfig(Struct, kw_only=True):

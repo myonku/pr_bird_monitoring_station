@@ -15,6 +15,39 @@ const (
 
 // Config 定义了认证服务器的整体配置结构体。
 type ProjectConfig struct {
+	MySQL *MySQLConfig
+	Redis *RedisClientConfig
+}
+
+// MySQLConfig 定义 MySQL 基础客户端连接参数。
+type MySQLConfig struct {
+	// DSN 为单连接串，兼容简单场景。
+	DSN string
+	// DSNs 为多实例连接串列表，按顺序探活。
+	DSNs            []string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
+	OpTimeout       time.Duration
+	CircuitBreaker  *CircuitBreakerConfig
+}
+
+// DSNList 返回去空后的连接串列表。
+func (c *MySQLConfig) DSNList() []string {
+	if c == nil {
+		return nil
+	}
+	result := make([]string, 0, len(c.DSNs)+1)
+	for _, dsn := range c.DSNs {
+		if dsn != "" {
+			result = append(result, dsn)
+		}
+	}
+	if c.DSN != "" {
+		result = append(result, c.DSN)
+	}
+	return result
 }
 
 // RedisClientConfig 定义 RedisClient 的连接参数。

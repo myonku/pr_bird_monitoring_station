@@ -6,15 +6,18 @@ import (
 
 // ServiceInstance 定义服务实例的基本信息。
 type ServiceInstance struct {
-	ID        uuid.UUID         `json:"id"`        // 服务实例ID
-	Name      string            `json:"name"`      // 服务名称
-	Endpoint  string            `json:"endpoint"`  // 服务访问地址，如 "host:port"
-	HeartBeat int64             `json:"heartbeat"` // 上次心跳时间戳，单位毫秒
-	Zone      string            `json:"zone"`      // 服务所在的可用区或数据中心
-	Version   string            `json:"version"`   // 服务版本信息
-	Weight    int               `json:"weight"`    // 负载均衡权重
-	Tags      []string          `json:"tags"`      // 服务标签列表
-	MetaData  map[string]string `json:"metadata"`  // 其他元信息
+	ID                   uuid.UUID         `json:"id"`                     // 服务实例ID
+	ServiceID            string            `json:"service_id"`             // 服务实体ID，用于关联全局公钥目录
+	Name                 string            `json:"name"`                   // 服务名称
+	Endpoint             string            `json:"endpoint"`               // 服务访问地址，如 "host:port"
+	HeartBeat            int64             `json:"heartbeat"`              // 上次心跳时间戳，单位毫秒
+	Zone                 string            `json:"zone"`                   // 服务所在的可用区或数据中心
+	Version              string            `json:"version"`                // 服务版本信息
+	Weight               int               `json:"weight"`                 // 负载均衡权重
+	Tags                 []string          `json:"tags"`                   // 服务标签列表
+	ActiveCommKeyID      string            `json:"active_comm_key_id"`     // 当前服务实例对外公布的通信公钥ID
+	RequireAppEncryption bool              `json:"require_app_encryption"` // 是否要求内部 gRPC 调用具备应用层加密
+	MetaData             map[string]string `json:"metadata"`               // 其他元信息
 }
 
 // ServiceSnapshot 定义服务快照信息，用于服务发现和注册。

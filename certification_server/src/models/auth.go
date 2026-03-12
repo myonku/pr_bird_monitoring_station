@@ -12,6 +12,7 @@ type TokenType string     // 令牌类型，表示令牌的类别，可以是acc
 type TokenStatus string   // 令牌状态，表示令牌的当前状态，可以是active/rotated/revoked/expired等。
 type TokenStorage string  // 令牌存储方式，表示令牌的存储位置，可以是cache/database/hybrid等。
 type AuthMethod string    // 认证方法，表示使用的认证方式，可以是password/device_secret/service_secret/refresh_token/token_exchange等。
+type ChannelBindingType string
 
 const (
 	EntityUser    EntityType = "user"
@@ -45,6 +46,11 @@ const (
 	AuthMethodServiceSecret AuthMethod = "service_secret"
 	AuthMethodRefreshToken  AuthMethod = "refresh_token"
 	AuthMethodTokenExchange AuthMethod = "token_exchange"
+)
+
+const (
+	ChannelBindingToken   ChannelBindingType = "token"
+	ChannelBindingSession ChannelBindingType = "session"
 )
 
 const (
@@ -94,6 +100,10 @@ type IdentityContext struct {
 	UserAgent string // 认证请求的User-Agent信息
 	RequestID string // 认证请求的唯一标识符（如果有的话）
 	TraceID   string // 认证请求的Trace ID（如果有的话）
+
+	SecureChannelID     uuid.UUID           // 当前请求绑定的应用层加密通道ID
+	SecureChannelStatus SecureChannelStatus // 当前加密通道状态
+	CipherSuite         CipherSuite         // 当前请求使用的对称加密套件
 
 	IssuedAt  time.Time // 认证上下文的签发时间
 	ExpiresAt time.Time // 认证上下文的过期时间
@@ -242,8 +252,13 @@ type DownstreamAccessGrant struct {
 	SessionID   uuid.UUID
 	TokenID     uuid.UUID
 	PrincipalID string
+	BindingType ChannelBindingType
 
 	Scopes []string
+
+	EncryptionRequired bool
+	SecureChannelID    uuid.UUID
+	CipherSuite        CipherSuite
 
 	IssuedAt  time.Time
 	ExpiresAt time.Time

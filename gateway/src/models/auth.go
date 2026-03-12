@@ -12,6 +12,7 @@ type TokenType string
 type TokenStatus string
 type TokenStorage string
 type AuthMethod string
+type ChannelBindingType string
 
 const (
 	TokenAccess     TokenType = "access"
@@ -42,11 +43,17 @@ const (
 )
 
 const (
+	ChannelBindingToken   ChannelBindingType = "token"
+	ChannelBindingSession ChannelBindingType = "session"
+)
+
+const (
 	SessionActive  SessionStatus = "active"
 	SessionRevoked SessionStatus = "revoked"
 	SessionExpired SessionStatus = "expired"
 	SessionBlocked SessionStatus = "blocked"
 )
+
 const (
 	EntityUser    EntityType = "user"
 	EntityDevice  EntityType = "device"
@@ -93,6 +100,10 @@ type IdentityContext struct {
 	UserAgent string // 认证请求的User-Agent信息
 	RequestID string // 认证请求的唯一标识符（如果有的话）
 	TraceID   string // 认证请求的Trace ID（如果有的话）
+
+	SecureChannelID     uuid.UUID           // 当前请求绑定的应用层加密通道ID
+	SecureChannelStatus SecureChannelStatus // 当前加密通道状态
+	CipherSuite         CipherSuite         // 当前请求使用的对称加密套件
 
 	IssuedAt  time.Time // 认证上下文的签发时间
 	ExpiresAt time.Time // 认证上下文的过期时间
@@ -241,8 +252,13 @@ type DownstreamAccessGrant struct {
 	SessionID   uuid.UUID
 	TokenID     uuid.UUID
 	PrincipalID string
+	BindingType ChannelBindingType
 
 	Scopes []string
+
+	EncryptionRequired bool
+	SecureChannelID    uuid.UUID
+	CipherSuite        CipherSuite
 
 	IssuedAt  time.Time
 	ExpiresAt time.Time

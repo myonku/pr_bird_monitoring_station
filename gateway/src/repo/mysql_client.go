@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"certification_server/src/models"
-	"certification_server/src/utils"
+	"gateway/src/models"
+	"gateway/src/utils"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"

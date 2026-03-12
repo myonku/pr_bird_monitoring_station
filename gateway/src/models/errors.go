@@ -10,6 +10,7 @@ const (
 	SessionServiceErr ErrType = "SessionServiceErr"
 	AdapterErr        ErrType = "AdapterErr"
 	RegistryErr       ErrType = "RegistryErr"
+	MySQLErr          ErrType = "MySQLErr"
 )
 
 // Error 定义了一个通用的错误结构体，包含错误类型和详细信息。
@@ -25,6 +26,14 @@ func (e *Error) Error() string {
 func NewError(errType ErrType, info string) *Error {
 	return &Error{ErrType: errType, Info: info}
 }
+
+var (
+	ErrNilMySQLClient    Error = *NewError(MySQLErr, "mysql client is nil")
+	ErrMySQLConfigNeeded Error = *NewError(MySQLErr, "mysql config is required")
+	ErrMySQLDSNRequired  Error = *NewError(MySQLErr, "mysql dsn is required")
+	ErrMySQLNoAvailable  Error = *NewError(MySQLErr, "no mysql instance is available")
+	ErrTxFuncNil         Error = *NewError(MySQLErr, "transaction func is nil")
+)
 
 var (
 	ErrCircuitOpen      Error = *NewError(CircuitErr, "circuit breaker is open")
