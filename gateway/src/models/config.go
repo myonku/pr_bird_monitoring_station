@@ -42,23 +42,6 @@ type MySQLConfig struct {
 	CircuitBreaker  *CircuitBreakerConfig
 }
 
-// DSNList 返回去空后的连接串列表。
-func (c *MySQLConfig) DSNList() []string {
-	if c == nil {
-		return nil
-	}
-	result := make([]string, 0, len(c.DSNs)+1)
-	for _, dsn := range c.DSNs {
-		if dsn != "" {
-			result = append(result, dsn)
-		}
-	}
-	if c.DSN != "" {
-		result = append(result, c.DSN)
-	}
-	return result
-}
-
 // EtcdClientConfig 定义 EtcdClient 的连接参数。
 type EtcdClientConfig struct {
 	Endpoints        []string

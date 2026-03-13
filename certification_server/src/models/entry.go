@@ -46,7 +46,7 @@ type ServiceEntry struct {
 	RequireAppEncryption bool
 }
 
-// ServiceInstance 定义服务实例的基本信息。
+// ServiceInstance 定义服务实例的基本信息，用于服务发现和注册。
 type ServiceInstance struct {
 	ID                   uuid.UUID         `json:"id"`                     // 服务实例ID
 	ServiceID            string            `json:"service_id"`             // 服务实体ID，用于关联全局公钥目录

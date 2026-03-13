@@ -31,7 +31,16 @@ func NewMySQLClient(cfg *models.MySQLConfig) (*MySQLClient, error) {
 		cfg.OpTimeout = 3 * time.Second
 	}
 
-	dsns := cfg.DSNList()
+	dsns := make([]string, 0)
+	for _, dsn := range cfg.DSNs {
+		if dsn != "" {
+			dsns = append(dsns, dsn)
+		}
+	}
+	if cfg.DSN != "" {
+		dsns = append(dsns, cfg.DSN)
+	}
+	
 	if len(dsns) == 0 {
 		return nil, &models.ErrMySQLDSNRequired
 	}
