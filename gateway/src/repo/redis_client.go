@@ -7,7 +7,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"gateway/src/models"
+	modelsystem "gateway/src/models/system"
 	"gateway/src/utils"
 )
 
@@ -20,9 +20,9 @@ type RedisClient struct {
 }
 
 // NewRedisClient 创建并验证 Redis 连接。
-func NewRedisClient(cfg *models.RedisClientConfig) (*RedisClient, error) {
+func NewRedisClient(cfg *modelsystem.RedisClientConfig) (*RedisClient, error) {
 	if cfg == nil {
-		return nil, &models.ErrNoConfig
+		return nil, &modelsystem.ErrNoConfig
 	}
 	if cfg.OpTimeout <= 0 {
 		cfg.OpTimeout = 3 * time.Second
@@ -33,22 +33,22 @@ func NewRedisClient(cfg *models.RedisClientConfig) (*RedisClient, error) {
 	switch mode {
 	case "standalone":
 		if len(addrs) == 0 {
-			return nil, &models.ErrAddrRequired
+			return nil, &modelsystem.ErrAddrRequired
 		}
 		addrs = addrs[:1]
 	case "sentinel":
 		if len(addrs) == 0 {
-			return nil, &models.ErrAddrRequired
+			return nil, &modelsystem.ErrAddrRequired
 		}
 		if strings.TrimSpace(cfg.MasterName) == "" {
-			return nil, &models.ErrMasterNameRequired
+			return nil, &modelsystem.ErrMasterNameRequired
 		}
 	case "cluster":
 		if len(addrs) == 0 {
-			return nil, &models.ErrAddrRequired
+			return nil, &modelsystem.ErrAddrRequired
 		}
 	default:
-		return nil, &models.ErrorUnsupportedMode
+		return nil, &modelsystem.ErrorUnsupportedMode
 	}
 
 	client := redis.NewUniversalClient(&redis.UniversalOptions{
@@ -454,14 +454,14 @@ func (c *RedisClient) withTimeout(ctx context.Context) (context.Context, context
 	return context.WithTimeout(ctx, c.opTimeout)
 }
 
-func normalizeRedisMode(mode models.RedisMode) string {
+func normalizeRedisMode(mode modelsystem.RedisMode) string {
 	if strings.TrimSpace(string(mode)) == "" {
 		return "standalone"
 	}
 	return strings.ToLower(strings.TrimSpace(string(mode)))
 }
 
-func normalizeRedisAddrs(cfg *models.RedisClientConfig) []string {
+func normalizeRedisAddrs(cfg *modelsystem.RedisClientConfig) []string {
 	addrs := make([]string, 0, len(cfg.Addrs)+1)
 	for _, addr := range cfg.Addrs {
 		if strings.TrimSpace(addr) != "" {

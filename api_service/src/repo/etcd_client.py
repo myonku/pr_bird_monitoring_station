@@ -6,8 +6,8 @@ from typing import Any, cast
 import grpc
 from msgspec import json
 
-from src.models.models import ServiceInstance
-from src.models.config import ProjectConfig
+from src.models.registry.instance import ServiceInstance
+from src.models.sys.config import ProjectConfig
 from utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 from etcd3 import etcdrpc as _etcdrpc
 
@@ -43,15 +43,30 @@ class EtcdAsyncClient:
     依赖: grpcio, etcd3 (提供 etcdrpc 代码)。
     """
 
-    def __init__(self) -> None:
-        # 针对 Etcd 的 RPC 维护一个熔断器
-        self._circuit = CircuitBreaker("etcd_client")
+    def __init__(self, cfg: ProjectConfig) -> None:
+        if not cfg.etcd:
+            raise RuntimeError("Etcd配置初始化失败")
+        if not cfg.etcd.HOSTS:
+            raise RuntimeError("Etcd配置缺失HOSTS")
 
-    async def connect(self, cfg: ProjectConfig):
+        self.cfg = cfg
+        self.namespace = cfg.etcd.NAMESPACE.rstrip("/")
+
+        # 针对 Etcd 的 RPC 维护一个熔断器
+        self._circuit = CircuitBreaker("etcd_client", cfg.etcd.CIRCUITBREAKER)
+
+        # 连接与 stub 相关状态
+        self._connected = False
+        self._channel: grpc.aio.Channel | None = None
+        self._kv_stub: Any | None = None
+        self._lease_stub: Any | None = None
+        self._watch_stub: Any | None = None
+        self._lease_id: int | None = None
+
+    async def connect(self):
         """建立 gRPC 连接并初始化 stubs。"""
-        etcd_cfg = cfg.etcd
+        etcd_cfg = self.cfg.etcd
         assert etcd_cfg and etcd_cfg.HOSTS, "Etcd 配置缺失 HOSTS"
-        self.namespace = etcd_cfg.NAMESPACE.rstrip("/")
         host_port = etcd_cfg.HOSTS[0]
         if ":" in host_port:
             host, port = host_port.split(":", 1)

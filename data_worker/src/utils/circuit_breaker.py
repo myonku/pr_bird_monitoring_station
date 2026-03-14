@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable
 import time
 from typing import Any, Literal
 
-from src.models.config import CircuitBreakerConfig
+from data_worker.src.models.sys.config import CircuitBreakerConfig
 
 
 

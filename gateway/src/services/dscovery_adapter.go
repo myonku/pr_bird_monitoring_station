@@ -3,44 +3,45 @@ package services
 import (
 	"sync/atomic"
 
-	"gateway/src/interfaces"
-	"gateway/src/models"
+	registryif "gateway/src/interfaces/registry"
+	registrymodel "gateway/src/models/registry"
+	modelsystem "gateway/src/models/system"
 	"gateway/src/utils"
 )
 
-var _ interfaces.IDiscoveryAdapter = (*DiscoveryAdapter)(nil)
+var _ registryif.IDiscoveryAdapter = (*DiscoveryAdapter)(nil)
 
 // DiscoveryAdapter 将服务快照转换为具体 endpoint 选择。
 type DiscoveryAdapter struct {
-	registry interfaces.IRegistry
+	registry registryif.IRegistry
 	counter  atomic.Uint64
 }
 
 // NewDiscoveryAdapter 创建服务发现适配器。
-func NewDiscoveryAdapter(registry interfaces.IRegistry) interfaces.IDiscoveryAdapter {
+func NewDiscoveryAdapter(registry registryif.IRegistry) registryif.IDiscoveryAdapter {
 	return &DiscoveryAdapter{registry: registry}
 }
 
 // ChooseEndpoint 选择服务实例。
 func (d *DiscoveryAdapter) ChooseEndpoint(
-	serviceName string, affinityKey string, requireTags []string) (models.ServiceInstance, error) {
+	serviceName string, affinityKey string, requireTags []string) (registrymodel.ServiceInstance, error) {
 
 	if d.registry == nil {
-		return models.ServiceInstance{}, &models.ErrNilRegistryClient
+		return registrymodel.ServiceInstance{}, &modelsystem.ErrNilRegistryClient
 	}
 	if serviceName == "" {
-		return models.ServiceInstance{}, &models.ErrServiceNameRequired
+		return registrymodel.ServiceInstance{}, &modelsystem.ErrServiceNameRequired
 	}
 
 	instances, err := d.registry.GetServiceInstances(serviceName)
 	if err != nil {
-		return models.ServiceInstance{}, err
+		return registrymodel.ServiceInstance{}, err
 	}
 	if len(instances) == 0 {
-		return models.ServiceInstance{}, &models.ErrNoAvaliableInstances
+		return registrymodel.ServiceInstance{}, &modelsystem.ErrNoAvaliableInstances
 	}
 
-	ptrs := make([]*models.ServiceInstance, 0, len(instances))
+	ptrs := make([]*registrymodel.ServiceInstance, 0, len(instances))
 	for i := range instances {
 		instCopy := instances[i]
 		ptrs = append(ptrs, &instCopy)
@@ -48,10 +49,10 @@ func (d *DiscoveryAdapter) ChooseEndpoint(
 
 	filtered := utils.FilterByTags(ptrs, requireTags)
 	if len(filtered) == 0 {
-		return models.ServiceInstance{}, &models.ErrNoMatchingTags
+		return registrymodel.ServiceInstance{}, &modelsystem.ErrNoMatchingTags
 	}
 
-	var selected *models.ServiceInstance
+	var selected *registrymodel.ServiceInstance
 	if affinityKey != "" {
 		selected = utils.PickHashAffinity(filtered, affinityKey)
 	} else {
@@ -60,7 +61,7 @@ func (d *DiscoveryAdapter) ChooseEndpoint(
 	}
 
 	if selected == nil || selected.Endpoint == "" {
-		return models.ServiceInstance{}, &models.ErrInvalidInstance
+		return registrymodel.ServiceInstance{}, &modelsystem.ErrInvalidInstance
 	}
 	return *selected, nil
 }

@@ -1,12 +1,12 @@
 package utils
 
 import (
-	"gateway/src/models"
+	registrymodel "gateway/src/models/registry"
 	"math/rand"
 )
 
 // PickRoundRobin 返回一个基于轮询的选择结果。
-func PickRoundRobin(instances []*models.ServiceInstance, counter int) *models.ServiceInstance {
+func PickRoundRobin(instances []*registrymodel.ServiceInstance, counter int) *registrymodel.ServiceInstance {
 	if len(instances) == 0 {
 		return nil
 	}
@@ -15,13 +15,13 @@ func PickRoundRobin(instances []*models.ServiceInstance, counter int) *models.Se
 
 // PickLeastWeightedLatency 返回一个基于最少加权延迟的选择结果。
 func PickLeastWeightedLatency(
-	instances []*models.ServiceInstance,
+	instances []*registrymodel.ServiceInstance,
 	latency map[string]float64,
-) *models.ServiceInstance {
+) *registrymodel.ServiceInstance {
 	if len(instances) == 0 {
 		return nil
 	}
-	var best *models.ServiceInstance
+	var best *registrymodel.ServiceInstance
 	var bestScore float64 = -1
 	for _, inst := range instances {
 		l, ok := latency[inst.ID.String()]
@@ -38,7 +38,7 @@ func PickLeastWeightedLatency(
 }
 
 // PickHashAffinity 返回一个基于哈希亲和性的选择结果。
-func PickHashAffinity(instances []*models.ServiceInstance, affinityKey string) *models.ServiceInstance {
+func PickHashAffinity(instances []*registrymodel.ServiceInstance, affinityKey string) *registrymodel.ServiceInstance {
 	if len(instances) == 0 {
 		return nil
 	}
@@ -51,7 +51,7 @@ func PickHashAffinity(instances []*models.ServiceInstance, affinityKey string) *
 }
 
 // FilterByTags 根据 requireTags 过滤实例列表，返回包含所有 requireTags 的实例。
-func FilterByTags(instances []*models.ServiceInstance, requireTags []string) []*models.ServiceInstance {
+func FilterByTags(instances []*registrymodel.ServiceInstance, requireTags []string) []*registrymodel.ServiceInstance {
 	if len(requireTags) == 0 {
 		return instances
 	}
@@ -67,7 +67,7 @@ func FilterByTags(instances []*models.ServiceInstance, requireTags []string) []*
 		}
 		return true
 	}
-	var result []*models.ServiceInstance
+	var result []*registrymodel.ServiceInstance
 	for _, inst := range instances {
 		if containsAllTags(inst.Tags, requireTags) {
 			result = append(result, inst)
@@ -77,7 +77,7 @@ func FilterByTags(instances []*models.ServiceInstance, requireTags []string) []*
 }
 
 // RandomWeighted 返回一个基于权重随机选择的实例。
-func RandomWeighted(instances []*models.ServiceInstance) *models.ServiceInstance {
+func RandomWeighted(instances []*registrymodel.ServiceInstance) *registrymodel.ServiceInstance {
 	if len(instances) == 0 {
 		return nil
 	}

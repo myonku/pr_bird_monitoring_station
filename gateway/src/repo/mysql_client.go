@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"gateway/src/models"
+	modelsystem "gateway/src/models/system"
 	"gateway/src/utils"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -23,9 +23,9 @@ type MySQLClient struct {
 }
 
 // NewMySQLClient 创建并探活连接到第一个可用的 MySQL 实例。
-func NewMySQLClient(cfg *models.MySQLConfig) (*MySQLClient, error) {
+func NewMySQLClient(cfg *modelsystem.MySQLConfig) (*MySQLClient, error) {
 	if cfg == nil {
-		return nil, &models.ErrMySQLConfigNeeded
+		return nil, &modelsystem.ErrMySQLConfigNeeded
 	}
 	if cfg.OpTimeout <= 0 {
 		cfg.OpTimeout = 3 * time.Second
@@ -40,9 +40,9 @@ func NewMySQLClient(cfg *models.MySQLConfig) (*MySQLClient, error) {
 	if cfg.DSN != "" {
 		dsns = append(dsns, cfg.DSN)
 	}
-	
+
 	if len(dsns) == 0 {
-		return nil, &models.ErrMySQLDSNRequired
+		return nil, &modelsystem.ErrMySQLDSNRequired
 	}
 
 	var lastErr error
@@ -72,9 +72,9 @@ func NewMySQLClient(cfg *models.MySQLConfig) (*MySQLClient, error) {
 	}
 
 	if lastErr != nil {
-		return nil, fmt.Errorf("%w: %v", &models.ErrMySQLNoAvailable, lastErr)
+		return nil, fmt.Errorf("%w: %v", &modelsystem.ErrMySQLNoAvailable, lastErr)
 	}
-	return nil, &models.ErrMySQLNoAvailable
+	return nil, &modelsystem.ErrMySQLNoAvailable
 }
 
 // Raw 返回底层 sqlx DB。
@@ -220,7 +220,7 @@ func (c *MySQLClient) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sqlx.T
 // WithTx 在事务中执行回调，成功提交，失败回滚。
 func (c *MySQLClient) WithTx(ctx context.Context, opts *sql.TxOptions, fn func(*sqlx.Tx) error) error {
 	if fn == nil {
-		return &models.ErrTxFuncNil
+		return &modelsystem.ErrTxFuncNil
 	}
 
 	_, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
@@ -252,7 +252,7 @@ func (c *MySQLClient) WithTx(ctx context.Context, opts *sql.TxOptions, fn func(*
 func GetAs[T any](ctx context.Context, client *MySQLClient, query string, args ...any) (T, error) {
 	var dest T
 	if client == nil {
-		return dest, &models.ErrNilMySQLClient
+		return dest, &modelsystem.ErrNilMySQLClient
 	}
 	err := client.Get(ctx, &dest, query, args...)
 	return dest, err
@@ -262,7 +262,7 @@ func GetAs[T any](ctx context.Context, client *MySQLClient, query string, args .
 func SelectAs[T any](ctx context.Context, client *MySQLClient, query string, args ...any) ([]T, error) {
 	items := make([]T, 0)
 	if client == nil {
-		return nil, &models.ErrNilMySQLClient
+		return nil, &modelsystem.ErrNilMySQLClient
 	}
 	err := client.Select(ctx, &items, query, args...)
 	if err != nil {
@@ -273,7 +273,7 @@ func SelectAs[T any](ctx context.Context, client *MySQLClient, query string, arg
 
 func (c *MySQLClient) execute(ctx context.Context, fn func(context.Context) (any, error)) (any, error) {
 	if c == nil || c.db == nil {
-		return nil, &models.ErrNilMySQLClient
+		return nil, &modelsystem.ErrNilMySQLClient
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -296,7 +296,7 @@ func (c *MySQLClient) withTimeout(ctx context.Context) (context.Context, context
 	return context.WithTimeout(ctx, c.opTimeout)
 }
 
-func applyMySQLPoolConfig(db *sqlx.DB, cfg *models.MySQLConfig) {
+func applyMySQLPoolConfig(db *sqlx.DB, cfg *modelsystem.MySQLConfig) {
 	if cfg.MaxOpenConns > 0 {
 		db.SetMaxOpenConns(cfg.MaxOpenConns)
 	}

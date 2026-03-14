@@ -9,7 +9,7 @@ import (
 
 	"github.com/segmentio/kafka-go"
 
-	"gateway/src/models"
+	modelsystem "gateway/src/models/system"
 )
 
 // KafkaClient 封装生产、消费和 topic 管理等常见操作。
@@ -26,9 +26,9 @@ type KafkaClient struct {
 }
 
 // NewKafkaClient 创建并验证 Kafka 连接。
-func NewKafkaClient(cfg *models.KafkaClientConfig) (*KafkaClient, error) {
+func NewKafkaClient(cfg *modelsystem.KafkaClientConfig) (*KafkaClient, error) {
 	if len(cfg.Brokers) == 0 {
-		return nil, &models.ErrBrokersRequired
+		return nil, &modelsystem.ErrBrokersRequired
 	}
 	if cfg.OpTimeout <= 0 {
 		cfg.OpTimeout = 5 * time.Second
@@ -93,7 +93,7 @@ func (c *KafkaClient) Close() error {
 // WriteMessages 批量发送消息。
 func (c *KafkaClient) WriteMessages(ctx context.Context, topic string, messages ...kafka.Message) error {
 	if topic == "" {
-		return &models.ErrTopicRequired
+		return &modelsystem.ErrTopicRequired
 	}
 	writer, err := c.getOrCreateWriter(topic)
 	if err != nil {
@@ -120,10 +120,10 @@ func (c *KafkaClient) WriteKeyValue(
 // CreateReader 创建并复用 consumer group reader。
 func (c *KafkaClient) CreateReader(topic, groupID string, minBytes, maxBytes int) (*kafka.Reader, error) {
 	if topic == "" {
-		return nil, &models.ErrTopicRequired
+		return nil, &modelsystem.ErrTopicRequired
 	}
 	if groupID == "" {
-		return nil, &models.ErrGroupIDRequired
+		return nil, &modelsystem.ErrGroupIDRequired
 	}
 	if minBytes <= 0 {
 		minBytes = 10e3
@@ -190,7 +190,7 @@ func (c *KafkaClient) CommitMessages(
 func (c *KafkaClient) CreateTopic(
 	ctx context.Context, topic string, partitions, replicationFactor int) error {
 	if topic == "" {
-		return &models.ErrTopicRequired
+		return &modelsystem.ErrTopicRequired
 	}
 	if partitions <= 0 {
 		partitions = 1
@@ -217,7 +217,7 @@ func (c *KafkaClient) CreateTopic(
 // DeleteTopic 删除 topic。
 func (c *KafkaClient) DeleteTopic(ctx context.Context, topic string) error {
 	if topic == "" {
-		return &models.ErrTopicRequired
+		return &modelsystem.ErrTopicRequired
 	}
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()

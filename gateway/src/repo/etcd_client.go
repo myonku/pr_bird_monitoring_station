@@ -7,19 +7,21 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 
-	"gateway/src/models"
+	modelsystem "gateway/src/models/system"
+	"gateway/src/utils"
 )
 
 // EtcdClient 提供与 Etcd 交互的常见操作。
 type EtcdClient struct {
 	client    *clientv3.Client
+	breaker   *utils.CircuitBreaker
 	opTimeout time.Duration
 }
 
 // NewEtcdClient 创建并验证 Etcd 连接。
-func NewEtcdClient(cfg *models.EtcdClientConfig) (*EtcdClient, error) {
+func NewEtcdClient(cfg *modelsystem.EtcdClientConfig) (*EtcdClient, error) {
 	if len(cfg.Endpoints) == 0 {
-		return nil, &models.ErrEndpointsRequired
+		return nil, &modelsystem.ErrEndpointsRequired
 	}
 	if cfg.DialTimeout <= 0 {
 		cfg.DialTimeout = 5 * time.Second
@@ -47,7 +49,11 @@ func NewEtcdClient(cfg *models.EtcdClientConfig) (*EtcdClient, error) {
 		return nil, err
 	}
 
-	return &EtcdClient{client: client, opTimeout: cfg.OpTimeout}, nil
+	return &EtcdClient{
+		client:    client,
+		breaker:   utils.NewCircuitBreaker("etcd-client", cfg.CircuitBreaker),
+		opTimeout: cfg.OpTimeout,
+	}, nil
 }
 
 // Raw 返回底层 etcd 客户端。
@@ -65,13 +71,14 @@ func (c *EtcdClient) Close() error {
 
 // Ping 探测集群连接健康。
 func (c *EtcdClient) Ping(ctx context.Context) error {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	endpoints := c.client.Endpoints()
-	if len(endpoints) == 0 {
-		return &models.ErrNilEndpoints
-	}
-	_, err := c.client.Status(ctx, endpoints[0])
+	_, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		endpoints := c.client.Endpoints()
+		if len(endpoints) == 0 {
+			return nil, &modelsystem.ErrNilEndpoints
+		}
+		_, runErr := c.client.Status(execCtx, endpoints[0])
+		return nil, runErr
+	})
 	return err
 }
 
@@ -81,9 +88,13 @@ func (c *EtcdClient) Put(
 	key, value string,
 	opts ...clientv3.OpOption,
 ) (*clientv3.PutResponse, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Put(ctx, key, value, opts...)
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		return c.client.Put(execCtx, key, value, opts...)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.(*clientv3.PutResponse), nil
 }
 
 // PutWithTTL 写入带租约的 key/value。
@@ -93,20 +104,24 @@ func (c *EtcdClient) PutWithTTL(
 	ttlSeconds int64,
 ) (*clientv3.PutResponse, clientv3.LeaseID, error) {
 	if ttlSeconds <= 0 {
-		return nil, 0, &models.ErrorNegativeEtcdTTL
+		return nil, 0, &modelsystem.ErrorNegativeEtcdTTL
 	}
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-
-	leaseResp, err := c.client.Grant(ctx, ttlSeconds)
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		leaseResp, runErr := c.client.Grant(execCtx, ttlSeconds)
+		if runErr != nil {
+			return nil, runErr
+		}
+		putResp, runErr := c.client.Put(execCtx, key, value, clientv3.WithLease(leaseResp.ID))
+		if runErr != nil {
+			return nil, runErr
+		}
+		return putWithTTLResult{putResp: putResp, leaseID: leaseResp.ID}, nil
+	})
 	if err != nil {
 		return nil, 0, err
 	}
-	putResp, err := c.client.Put(ctx, key, value, clientv3.WithLease(leaseResp.ID))
-	if err != nil {
-		return nil, 0, err
-	}
-	return putResp, leaseResp.ID, nil
+	final := res.(putWithTTLResult)
+	return final.putResp, final.leaseID, nil
 }
 
 // Get 读取 key。
@@ -115,9 +130,13 @@ func (c *EtcdClient) Get(
 	key string,
 	opts ...clientv3.OpOption,
 ) (*clientv3.GetResponse, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Get(ctx, key, opts...)
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		return c.client.Get(execCtx, key, opts...)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.(*clientv3.GetResponse), nil
 }
 
 // GetOne 读取单 key 字符串值。
@@ -151,9 +170,13 @@ func (c *EtcdClient) Delete(
 	key string,
 	opts ...clientv3.OpOption,
 ) (*clientv3.DeleteResponse, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	return c.client.Delete(ctx, key, opts...)
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		return c.client.Delete(execCtx, key, opts...)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.(*clientv3.DeleteResponse), nil
 }
 
 // DeletePrefix 删除前缀下所有 key。
@@ -172,20 +195,23 @@ func (c *EtcdClient) Txn(
 	thenOps []clientv3.Op,
 	elseOps []clientv3.Op,
 ) (*clientv3.TxnResponse, error) {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-
-	txn := c.client.Txn(ctx)
-	if len(cmps) > 0 {
-		txn = txn.If(cmps...)
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		txn := c.client.Txn(execCtx)
+		if len(cmps) > 0 {
+			txn = txn.If(cmps...)
+		}
+		if len(thenOps) > 0 {
+			txn = txn.Then(thenOps...)
+		}
+		if len(elseOps) > 0 {
+			txn = txn.Else(elseOps...)
+		}
+		return txn.Commit()
+	})
+	if err != nil {
+		return nil, err
 	}
-	if len(thenOps) > 0 {
-		txn = txn.Then(thenOps...)
-	}
-	if len(elseOps) > 0 {
-		txn = txn.Else(elseOps...)
-	}
-	return txn.Commit()
+	return res.(*clientv3.TxnResponse), nil
 }
 
 // Watch 监听 key 或前缀变更。
@@ -200,15 +226,15 @@ func (c *EtcdClient) Watch(
 // GrantLease 创建租约。
 func (c *EtcdClient) GrantLease(ctx context.Context, ttlSeconds int64) (clientv3.LeaseID, error) {
 	if ttlSeconds <= 0 {
-		return 0, &models.ErrorNegativeEtcdTTL
+		return 0, &modelsystem.ErrorNegativeEtcdTTL
 	}
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	resp, err := c.client.Grant(ctx, ttlSeconds)
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		return c.client.Grant(execCtx, ttlSeconds)
+	})
 	if err != nil {
 		return 0, err
 	}
-	return resp.ID, nil
+	return res.(*clientv3.LeaseGrantResponse).ID, nil
 }
 
 // KeepAlive 对租约做续期。
@@ -224,9 +250,10 @@ func (c *EtcdClient) KeepAlive(
 
 // RevokeLease 撤销租约。
 func (c *EtcdClient) RevokeLease(ctx context.Context, leaseID clientv3.LeaseID) error {
-	ctx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	_, err := c.client.Revoke(ctx, leaseID)
+	_, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		_, runErr := c.client.Revoke(execCtx, leaseID)
+		return nil, runErr
+	})
 	return err
 }
 
@@ -237,29 +264,35 @@ func (c *EtcdClient) AcquireLock(
 	ttlSeconds int,
 ) (*concurrency.Session, *concurrency.Mutex, error) {
 	if lockName == "" {
-		return nil, nil, &models.ErrLockNameRequired
-	}
-	if ctx == nil {
-		ctx = context.Background()
+		return nil, nil, &modelsystem.ErrLockNameRequired
 	}
 	if ttlSeconds <= 0 {
 		ttlSeconds = 10
 	}
 
-	session, err := concurrency.NewSession(
-		c.client, concurrency.WithTTL(ttlSeconds), concurrency.WithContext(ctx))
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		session, runErr := concurrency.NewSession(
+			c.client,
+			concurrency.WithTTL(ttlSeconds),
+			concurrency.WithContext(execCtx),
+		)
+		if runErr != nil {
+			return nil, runErr
+		}
+
+		mutex := concurrency.NewMutex(session, lockName)
+		if runErr = mutex.Lock(execCtx); runErr != nil {
+			_ = session.Close()
+			return nil, runErr
+		}
+
+		return acquireLockResult{session: session, mutex: mutex}, nil
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-
-	mutex := concurrency.NewMutex(session, lockName)
-	lockCtx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	if err := mutex.Lock(lockCtx); err != nil {
-		_ = session.Close()
-		return nil, nil, err
-	}
-	return session, mutex, nil
+	final := res.(acquireLockResult)
+	return final.session, final.mutex, nil
 }
 
 // ReleaseLock 释放分布式锁。
@@ -268,29 +301,45 @@ func (c *EtcdClient) ReleaseLock(
 	if session == nil || mutex == nil {
 		return nil
 	}
-	unlockCtx, cancel := c.withTimeout(ctx)
-	defer cancel()
-	if err := mutex.Unlock(unlockCtx); err != nil {
-		_ = session.Close()
-		return err
-	}
-	return session.Close()
+	_, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		if runErr := mutex.Unlock(execCtx); runErr != nil {
+			_ = session.Close()
+			return nil, runErr
+		}
+		return nil, session.Close()
+	})
+	return err
 }
 
 // EndpointStatus 获取所有 endpoint 状态。
 func (c *EtcdClient) EndpointStatus(ctx context.Context) (map[string]*clientv3.StatusResponse, error) {
+	res, err := c.execute(ctx, func(execCtx context.Context) (any, error) {
+		result := make(map[string]*clientv3.StatusResponse)
+		for _, endpoint := range c.client.Endpoints() {
+			status, runErr := c.client.Status(execCtx, endpoint)
+			if runErr != nil {
+				return nil, runErr
+			}
+			result[endpoint] = status
+		}
+		return result, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.(map[string]*clientv3.StatusResponse), nil
+}
+
+func (c *EtcdClient) execute(ctx context.Context, fn func(context.Context) (any, error)) (any, error) {
+	if c == nil || c.client == nil {
+		return nil, &modelsystem.ErrNilEtcdClient
+	}
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
-
-	result := make(map[string]*clientv3.StatusResponse)
-	for _, endpoint := range c.client.Endpoints() {
-		status, err := c.client.Status(ctx, endpoint)
-		if err != nil {
-			return nil, err
-		}
-		result[endpoint] = status
+	if c.breaker != nil {
+		return c.breaker.CallWithResult(ctx, fn)
 	}
-	return result, nil
+	return fn(ctx)
 }
 
 func (c *EtcdClient) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -304,4 +353,14 @@ func (c *EtcdClient) withTimeout(ctx context.Context) (context.Context, context.
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, c.opTimeout)
+}
+
+type putWithTTLResult struct {
+	putResp *clientv3.PutResponse
+	leaseID clientv3.LeaseID
+}
+
+type acquireLockResult struct {
+	session *concurrency.Session
+	mutex   *concurrency.Mutex
 }

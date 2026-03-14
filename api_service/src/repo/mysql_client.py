@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import aiomysql
-from src.models.config import MySQLConfig, ProjectConfig
+from src.models.sys.config import MySQLConfig, ProjectConfig
 from utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 
 

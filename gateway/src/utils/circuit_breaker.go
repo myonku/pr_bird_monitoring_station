@@ -3,7 +3,7 @@ package utils
 import (
 	"context"
 	"fmt"
-	"gateway/src/models"
+	modelsystem "gateway/src/models/system"
 	"sync"
 	"time"
 )
@@ -20,7 +20,7 @@ const (
 type CircuitBreaker struct {
 	Name             string
 	State            CircuitBreakerState
-	cfg              models.CircuitBreakerConfig
+	cfg              modelsystem.CircuitBreakerConfig
 	mu               sync.Mutex
 	failureCount     int
 	lastFailureTime  time.Time
@@ -28,7 +28,7 @@ type CircuitBreaker struct {
 }
 
 // NewCircuitBreaker 创建一个新的 CircuitBreaker 实例。
-func NewCircuitBreaker(name string, cfg *models.CircuitBreakerConfig) *CircuitBreaker {
+func NewCircuitBreaker(name string, cfg *modelsystem.CircuitBreakerConfig) *CircuitBreaker {
 	finalCfg := defaultCircuitBreakerConfig()
 	if cfg != nil {
 		if cfg.FailureThreshold > 0 {
@@ -52,7 +52,7 @@ func NewCircuitBreaker(name string, cfg *models.CircuitBreakerConfig) *CircuitBr
 // Call 提供最简调用入口，适合不需要返回值的业务函数。
 func (cb *CircuitBreaker) Call(ctx context.Context, fun func()) (any, error) {
 	if fun == nil {
-		return nil, &models.ErrCallFuncNil
+		return nil, &modelsystem.ErrCallFuncNil
 	}
 	return cb.CallWithResult(ctx, func(context.Context) (any, error) {
 		fun()
@@ -66,10 +66,10 @@ func (cb *CircuitBreaker) CallWithResult(
 	fun func(context.Context) (any, error),
 ) (result any, err error) {
 	if cb == nil {
-		return nil, &models.ErrNoCircuitBreaker
+		return nil, &modelsystem.ErrNoCircuitBreaker
 	}
 	if fun == nil {
-		return nil, &models.ErrCallFuncNil
+		return nil, &modelsystem.ErrCallFuncNil
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -116,7 +116,7 @@ func (cb *CircuitBreaker) beforeCall(now time.Time) error {
 	switch cb.State {
 	case StateOpen:
 		if now.Sub(cb.lastFailureTime) < cb.cfg.RecoveryTimeout {
-			return &models.ErrCircuitOpen
+			return &modelsystem.ErrCircuitOpen
 		}
 		cb.State = StateHalfOpen
 		cb.halfOpenInFlight = 0
@@ -125,7 +125,7 @@ func (cb *CircuitBreaker) beforeCall(now time.Time) error {
 		return nil
 	case StateHalfOpen:
 		if cb.halfOpenInFlight >= cb.cfg.HalfOpenMaxCalls {
-			return &models.ErrHalfOpenMaxCalls
+			return &modelsystem.ErrHalfOpenMaxCalls
 		}
 		cb.halfOpenInFlight++
 		return nil
@@ -170,8 +170,8 @@ func (cb *CircuitBreaker) recordFailure(now time.Time) {
 	}
 }
 
-func defaultCircuitBreakerConfig() models.CircuitBreakerConfig {
-	return models.CircuitBreakerConfig{
+func defaultCircuitBreakerConfig() modelsystem.CircuitBreakerConfig {
+	return modelsystem.CircuitBreakerConfig{
 		FailureThreshold: 5,
 		RecoveryTimeout:  10 * time.Second,
 		HalfOpenMaxCalls: 1,

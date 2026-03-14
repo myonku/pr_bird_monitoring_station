@@ -1,6 +1,6 @@
 import hashlib, random
 
-from src.models.models import ServiceInstance
+from src.models.registry.instance import ServiceInstance
 
 
 def pick_round_robin(

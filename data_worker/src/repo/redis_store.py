@@ -3,7 +3,7 @@ from typing import Any
 from redis.asyncio import Redis, from_url
 from redis.asyncio.sentinel import Sentinel
 from redis.asyncio.cluster import RedisCluster, ClusterNode
-from src.models.config import ProjectConfig
+from src.models.sys.config import ProjectConfig
 from utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 
 
