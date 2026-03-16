@@ -15,7 +15,6 @@ AuthMethod = Literal[
     "service_secret",
     "refresh_token",
     "token_exchange",
-    "unknown",
 ]
 
 
@@ -45,27 +44,27 @@ class IdentityContext(Struct, kw_only=True):
     token_family_id: str
     token_type: TokenType
 
-    role: str = ""
-    scopes: list[str] = []
+    role: str
+    scopes: list[str]
 
-    auth_method: AuthMethod = "unknown"
-    source_ip: str = ""
-    client_id: str = ""
-    gateway_id: str = ""
+    auth_method: AuthMethod
+    source_ip: str
+    client_id: str
+    gateway_id: str
 
-    source_service: str = ""
-    target_service: str = ""
+    source_service: str
+    target_service: str
 
-    user_agent: str = ""
-    request_id: str = ""
-    trace_id: str = ""
+    user_agent: str
+    request_id: str
+    trace_id: str
 
-    secure_channel_id: str = ""
-    secure_channel_status: str = ""
-    cipher_suite: str = ""
+    secure_channel_id: str
+    secure_channel_status: str
+    cipher_suite: str
 
-    issued_at: float = 0.0
-    expires_at: float = 0.0
+    issued_at: float
+    expires_at: float
 
 
 class Session(Struct, kw_only=True):
@@ -78,26 +77,26 @@ class Session(Struct, kw_only=True):
     principal_id: str
 
     status: SessionStatus
-    auth_method: AuthMethod = "unknown"
+    auth_method: AuthMethod
 
-    created_by_ip: str = ""
-    last_seen_ip: str = ""
-    user_agent: str = ""
-    client_id: str = ""
-    gateway_id: str = ""
+    created_by_ip: str
+    last_seen_ip: str
+    user_agent: str
+    client_id: str
+    gateway_id: str
 
-    scope_snapshot: list[str] = []
-    role_snapshot: str = ""
-    token_family_id: str = ""
+    scope_snapshot: list[str]
+    role_snapshot: str
+    token_family_id: str
 
-    created_at: float = 0.0
-    updated_at: float = 0.0
-    last_seen_at: float = 0.0
-    last_verified_at: float = 0.0
-    next_refresh_at: float = 0.0
-    expires_at: float = 0.0
-    revoked_at: float = 0.0
-    version: int = 0
+    created_at: float
+    updated_at: float
+    last_seen_at: float
+    last_verified_at: float
+    next_refresh_at: float
+    expires_at: float
+    revoked_at: float
+    version: int
 
 
 class TokenFamily(Struct, kw_only=True):
@@ -111,14 +110,14 @@ class TokenFamily(Struct, kw_only=True):
 
     status: TokenStatus
     storage: TokenStorage
-    last_issued_access_id: str = ""
+    last_issued_access_id: str
 
-    created_at: float = 0.0
-    last_validated_at: float = 0.0
-    next_refresh_at: float = 0.0
-    expires_at: float = 0.0
-    revoked_at: float = 0.0
-    version: int = 0
+    created_at: float
+    last_validated_at: float
+    next_refresh_at: float
+    expires_at: float
+    revoked_at: float
+    version: int
 
 
 class TokenClaims(Struct, kw_only=True):
@@ -135,19 +134,19 @@ class TokenClaims(Struct, kw_only=True):
     session_id: str
     token_id: str
     family_id: str
-    parent_id: str = ""
+    parent_id: str
 
-    role: str = ""
-    scopes: list[str] = []
-    auth_method: AuthMethod = "unknown"
+    role: str
+    scopes: list[str]
+    auth_method: AuthMethod
 
-    client_id: str = ""
-    gateway_id: str = ""
-    source_service: str = ""
-    target_service: str = ""
+    client_id: str
+    gateway_id: str
+    source_service: str
+    target_service: str
 
-    issued_at: float = 0.0
-    expires_at: float = 0.0
+    issued_at: float
+    expires_at: float
 
 
 class TokenRecord(Struct, kw_only=True):
@@ -165,17 +164,17 @@ class TokenRecord(Struct, kw_only=True):
     principal: Principal
     principal_id: str
 
-    parent_token_id: str = ""
-    client_id: str = ""
-    gateway_id: str = ""
+    parent_token_id: str
+    client_id: str
+    gateway_id: str
 
-    role_snapshot: str = ""
-    scope_snapshot: list[str] = []
+    role_snapshot: str
+    scope_snapshot: list[str]
 
-    issued_at: float = 0.0
-    expires_at: float = 0.0
-    last_validated_at: float = 0.0
-    revoked_at: float = 0.0
+    issued_at: float
+    expires_at: float
+    last_validated_at: float
+    revoked_at: float
 
 
 class IssuedToken(Struct, kw_only=True):
@@ -192,9 +191,9 @@ class IssuedToken(Struct, kw_only=True):
 class TokenBundle(Struct, kw_only=True):
     """一次刷新新或颁发操作中返回的一组令牌，通常包括一个访问令牌、一个刷新令牌和一个下游令牌。"""
 
-    access_token: IssuedToken | None = None
-    refresh_token: IssuedToken | None = None
-    downstream_token: IssuedToken | None = None
+    access_token: IssuedToken | None
+    refresh_token: IssuedToken | None
+    downstream_token: IssuedToken | None
 
 
 class TokenVerificationResult(Struct, kw_only=True):
@@ -203,10 +202,10 @@ class TokenVerificationResult(Struct, kw_only=True):
 
     valid: bool
     status: TokenStatus
-    identity: IdentityContext | None = None
-    token: TokenRecord | None = None
-    revalidation_required: bool = False
-    failure_reason: str = ""
+    identity: IdentityContext | None
+    token: TokenRecord | None
+    revalidation_required: bool
+    failure_reason: str
 
 
 class DownstreamAccessGrant(Struct, kw_only=True):
@@ -221,24 +220,24 @@ class DownstreamAccessGrant(Struct, kw_only=True):
     principal_id: str
     binding_type: str = "session"
 
-    scopes: list[str] = []
+    scopes: list[str]
 
-    encryption_required: bool = False
-    secure_channel_id: str = ""
-    cipher_suite: str = ""
+    encryption_required: bool
+    secure_channel_id: str
+    cipher_suite: str
 
-    issued_at: float = 0.0
-    expires_at: float = 0.0
+    issued_at: float
+    expires_at: float
 
 
 class SessionTouchMeta(Struct, kw_only=True):
     """更新会话时使用的元信息，包括请求的来源IP、用户代理、客户端ID、网关ID、请求的路由和方法等。"""
 
-    source_ip: str = ""
-    user_agent: str = ""
-    trace_id: str = ""
-    request_id: str = ""
-    client_id: str = ""
-    gateway_id: str = ""
-    route: str = ""
-    method: str = ""
+    source_ip: str
+    user_agent: str
+    trace_id: str
+    request_id: str
+    client_id: str
+    gateway_id: str
+    route: str
+    method: str

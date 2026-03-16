@@ -10,12 +10,12 @@ class ServiceInstance(Struct, frozen=True):
     endpoint: str
 
     heartbeat_at: float
-    zone: str | None = None
-    version: str | None = None
-    weight: int = 1
-    tags: list[str] = []
+    zone: str | None
+    version: str | None
+    weight: int
+    tags: list[str]
 
-    active_comm_key_id: str | None = None
+    active_comm_key_id: str | None
     require_app_encryption: bool = False
     metadata: dict[str, str] = {}
 

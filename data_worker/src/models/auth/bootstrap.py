@@ -19,13 +19,13 @@ class ChallengeRequest(Struct, kw_only=True):
 
     audience: str
 
-    client_id: str = ""
-    gateway_id: str = ""
-    source_ip: str = ""
-    user_agent: str = ""
+    client_id: str
+    gateway_id: str
+    source_ip: str
+    user_agent: str
 
-    request_id: str = ""
-    trace_id: str = ""
+    request_id: str
+    trace_id: str
 
     ttl_sec: int = 60
 
@@ -67,16 +67,16 @@ class BootstrapAuthRequest(Struct, kw_only=True):
     signed: SignedChallengeResponse
 
     scopes: list[str] = []
-    role: str = ""
+    role: str
     require_downstream_token: bool = False
 
 
 class PublicKeyLookupRequest(Struct, kw_only=True):
     """公钥查询请求，包括查询的密钥ID、相关的服务信息和查询上下文等。用于在引导认证过程中查询服务的公钥以验证签名。"""
 
-    service_id: str = ""
-    service_name: str = ""
-    key_id: str = ""
+    service_id: str
+    service_name: str
+    key_id: str
 
 
 class PublicKeyLookupResult(Struct, kw_only=True):
@@ -84,7 +84,7 @@ class PublicKeyLookupResult(Struct, kw_only=True):
 
     found: bool
     key: ServicePublicKeyRecord | None = None
-    failure_reason: str = ""
+    failure_reason: str
     checked_at: float = 0.0
 
 
@@ -97,8 +97,7 @@ class BootstrapAuthResult(Struct, kw_only=True):
     session: Session | None = None
     tokens: TokenBundle | None = None
 
-    require_app_encryption: bool = False
-    active_comm_key_id: str = ""
+    active_comm_key_id: str
 
     issued_at: float = 0.0
     expires_at: float = 0.0

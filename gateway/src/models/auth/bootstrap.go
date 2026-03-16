@@ -83,8 +83,7 @@ type BootstrapAuthResult struct {
 	Session  *Session
 	Tokens   TokenBundle
 
-	RequireAppEncryption bool
-	ActiveCommKeyID      string
+	ActiveCommKeyID string
 
 	IssuedAt  time.Time
 	ExpiresAt time.Time

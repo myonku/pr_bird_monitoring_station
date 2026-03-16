@@ -17,11 +17,11 @@ class ServiceKeyOwner(Struct, kw_only=True):
     """表示一个服务密钥的所有者，可以是一个服务实例或整个服务。
     用于密钥管理和安全通信中标识密钥的归属。"""
 
-    owner_type: CommKeyOwnerType = "service"
-    service_id: str = ""
-    service_name: str = ""
-    instance_id: str = ""
-    instance_name: str = ""
+    owner_type: CommKeyOwnerType
+    service_id: str
+    service_name: str
+    instance_id: str
+    instance_name: str
 
 
 class ServicePublicKeyRecord(Struct, kw_only=True):
@@ -38,10 +38,10 @@ class ServicePublicKeyRecord(Struct, kw_only=True):
 
     status: CommKeyStatus
 
-    created_at: float = 0.0
-    activated_at: float = 0.0
-    expires_at: float = 0.0
-    revoked_at: float = 0.0
+    created_at: float
+    activated_at: float
+    expires_at: float
+    revoked_at: float
 
 
 class LocalPrivateKeyRef(Struct, kw_only=True):
@@ -54,7 +54,7 @@ class LocalPrivateKeyRef(Struct, kw_only=True):
     signature_algorithm: SignatureAlgorithm
 
     private_key_ref: str
-    loaded_at: float = 0.0
+    loaded_at: float
 
 
 class ECDHEHandshakeRecord(Struct, kw_only=True):
@@ -83,21 +83,21 @@ class ECDHEHandshakeRecord(Struct, kw_only=True):
     responder_signature: str
 
     status: HandshakeStatus
-    failure_reason: str = ""
+    failure_reason: str
 
-    started_at: float = 0.0
-    completed_at: float = 0.0
-    expires_at: float = 0.0
+    started_at: float
+    completed_at: float
+    expires_at: float
 
 
 class SecureChannelBinding(Struct, kw_only=True):
     """表示一个安全通道绑定，包括绑定类型、会话ID、令牌ID和令牌家族ID等信息。
     用于标识和管理安全通信的会话。"""
 
-    binding_type: ChannelBindingType = "session"
-    session_id: str = ""
-    token_id: str = ""
-    token_family_id: str = ""
+    binding_type: ChannelBindingType
+    session_id: str
+    token_id: str
+    token_family_id: str
 
 
 class SecureChannelSession(Struct, kw_only=True):
@@ -119,11 +119,11 @@ class SecureChannelSession(Struct, kw_only=True):
     status: SecureChannelStatus
 
     derived_key_ref: str
-    sequence: int = 0
-    established_at: float = 0.0
-    last_used_at: float = 0.0
-    expires_at: float = 0.0
-    revoked_at: float = 0.0
+    sequence: int
+    established_at: float
+    last_used_at: float
+    expires_at: float
+    revoked_at: float
 
 
 class EncryptedMessageMeta(Struct, kw_only=True):
@@ -135,5 +135,5 @@ class EncryptedMessageMeta(Struct, kw_only=True):
     cipher_suite: CipherSuite
     sequence: int
     nonce: str
-    additional_data: dict[str, str] = {}
-    issued_at: float = 0.0
+    additional_data: dict[str, str]
+    issued_at: float
