@@ -50,19 +50,18 @@ func (s *DownstreamGrantService) IssueDownstreamGrant(
 	}
 
 	grant := &authmodel.DownstreamAccessGrant{
-		GatewayID:          req.Identity.GatewayID,
-		SourceService:      req.Identity.SourceService,
-		TargetService:      req.TargetService,
-		SessionID:          req.Identity.SessionID,
-		TokenID:            req.Identity.TokenID,
-		PrincipalID:        req.Identity.PrincipalID,
-		BindingType:        bindingType,
-		Scopes:             append([]string(nil), req.Identity.Scopes...),
-		EncryptionRequired: true,
-		SecureChannelID:    req.Identity.SecureChannelID,
-		CipherSuite:        req.Identity.CipherSuite,
-		IssuedAt:           now,
-		ExpiresAt:          now.Add(time.Duration(ttlSec) * time.Second),
+		GatewayID:       req.Identity.GatewayID,
+		SourceService:   req.Identity.SourceService,
+		TargetService:   req.TargetService,
+		SessionID:       req.Identity.SessionID,
+		TokenID:         req.Identity.TokenID,
+		PrincipalID:     req.Identity.PrincipalID,
+		BindingType:     bindingType,
+		Scopes:          append([]string(nil), req.Identity.Scopes...),
+		SecureChannelID: req.Identity.SecureChannelID,
+		CipherSuite:     req.Identity.CipherSuite,
+		IssuedAt:        now,
+		ExpiresAt:       now.Add(time.Duration(ttlSec) * time.Second),
 	}
 
 	return grant, nil

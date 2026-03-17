@@ -18,4 +18,9 @@ type ICommSecurityService interface {
 	GetChannel(ctx context.Context, req *commsecmodel.SecureChannelQuery) (*commsecmodel.SecureChannelSession, error)
 	// TouchChannel 更新安全通道信息，通常用于延长通道有效期或更新通道元数据。
 	RevokeChannel(ctx context.Context, req *commsecmodel.SecureChannelRevokeRequest) error
+
+	// EncryptByChannel 基于已建立的安全通道加密应用层消息。
+	EncryptByChannel(ctx context.Context, req *commsecmodel.ChannelEncryptRequest) (*commsecmodel.ChannelEncryptResult, error)
+	// DecryptByChannel 基于已建立的安全通道解密应用层消息。
+	DecryptByChannel(ctx context.Context, req *commsecmodel.ChannelDecryptRequest) (string, error)
 }

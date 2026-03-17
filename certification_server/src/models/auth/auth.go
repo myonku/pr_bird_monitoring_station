@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"database/sql"
 	"time"
 
 	commsec "certification_server/src/models/commsec"
@@ -252,9 +253,8 @@ type DownstreamAccessGrant struct {
 
 	Scopes []string
 
-	EncryptionRequired bool
-	SecureChannelID    uuid.UUID
-	CipherSuite        commsec.CipherSuite
+	SecureChannelID uuid.UUID
+	CipherSuite     commsec.CipherSuite
 
 	IssuedAt  time.Time
 	ExpiresAt time.Time
@@ -270,4 +270,56 @@ type SessionTouchMeta struct {
 	GatewayID string
 	Route     string
 	Method    string
+}
+
+// TokenRecordCachePayload 是用于在 Redis 中缓存 TokenRecord 和 TokenClaims 的结构体。
+type TokenRecordCachePayload struct {
+	Record TokenRecord  `json:"record"`
+	Claims *TokenClaims `json:"claims,omitempty"`
+}
+
+// mapTokenRecordRow 将数据库查询结果映射为 TokenRecord 结构体。
+type TokenRecordRow struct {
+	ID            string         `db:"id"`
+	RawToken      string         `db:"raw_token"`
+	FamilyID      string         `db:"family_id"`
+	SessionID     string         `db:"session_id"`
+	Type          string         `db:"token_type"`
+	Status        string         `db:"status"`
+	Storage       string         `db:"storage"`
+	PrincipalType string         `db:"principal_type"`
+	PrincipalID   string         `db:"principal_id"`
+	ParentTokenID sql.NullString `db:"parent_token_id"`
+	ClientID      string         `db:"client_id"`
+	GatewayID     string         `db:"gateway_id"`
+	RoleSnapshot  string         `db:"role_snapshot"`
+	ScopeSnapshot string         `db:"scope_snapshot"`
+	IssuedAt      time.Time      `db:"issued_at"`
+	ExpiresAt     time.Time      `db:"expires_at"`
+	LastValidated sql.NullTime   `db:"last_validated_at"`
+	RevokedAt     sql.NullTime   `db:"revoked_at"`
+}
+
+// TokenClaimsRow 用于从数据库查询令牌声明信息的结构体。
+type TokenClaimsRow struct {
+	TokenID       string         `db:"token_id"`
+	Issuer        string         `db:"issuer"`
+	Audience      string         `db:"audience"`
+	Subject       string         `db:"subject"`
+	Type          string         `db:"token_type"`
+	EntityType    string         `db:"entity_type"`
+	EntityID      string         `db:"entity_id"`
+	PrincipalID   string         `db:"principal_id"`
+	SessionID     string         `db:"session_id"`
+	FamilyID      string         `db:"family_id"`
+	ParentID      sql.NullString `db:"parent_id"`
+	Role          string         `db:"role"`
+	Scopes        string         `db:"scopes"`
+	AuthMethod    string         `db:"auth_method"`
+	ClientID      string         `db:"client_id"`
+	GatewayID     string         `db:"gateway_id"`
+	SourceService string         `db:"source_service"`
+	TargetService string         `db:"target_service"`
+	IssuedAt      time.Time      `db:"issued_at"`
+	ExpiresAt     time.Time      `db:"expires_at"`
 }

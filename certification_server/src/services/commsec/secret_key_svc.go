@@ -14,7 +14,6 @@ import (
 var _ interfaces.ISecretKeyService = (*SecretKeyService)(nil)
 
 // SecretKeyService 提供通信密钥目录访问能力。
-// 当前使用内存模型承载目录与本地私钥引用，后续可替换为数据库与 HSM/KMS。
 type SecretKeyService struct {
 	mu sync.RWMutex
 
@@ -26,6 +25,7 @@ type SecretKeyService struct {
 	catalogByKey map[string]commsecmodel.ServicePublicKeyRecord
 }
 
+// NewSecretKeyService 创建通信密钥服务实例。
 func NewSecretKeyService(
 	mysql *repo.MySQLClient,
 	localPublic commsecmodel.ServicePublicKeyRecord,
@@ -51,6 +51,7 @@ func NewSecretKeyService(
 }
 
 // GetPublicKey 获取本地服务的公钥信息。
+// TODO: 后续根据实际需求，更新函数内部实现，支持从数据库加载或定期刷新本地公钥信息。
 func (s *SecretKeyService) GetPublicKey(ctx context.Context) (commsecmodel.ServicePublicKeyRecord, error) {
 	_ = ctx
 	s.mu.RLock()
@@ -63,6 +64,7 @@ func (s *SecretKeyService) GetPublicKey(ctx context.Context) (commsecmodel.Servi
 }
 
 // GetPrivateKeyRef 获取本地服务的私钥引用信息。
+// TODO: 后续根据实际需求，更新函数内部实现，支持从安全存储加载或定期刷新本地私钥引用信息。
 func (s *SecretKeyService) GetPrivateKeyRef(ctx context.Context) (commsecmodel.LocalPrivateKeyRef, error) {
 	_ = ctx
 	s.mu.RLock()

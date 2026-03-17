@@ -19,7 +19,6 @@ import (
 var _ interfaces.ISessionService = (*SessionService)(nil)
 
 // SessionService 提供认证中心会话管理的内存实现。
-// 会话持久化表结构未定，后续可替换为数据库实现。
 type SessionService struct {
 	mu sync.RWMutex
 
@@ -30,6 +29,7 @@ type SessionService struct {
 	byPrincipal map[string]map[uuid.UUID]*authmodel.Session
 }
 
+// NewSessionService 创建会话服务实例。
 func NewSessionService(mysql *repo.MySQLClient, redis *repo.RedisClient) *SessionService {
 	return &SessionService{
 		mysql:       mysql,

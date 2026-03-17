@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	commseciface "certification_server/src/interfaces/commsec"
 	authmodel "certification_server/src/models/auth"
 	"certification_server/src/repo"
+	"certification_server/src/utils"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -19,7 +21,6 @@ import (
 var _ interfaces.IBootstrapService = (*BootstrapService)(nil)
 
 // BootstrapService 提供冷启动 challenge 认证流程实现。
-// 签名验证与信任链策略后续可按正式密钥治理方案增强。
 type BootstrapService struct {
 	mu sync.RWMutex
 
@@ -32,15 +33,21 @@ type BootstrapService struct {
 	sessionSvc interfaces.ISessionService
 	tokenSvc   interfaces.ITokenService
 	keySvc     commseciface.ISecretKeyService
+	crypto     *utils.CryptoUtils
 }
 
+// NewBootstrapService 创建冷启动认证服务实例。
 func NewBootstrapService(
 	mysql *repo.MySQLClient,
 	redis *repo.RedisClient,
 	sessionSvc interfaces.ISessionService,
 	tokenSvc interfaces.ITokenService,
 	keySvc commseciface.ISecretKeyService,
+	crypto *utils.CryptoUtils,
 ) *BootstrapService {
+	if crypto == nil {
+		crypto = &utils.CryptoUtils{}
+	}
 	return &BootstrapService{
 		challenges: make(map[uuid.UUID]*authmodel.ChallengePayload),
 		stages:     make(map[string]authmodel.BootstrapStage),
@@ -49,6 +56,7 @@ func NewBootstrapService(
 		sessionSvc: sessionSvc,
 		tokenSvc:   tokenSvc,
 		keySvc:     keySvc,
+		crypto:     crypto,
 	}
 }
 
@@ -135,7 +143,25 @@ func (s *BootstrapService) AuthenticateBootstrap(
 		if !lookup.Found {
 			return nil, fmt.Errorf("public key not found for key id")
 		}
-		// TODO: 使用 lookup.Key.PublicKeyPEM 与 req.Signed.Signature 完成严格签名验签。
+		sigAlgo := req.Signed.SignatureAlgorithm
+		if sigAlgo == "" {
+			sigAlgo = lookup.Key.SignatureAlgorithm
+		}
+		if sigAlgo == "" {
+			return nil, fmt.Errorf("signature algorithm is required")
+		}
+		if req.Signed.SignatureAlgorithm != "" && lookup.Key.SignatureAlgorithm != "" &&
+			req.Signed.SignatureAlgorithm != lookup.Key.SignatureAlgorithm {
+			return nil, fmt.Errorf("signature algorithm mismatch with key catalog")
+		}
+		signPayload := buildBootstrapSignaturePayload(stored)
+		if verifyErr := s.crypto.VerifyByAlgorithm(
+			string(sigAlgo),
+			signPayload,
+			req.Signed.Signature,
+			[]byte(lookup.Key.PublicKeyPEM)); verifyErr != nil {
+			return nil, fmt.Errorf("challenge signature verify failed: %w", verifyErr)
+		}
 	}
 
 	principal := authmodel.Principal{EntityType: stored.EntityType, EntityID: stored.EntityID}
@@ -390,4 +416,23 @@ func (s *BootstrapService) loadStageFromDB(ctx context.Context, principalID stri
 		return "", err
 	}
 	return authmodel.BootstrapStage(row.Stage), nil
+}
+
+// buildBootstrapSignaturePayload 构建挑战签名的原始载荷，供调用方签名使用。
+func buildBootstrapSignaturePayload(challenge *authmodel.ChallengePayload) []byte {
+	if challenge == nil {
+		return []byte("")
+	}
+	parts := []string{
+		challenge.ChallengeID.String(),
+		challenge.Issuer,
+		challenge.Audience,
+		string(challenge.EntityType),
+		challenge.EntityID,
+		challenge.KeyID,
+		challenge.Nonce,
+		challenge.IssuedAt.UTC().Format(time.RFC3339Nano),
+		challenge.ExpiresAt.UTC().Format(time.RFC3339Nano),
+	}
+	return []byte(strings.Join(parts, "|"))
 }

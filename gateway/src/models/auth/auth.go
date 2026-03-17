@@ -252,9 +252,8 @@ type DownstreamAccessGrant struct {
 
 	Scopes []string
 
-	EncryptionRequired bool
-	SecureChannelID    uuid.UUID
-	CipherSuite        commsec.CipherSuite
+	SecureChannelID uuid.UUID
+	CipherSuite     commsec.CipherSuite
 
 	IssuedAt  time.Time
 	ExpiresAt time.Time

@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -26,7 +25,6 @@ const (
 )
 
 // TokenService 提供认证中心令牌签发、校验与撤销的内存实现。
-// 持久化策略（数据库表结构等）未定，当前先用进程内存存储。
 type TokenService struct {
 	mu sync.RWMutex
 
@@ -433,55 +431,6 @@ func containsTokenType(set []authmodel.TokenType, item authmodel.TokenType) bool
 	return false
 }
 
-type tokenRecordCachePayload struct {
-	Record authmodel.TokenRecord  `json:"record"`
-	Claims *authmodel.TokenClaims `json:"claims,omitempty"`
-}
-
-type tokenRecordRow struct {
-	ID            string         `db:"id"`
-	RawToken      string         `db:"raw_token"`
-	FamilyID      string         `db:"family_id"`
-	SessionID     string         `db:"session_id"`
-	Type          string         `db:"token_type"`
-	Status        string         `db:"status"`
-	Storage       string         `db:"storage"`
-	PrincipalType string         `db:"principal_type"`
-	PrincipalID   string         `db:"principal_id"`
-	ParentTokenID sql.NullString `db:"parent_token_id"`
-	ClientID      string         `db:"client_id"`
-	GatewayID     string         `db:"gateway_id"`
-	RoleSnapshot  string         `db:"role_snapshot"`
-	ScopeSnapshot string         `db:"scope_snapshot"`
-	IssuedAt      time.Time      `db:"issued_at"`
-	ExpiresAt     time.Time      `db:"expires_at"`
-	LastValidated sql.NullTime   `db:"last_validated_at"`
-	RevokedAt     sql.NullTime   `db:"revoked_at"`
-}
-
-type tokenClaimsRow struct {
-	TokenID       string         `db:"token_id"`
-	Issuer        string         `db:"issuer"`
-	Audience      string         `db:"audience"`
-	Subject       string         `db:"subject"`
-	Type          string         `db:"token_type"`
-	EntityType    string         `db:"entity_type"`
-	EntityID      string         `db:"entity_id"`
-	PrincipalID   string         `db:"principal_id"`
-	SessionID     string         `db:"session_id"`
-	FamilyID      string         `db:"family_id"`
-	ParentID      sql.NullString `db:"parent_id"`
-	Role          string         `db:"role"`
-	Scopes        string         `db:"scopes"`
-	AuthMethod    string         `db:"auth_method"`
-	ClientID      string         `db:"client_id"`
-	GatewayID     string         `db:"gateway_id"`
-	SourceService string         `db:"source_service"`
-	TargetService string         `db:"target_service"`
-	IssuedAt      time.Time      `db:"issued_at"`
-	ExpiresAt     time.Time      `db:"expires_at"`
-}
-
 func (s *TokenService) persistTokenRecord(
 	ctx context.Context, raw string, record *authmodel.TokenRecord, claims *authmodel.TokenClaims) error {
 
@@ -547,7 +496,7 @@ func (s *TokenService) cacheToken(ctx context.Context, raw string, record *authm
 	if s.redis == nil || raw == "" || record == nil {
 		return nil
 	}
-	payload, err := json.Marshal(tokenRecordCachePayload{Record: *record, Claims: claims})
+	payload, err := json.Marshal(authmodel.TokenRecordCachePayload{Record: *record, Claims: claims})
 	if err != nil {
 		return err
 	}
@@ -571,7 +520,7 @@ func (s *TokenService) loadTokenFromCache(
 		}
 		return nil, nil, err
 	}
-	var payload tokenRecordCachePayload
+	var payload authmodel.TokenRecordCachePayload
 	if err = json.Unmarshal([]byte(str), &payload); err != nil {
 		return nil, nil, err
 	}
@@ -584,7 +533,7 @@ func (s *TokenService) loadTokenFromDB(
 	if s.mysql == nil {
 		return nil, nil, fmt.Errorf("mysql not configured")
 	}
-	var recRow tokenRecordRow
+	var recRow authmodel.TokenRecordRow
 	err := s.mysql.Get(ctx, &recRow, `
 SELECT id, raw_token, family_id, session_id, token_type, status, storage, principal_type, principal_id,
        parent_token_id, client_id, gateway_id, role_snapshot, scope_snapshot, issued_at, expires_at,
@@ -603,7 +552,7 @@ FROM auth_token_records WHERE raw_token = ? LIMIT 1
 		return nil, nil, err
 	}
 
-	var claimRow tokenClaimsRow
+	var claimRow authmodel.TokenClaimsRow
 	err = s.mysql.Get(ctx, &claimRow, `
 SELECT token_id, issuer, audience, subject, token_type, entity_type, entity_id, principal_id,
        session_id, family_id, parent_id, role, scopes, auth_method, client_id, gateway_id,
@@ -623,7 +572,7 @@ FROM auth_token_claims WHERE token_id = ? LIMIT 1
 	return record, claims, nil
 }
 
-func mapTokenRecordRow(row tokenRecordRow) (*authmodel.TokenRecord, error) {
+func mapTokenRecordRow(row authmodel.TokenRecordRow) (*authmodel.TokenRecord, error) {
 	id, err := uuid.Parse(row.ID)
 	if err != nil {
 		return nil, err
@@ -655,7 +604,7 @@ func mapTokenRecordRow(row tokenRecordRow) (*authmodel.TokenRecord, error) {
 	return record, nil
 }
 
-func mapTokenClaimsRow(row tokenClaimsRow) (*authmodel.TokenClaims, error) {
+func mapTokenClaimsRow(row authmodel.TokenClaimsRow) (*authmodel.TokenClaims, error) {
 	tokenID, _ := uuid.Parse(row.TokenID)
 	sessionID, _ := uuid.Parse(row.SessionID)
 	familyID, _ := uuid.Parse(row.FamilyID)

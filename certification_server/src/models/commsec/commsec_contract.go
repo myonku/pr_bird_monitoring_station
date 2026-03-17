@@ -74,3 +74,24 @@ type SecureChannelRevokeRequest struct {
 	Reason    string
 	RevokedBy string
 }
+
+// ChannelEncryptRequest 表示基于安全通道加密应用层负载的请求。
+type ChannelEncryptRequest struct {
+	ChannelID      uuid.UUID
+	PlainText      string
+	AdditionalData map[string]string
+}
+
+// ChannelEncryptResult 表示加密结果和用于传输的元数据。
+type ChannelEncryptResult struct {
+	CipherText string
+	Meta       EncryptedMessageMeta
+}
+
+// ChannelDecryptRequest 表示基于安全通道解密应用层负载的请求。
+type ChannelDecryptRequest struct {
+	ChannelID      uuid.UUID
+	CipherText     string
+	Sequence       uint64
+	AdditionalData map[string]string
+}

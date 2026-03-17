@@ -1,6 +1,7 @@
 package commsec
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,15 +29,18 @@ const (
 
 const (
 	KeyExchangeECDHEP256   KeyExchangeAlgorithm = "ecdhe_p256"
+	KeyExchangeECDHEP384   KeyExchangeAlgorithm = "ecdhe_p384"
 	KeyExchangeECDHEX25519 KeyExchangeAlgorithm = "ecdhe_x25519"
 )
 
 const (
 	SignatureECDSAP256SHA256 SignatureAlgorithm = "ecdsa_p256_sha256"
 	SignatureEd25519         SignatureAlgorithm = "ed25519"
+	SignatureRSAPSSSHA256    SignatureAlgorithm = "rsa_pss_sha256"
 )
 
 const (
+	CipherSuiteAES128GCM        CipherSuite = "aes_128_gcm"
 	CipherSuiteAES256GCM        CipherSuite = "aes_256_gcm"
 	CipherSuiteChaCha20Poly1305 CipherSuite = "chacha20_poly1305"
 )
@@ -189,4 +193,66 @@ type PublicKeyLookupResult struct {
 
 	FailureReason string
 	CheckedAt     time.Time
+}
+
+// HandshakeRow 表示数据库中 commsec 握手记录的行结构。
+type HandshakeRow struct {
+	ID                          string       `db:"id"`
+	InitiatorOwnerType          string       `db:"initiator_owner_type"`
+	InitiatorServiceID          string       `db:"initiator_service_id"`
+	InitiatorServiceName        string       `db:"initiator_service_name"`
+	InitiatorInstanceID         string       `db:"initiator_instance_id"`
+	InitiatorInstanceName       string       `db:"initiator_instance_name"`
+	ResponderOwnerType          string       `db:"responder_owner_type"`
+	ResponderServiceID          string       `db:"responder_service_id"`
+	ResponderServiceName        string       `db:"responder_service_name"`
+	ResponderInstanceID         string       `db:"responder_instance_id"`
+	ResponderInstanceName       string       `db:"responder_instance_name"`
+	InitiatorKeyID              string       `db:"initiator_key_id"`
+	ResponderKeyID              string       `db:"responder_key_id"`
+	KeyExchangeAlgorithm        string       `db:"key_exchange_algorithm"`
+	SignatureAlgorithm          string       `db:"signature_algorithm"`
+	CipherSuite                 string       `db:"cipher_suite"`
+	InitiatorEphemeralPublicKey string       `db:"initiator_ephemeral_public_key"`
+	ResponderEphemeralPublicKey string       `db:"responder_ephemeral_public_key"`
+	InitiatorNonce              string       `db:"initiator_nonce"`
+	ResponderNonce              string       `db:"responder_nonce"`
+	InitiatorSignature          string       `db:"initiator_signature"`
+	ResponderSignature          string       `db:"responder_signature"`
+	Status                      string       `db:"status"`
+	FailureReason               string       `db:"failure_reason"`
+	StartedAt                   time.Time    `db:"started_at"`
+	CompletedAt                 sql.NullTime `db:"completed_at"`
+	ExpiresAt                   time.Time    `db:"expires_at"`
+	UpdatedAt                   sql.NullTime `db:"updated_at"`
+}
+
+// ChannelRow 表示数据库中 commsec 安全通道记录的行结构。
+type ChannelRow struct {
+	ID                 string         `db:"id"`
+	HandshakeID        string         `db:"handshake_id"`
+	BindingType        string         `db:"binding_type"`
+	BindingSessionID   sql.NullString `db:"binding_session_id"`
+	BindingTokenID     sql.NullString `db:"binding_token_id"`
+	BindingFamilyID    sql.NullString `db:"binding_family_id"`
+	SourceOwnerType    string         `db:"source_owner_type"`
+	SourceServiceID    string         `db:"source_service_id"`
+	SourceServiceName  string         `db:"source_service_name"`
+	SourceInstanceID   string         `db:"source_instance_id"`
+	SourceInstanceName string         `db:"source_instance_name"`
+	TargetOwnerType    string         `db:"target_owner_type"`
+	TargetServiceID    string         `db:"target_service_id"`
+	TargetServiceName  string         `db:"target_service_name"`
+	TargetInstanceID   string         `db:"target_instance_id"`
+	TargetInstanceName string         `db:"target_instance_name"`
+	LocalKeyID         string         `db:"local_key_id"`
+	PeerKeyID          string         `db:"peer_key_id"`
+	CipherSuite        string         `db:"cipher_suite"`
+	Status             string         `db:"status"`
+	DerivedKeyRef      string         `db:"derived_key_ref"`
+	Sequence           uint64         `db:"seq_no"`
+	EstablishedAt      time.Time      `db:"established_at"`
+	LastUsedAt         time.Time      `db:"last_used_at"`
+	ExpiresAt          time.Time      `db:"expires_at"`
+	RevokedAt          sql.NullTime   `db:"revoked_at"`
 }
