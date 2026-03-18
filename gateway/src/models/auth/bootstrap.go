@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"time"
 
 	commsec "gateway/src/models/commsec"
@@ -73,6 +74,21 @@ type BootstrapAuthRequest struct {
 	Role   string
 
 	RequireDownstreamToken bool
+}
+
+// ChallengeSigner 定义服务模块本地对 challenge 执行签名的回调。
+// 私钥不应离开本地安全存储，签名动作由调用方注入。
+type ChallengeSigner func(ctx context.Context, payload *ChallengePayload) (*SignedChallengeResponse, error)
+
+// BootstrapEnsureReadyRequest 定义“确保 bootstrap 就绪”的编排请求。
+type BootstrapEnsureReadyRequest struct {
+	ChallengeRequest *ChallengeRequest
+
+	Role   string
+	Scopes []string
+
+	RequireDownstreamToken bool
+	Signer                 ChallengeSigner
 }
 
 // BootstrapAuthResult 表示冷启动认证完成后的返回结果。

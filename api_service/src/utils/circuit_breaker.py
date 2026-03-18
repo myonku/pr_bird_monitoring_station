@@ -6,7 +6,6 @@ from typing import Any, Literal
 from src.models.sys.config import CircuitBreakerConfig
 
 
-
 class CircuitOpenError(RuntimeError):
     """熔断已打开时抛出的异常。"""
 

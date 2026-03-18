@@ -1,10 +1,11 @@
 from msgspec import Struct
+from uuid import UUID
 
 
 class ServiceInstance(Struct, frozen=True):
     """注册到服务发现中的实例信息。"""
 
-    id: str
+    id: UUID
     service_id: str
     name: str
     endpoint: str
@@ -16,7 +17,6 @@ class ServiceInstance(Struct, frozen=True):
     tags: list[str]
 
     active_comm_key_id: str | None
-    require_app_encryption: bool = False
     metadata: dict[str, str] = {}
 
 

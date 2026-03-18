@@ -1,4 +1,5 @@
 from msgspec import Struct
+from uuid import UUID
 
 from src.models.auth.auth import (
     AuthMethod,
@@ -15,8 +16,8 @@ class TokenIssueRequest(Struct, kw_only=True):
     principal: Principal
 
     token_type: TokenType
-    session_id: str
-    family_id: str
+    session_id: UUID
+    family_id: UUID
 
     audience: str
     role: str
@@ -29,7 +30,7 @@ class TokenIssueRequest(Struct, kw_only=True):
     source_service: str
     target_service: str
 
-    parent_token_id: str
+    parent_token_id: UUID
     ttl_sec: int
 
 
@@ -65,9 +66,9 @@ class TokenVerifyRequest(Struct, kw_only=True):
 class TokenRevokeRequest(Struct, kw_only=True):
     """表示令牌撤销参数。"""
 
-    token_id: str
-    family_id: str
-    session_id: str
+    token_id: UUID
+    family_id: UUID
+    session_id: UUID
 
     reason: str
     revoked_by: str
@@ -96,7 +97,7 @@ class SessionIssueRequest(Struct, kw_only=True):
 class SessionValidateRequest(Struct, kw_only=True):
     """表示会话校验参数。"""
 
-    session_id: str
+    session_id: UUID
     principal_id: str
     require_active: bool
     min_version: int
@@ -105,7 +106,7 @@ class SessionValidateRequest(Struct, kw_only=True):
 class SessionRevokeRequest(Struct, kw_only=True):
     """表示会话撤销参数。"""
 
-    session_id: str
+    session_id: UUID
     principal_id: str
 
     reason: str

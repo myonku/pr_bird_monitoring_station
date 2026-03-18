@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from msgspec import Struct
 
 
@@ -6,7 +8,7 @@ class ServiceInstance(Struct, frozen=True):
     注册到 etcd 的实例信息（值）
     """
 
-    id: str
+    id: UUID
     name: str
     endpoint: str  # http://host:port 或 grpc://host:port
     service_id: str
@@ -17,7 +19,6 @@ class ServiceInstance(Struct, frozen=True):
     meta_json: str
     heartbeat_at: float
     active_comm_key: str | None
-    require_app_encryption: bool
 
 
 class ServiceSnapshot(Struct, frozen=True):

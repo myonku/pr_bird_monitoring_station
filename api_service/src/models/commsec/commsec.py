@@ -1,13 +1,14 @@
 from typing import Literal
+from uuid import UUID
 
 from msgspec import Struct
 
 
 CommKeyOwnerType = Literal["instance", "service"]
 CommKeyStatus = Literal["active", "expired", "revoked"]
-KeyExchangeAlgorithm = Literal["ecdhe_p256", "ecdhe_x25519"]
-SignatureAlgorithm = Literal["ecdsa_p256_sha256", "ed25519"]
-CipherSuite = Literal["chacha20_poly1305", "aes_256_gcm"]
+KeyExchangeAlgorithm = Literal["ecdhe_p256", "ecdhe_x25519", "ecdhe_p384"]
+SignatureAlgorithm = Literal["ecdsa_p256_sha256", "ed25519", "rsa_pss_sha256"]
+CipherSuite = Literal["chacha20_poly1305", "aes_256_gcm", "aes_128_gcm"]
 HandshakeStatus = Literal["pending", "established", "failed", "expired"]
 SecureChannelStatus = Literal["active", "expired", "revoked"]
 ChannelBindingType = Literal["session", "token"]
@@ -61,7 +62,7 @@ class ECDHEHandshakeRecord(Struct, kw_only=True):
     """表示一个ECDHE密钥交换握手的记录，包括握手ID、参与方信息、使用的算法、交换的公钥、生成的签名、握手状态和时间戳等。
     用于安全通信的握手过程记录和审计。"""
 
-    id: str
+    id: UUID
 
     initiator: ServiceKeyOwner
     responder: ServiceKeyOwner
@@ -95,18 +96,18 @@ class SecureChannelBinding(Struct, kw_only=True):
     用于标识和管理安全通信的会话。"""
 
     binding_type: ChannelBindingType
-    session_id: str
-    token_id: str
-    token_family_id: str
+    session_id: UUID
+    token_id: UUID
+    token_family_id: UUID
 
 
 class SecureChannelSession(Struct, kw_only=True):
     """表示一个安全通道会话的记录，包括会话ID、握手ID、绑定信息、参与方信息、
     使用的算法、生成的密钥引用、通道状态和时间戳等。"""
 
-    id: str
+    id: UUID
 
-    handshake_id: str
+    handshake_id: UUID
     binding: SecureChannelBinding
 
     source: ServiceKeyOwner
@@ -128,9 +129,9 @@ class SecureChannelSession(Struct, kw_only=True):
 
 class EncryptedMessageMeta(Struct, kw_only=True):
     """表示一个加密消息的元信息，包括所属安全通道、使用的密钥ID、加密算法、消息序列号、随机数和时间戳等。"""
-    
-    channel_id: str
-    handshake_id: str
+
+    channel_id: UUID
+    handshake_id: UUID
     key_id: str
     cipher_suite: CipherSuite
     sequence: int

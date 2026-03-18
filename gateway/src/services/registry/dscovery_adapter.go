@@ -24,32 +24,32 @@ func NewDiscoveryAdapter(registry registryif.IRegistry) registryif.IDiscoveryAda
 
 // ChooseEndpoint 选择服务实例。
 func (d *DiscoveryAdapter) ChooseEndpoint(
-	serviceName string, affinityKey string, requireTags []string) (registrymodel.ServiceInstance, error) {
+	serviceName string, affinityKey string, requireTags []string) (*registrymodel.ServiceInstance, error) {
 
 	if d.registry == nil {
-		return registrymodel.ServiceInstance{}, &modelsystem.ErrNilRegistryClient
+		return nil, &modelsystem.ErrNilRegistryClient
 	}
 	if serviceName == "" {
-		return registrymodel.ServiceInstance{}, &modelsystem.ErrServiceNameRequired
+		return nil, &modelsystem.ErrServiceNameRequired
 	}
 
 	instances, err := d.registry.GetServiceInstances(serviceName)
 	if err != nil {
-		return registrymodel.ServiceInstance{}, err
+		return nil, err
 	}
 	if len(instances) == 0 {
-		return registrymodel.ServiceInstance{}, &modelsystem.ErrNoAvaliableInstances
+		return nil, &modelsystem.ErrNoAvaliableInstances
 	}
 
 	ptrs := make([]*registrymodel.ServiceInstance, 0, len(instances))
 	for i := range instances {
 		instCopy := instances[i]
-		ptrs = append(ptrs, &instCopy)
+		ptrs = append(ptrs, instCopy)
 	}
 
 	filtered := utils.FilterByTags(ptrs, requireTags)
 	if len(filtered) == 0 {
-		return registrymodel.ServiceInstance{}, &modelsystem.ErrNoMatchingTags
+		return nil, &modelsystem.ErrNoMatchingTags
 	}
 
 	var selected *registrymodel.ServiceInstance
@@ -61,7 +61,7 @@ func (d *DiscoveryAdapter) ChooseEndpoint(
 	}
 
 	if selected == nil || selected.Endpoint == "" {
-		return registrymodel.ServiceInstance{}, &modelsystem.ErrInvalidInstance
+		return nil, &modelsystem.ErrInvalidInstance
 	}
-	return *selected, nil
+	return selected, nil
 }

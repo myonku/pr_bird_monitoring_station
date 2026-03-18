@@ -19,7 +19,7 @@ def pick_least_weighted_latency(
     if not instances:
         return None
     ranked = sorted(
-        instances, key=lambda i: (latency_map.get(i.id, 100.0) / max(i.weight, 1))
+        instances, key=lambda i: (latency_map.get(str(i.id), 100.0) / max(i.weight, 1))
     )
     return ranked[0]
 

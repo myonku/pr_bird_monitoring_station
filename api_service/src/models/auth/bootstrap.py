@@ -1,4 +1,5 @@
 from typing import Literal
+from uuid import UUID
 
 from msgspec import Struct
 
@@ -33,7 +34,7 @@ class ChallengeRequest(Struct, kw_only=True):
 class ChallengePayload(Struct, kw_only=True):
     """引导认证流程中的挑战负载，包括挑战ID、颁发者和受众信息、关联的实体和密钥信息、随机数和时间戳等。"""
 
-    challenge_id: str
+    challenge_id: UUID
 
     issuer: str
     audience: str
@@ -51,7 +52,7 @@ class ChallengePayload(Struct, kw_only=True):
 class SignedChallengeResponse(Struct, kw_only=True):
     """表示一个签名的挑战响应，包括挑战ID、密钥ID、签名算法和签名内容等信息。"""
 
-    challenge_id: str
+    challenge_id: UUID
     key_id: str
 
     signature_algorithm: str

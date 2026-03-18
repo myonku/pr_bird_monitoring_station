@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from uuid import UUID
 from msgspec import Struct
 
 
@@ -39,9 +40,9 @@ class IdentityContext(Struct, kw_only=True):
     entity_id: str
     principal_id: str
 
-    session_id: str
-    token_id: str
-    token_family_id: str
+    session_id: UUID
+    token_id: UUID
+    token_family_id: UUID
     token_type: TokenType
 
     role: str
@@ -59,7 +60,7 @@ class IdentityContext(Struct, kw_only=True):
     request_id: str
     trace_id: str
 
-    secure_channel_id: str
+    secure_channel_id: UUID
     secure_channel_status: str
     cipher_suite: str
 
@@ -70,7 +71,7 @@ class IdentityContext(Struct, kw_only=True):
 class Session(Struct, kw_only=True):
     """会话模型，用于管理用户会话信息。"""
 
-    id: str
+    id: UUID
     principal: Principal
     entity_type: EntityType
     entity_id: str
@@ -87,7 +88,7 @@ class Session(Struct, kw_only=True):
 
     scope_snapshot: list[str]
     role_snapshot: str
-    token_family_id: str
+    token_family_id: UUID
 
     created_at: float
     updated_at: float
@@ -102,15 +103,15 @@ class Session(Struct, kw_only=True):
 class TokenFamily(Struct, kw_only=True):
     """用于管理一组相关的令牌，通常包括一个访问令牌和一个或多个刷新令牌。"""
 
-    id: str
-    session_id: str
+    id: UUID
+    session_id: UUID
     principal: Principal
     principal_id: str
-    current_token: str
+    current_token: UUID
 
     status: TokenStatus
     storage: TokenStorage
-    last_issued_access_id: str
+    last_issued_access_id: UUID
 
     created_at: float
     last_validated_at: float
@@ -131,10 +132,10 @@ class TokenClaims(Struct, kw_only=True):
     entity_type: EntityType
     entity_id: str
     principal_id: str
-    session_id: str
-    token_id: str
-    family_id: str
-    parent_id: str
+    session_id: UUID
+    token_id: UUID
+    family_id: UUID
+    parent_id: UUID
 
     role: str
     scopes: list[str]
@@ -153,9 +154,9 @@ class TokenRecord(Struct, kw_only=True):
     """表示一个令牌的记录，包括令牌ID、所属令牌家族、会话信息、
     主体信息、令牌状态和时间戳等。用于令牌管理和验证。"""
 
-    id: str
-    family_id: str
-    session_id: str
+    id: UUID
+    family_id: UUID
+    session_id: UUID
 
     type: TokenType
     status: TokenStatus
@@ -164,7 +165,7 @@ class TokenRecord(Struct, kw_only=True):
     principal: Principal
     principal_id: str
 
-    parent_token_id: str
+    parent_token_id: UUID
     client_id: str
     gateway_id: str
 
@@ -215,15 +216,15 @@ class DownstreamAccessGrant(Struct, kw_only=True):
     source_service: str
     target_service: str
 
-    session_id: str
-    token_id: str
+    session_id: UUID
+    token_id: UUID
     principal_id: str
     binding_type: str
 
     scopes: list[str]
 
     encryption_required: bool = False
-    secure_channel_id: str
+    secure_channel_id: UUID
     cipher_suite: str
 
     issued_at: float

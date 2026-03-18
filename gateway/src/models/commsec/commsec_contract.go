@@ -74,3 +74,42 @@ type SecureChannelRevokeRequest struct {
 	Reason    string
 	RevokedBy string
 }
+
+// SecureChannelEnsureRequest 表示“主动通信方”在出站前确保通道可用的请求。
+type SecureChannelEnsureRequest struct {
+	Query SecureChannelQuery
+
+	HandshakeInit *ECDHEHandshakeInitRequest
+
+	RequireActive    bool
+	ForceReHandshake bool
+}
+
+// EncryptForChannelRequest 表示基于指定安全通道进行加密的请求。
+type EncryptForChannelRequest struct {
+	ChannelID uuid.UUID
+	Payload   string
+
+	AdditionalData map[string]string
+	SequenceHint   uint64
+}
+
+// EncryptedPayload 表示应用层加密后的载荷和元数据。
+type EncryptedPayload struct {
+	CipherText string
+	Meta       EncryptedMessageMeta
+}
+
+// DecryptFromChannelRequest 表示基于指定安全通道进行解密的请求。
+type DecryptFromChannelRequest struct {
+	ChannelID  uuid.UUID
+	CipherText string
+	Meta       EncryptedMessageMeta
+}
+
+// DecryptedPayload 表示解密后的明文以及更新后的通道状态信息。
+type DecryptedPayload struct {
+	Payload         string
+	ChannelID       uuid.UUID
+	UpdatedSequence uint64
+}

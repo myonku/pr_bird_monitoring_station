@@ -51,7 +51,7 @@ func NewRegistryService(
 }
 
 // Register 注册服务实例。
-func (r *RegistryService) Register(instance registrymodel.ServiceInstance, ttl int64) error {
+func (r *RegistryService) Register(instance *registrymodel.ServiceInstance, ttl int64) error {
 	if r.etcd == nil {
 		return &modelsystem.ErrNilEtcdClient
 	}
@@ -84,7 +84,7 @@ func (r *RegistryService) Register(instance registrymodel.ServiceInstance, ttl i
 }
 
 // UnRegister 注销服务实例。
-func (r *RegistryService) UnRegister(instance registrymodel.ServiceInstance) error {
+func (r *RegistryService) UnRegister(instance *registrymodel.ServiceInstance) error {
 	if r.etcd == nil {
 		return &modelsystem.ErrNilEtcdClient
 	}
@@ -102,7 +102,7 @@ func (r *RegistryService) UnRegister(instance registrymodel.ServiceInstance) err
 }
 
 // GetServiceInstances 获取服务实例列表。
-func (r *RegistryService) GetServiceInstances(serviceName string) ([]registrymodel.ServiceInstance, error) {
+func (r *RegistryService) GetServiceInstances(serviceName string) ([]*registrymodel.ServiceInstance, error) {
 	if r.etcd == nil {
 		return nil, &modelsystem.ErrNilEtcdClient
 	}
@@ -118,13 +118,13 @@ func (r *RegistryService) GetServiceInstances(serviceName string) ([]registrymod
 		return nil, err
 	}
 
-	instances := make([]registrymodel.ServiceInstance, 0, len(resp.Kvs))
+	instances := make([]*registrymodel.ServiceInstance, 0, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
 		var inst registrymodel.ServiceInstance
 		if unmarshalErr := json.Unmarshal(kv.Value, &inst); unmarshalErr != nil {
 			continue
 		}
-		instances = append(instances, inst)
+		instances = append(instances, &inst)
 	}
 
 	sort.Slice(instances, func(i, j int) bool { return instances[i].ID.String() < instances[j].ID.String() })
@@ -132,12 +132,12 @@ func (r *RegistryService) GetServiceInstances(serviceName string) ([]registrymod
 }
 
 // GetServiceSnapShot 获取指定服务快照。
-func (r *RegistryService) GetServiceSnapShot(serviceName string) (registrymodel.ServiceSnapshot, error) {
+func (r *RegistryService) GetServiceSnapShot(serviceName string) (*registrymodel.ServiceSnapshot, error) {
 	if r.etcd == nil {
-		return registrymodel.ServiceSnapshot{}, &modelsystem.ErrNilEtcdClient
+		return nil, &modelsystem.ErrNilEtcdClient
 	}
 	if serviceName == "" {
-		return registrymodel.ServiceSnapshot{}, &modelsystem.ErrServiceNameRequired
+		return nil, &modelsystem.ErrServiceNameRequired
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), r.opTimeout)
@@ -145,7 +145,7 @@ func (r *RegistryService) GetServiceSnapShot(serviceName string) (registrymodel.
 
 	resp, err := r.etcd.Get(ctx, r.servicePrefix(serviceName), clientv3.WithPrefix())
 	if err != nil {
-		return registrymodel.ServiceSnapshot{}, err
+		return nil, err
 	}
 
 	instances := make([]*registrymodel.ServiceInstance, 0, len(resp.Kvs))
@@ -160,7 +160,7 @@ func (r *RegistryService) GetServiceSnapShot(serviceName string) (registrymodel.
 
 	sort.Slice(instances, func(i, j int) bool { return instances[i].ID.String() < instances[j].ID.String() })
 
-	return registrymodel.ServiceSnapshot{
+	return &registrymodel.ServiceSnapshot{
 		Name:      serviceName,
 		Instances: instances,
 		Revision:  resp.Header.Revision,
