@@ -291,3 +291,43 @@
 5. 限流规则匹配逻辑不允许放在拦截器本体。
 6. 签名验签与加解密行为不允许散落在 handler 层。
 7. 私钥原文不允许出本地安全边界。
+
+---
+
+## 7. 认证相关系统流程说明（冷启动 -> 稳定运行）
+
+目标：明确认证中心作为授权与验证核心在全链路中的控制点。
+
+### 7.1 Phase A：认证中心冷启动
+
+1. 初始化 mysql/redis/etcd 客户端与服务实现。
+2. 装配 auth/commsec/orchestration 依赖。
+3. 启动 gRPC server 并挂载限流拦截器。
+4. 进入可服务状态，等待网关与普通服务 bootstrap 请求。
+
+### 7.2 Phase B：模块 bootstrap 阶段
+
+1. 接收网关或普通服务的 challenge 初始化请求。
+2. 接收签名响应并执行公钥目录校验与验签。
+3. 创建 session、签发 token、返回 bootstrap ready 状态。
+4. 在需要时签发 downstream grant。
+
+### 7.3 Phase C：运行期认证与通信安全
+
+1. 处理 token 校验、续期、撤销请求。
+2. 处理 secure channel 握手初始化与完成请求。
+3. 管理通道状态（查询、撤销）与传输加解密能力。
+4. 对高频接口执行 auth/internal_grpc 范围限流。
+
+### 7.4 Phase D：异常恢复
+
+- challenge 过期：拒绝并要求发起新 challenge。
+- token 失效：返回续期或重认证指引。
+- channel 失效：要求发起重新握手。
+- 限流触发：返回 ResourceExhausted 与 retry-after。
+
+### 7.5 协作边界
+
+- 对网关：提供认证与通道能力，不参与网关转发逻辑。
+- 对普通服务：提供校验与续期能力，不参与业务处理。
+- 对自身：所有协议映射留在 gRPC adapter，业务策略集中于 orchestration/service。
