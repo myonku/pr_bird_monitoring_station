@@ -2,9 +2,9 @@ package forwarding
 
 import (
 	"context"
-	"errors"
 
 	commif "gateway/src/interfaces/communication"
+	modelsystem "gateway/src/models/system"
 )
 
 // ForwardExternalRequest 定义 HTTP 入站请求经过标准化后的转发输入。
@@ -40,10 +40,10 @@ func (u *ForwardExternalRequestUsecase) Execute(
 	req *ForwardExternalRequest,
 ) (*commif.OutboundForwardResponse, error) {
 	if u == nil || u.Resolver == nil || u.SecurityPreparer == nil || u.OutboundForwarder == nil {
-		return nil, errors.New("forwarding dependencies are required")
+		return nil, &modelsystem.ErrForwardingDependenciesRequired
 	}
 	if req == nil || req.SecurityRequest == nil {
-		return nil, errors.New("forwarding request is invalid")
+		return nil, &modelsystem.ErrForwardingRequestInvalid
 	}
 
 	resolved, err := u.Resolver.Resolve(ctx, &commif.ResolveTargetRequest{

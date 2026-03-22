@@ -3,10 +3,11 @@ package grpcadapter
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"net"
 	"sync"
 	"time"
+
+	modelsystem "certification_server/src/models/system"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -56,7 +57,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.mu.Lock()
 	if s.server != nil {
 		s.mu.Unlock()
-		return errors.New("grpc server already started")
+		return &modelsystem.ErrGRPCServerAlreadyStarted
 	}
 
 	lis, err := net.Listen("tcp", s.opts.Address)

@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
 	interfaces "certification_server/src/interfaces/auth"
 	authmodel "certification_server/src/models/auth"
+	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
 
 	"github.com/google/uuid"
@@ -44,10 +44,10 @@ func (s *SessionService) CreateSession(
 	ctx context.Context, req *authmodel.SessionIssueRequest) (*authmodel.Session, error) {
 
 	if req == nil {
-		return nil, fmt.Errorf("session issue request is nil")
+		return nil, &modelsystem.ErrSessionIssueRequestNil
 	}
 	if req.Principal.PrincipalID() == "" {
-		return nil, fmt.Errorf("principal is required")
+		return nil, &modelsystem.ErrPrincipalRequired
 	}
 
 	now := time.Now()
@@ -88,7 +88,7 @@ func (s *SessionService) CreateSession(
 	s.byPrincipal[session.PrincipalID][session.ID] = session
 	s.mu.Unlock()
 
-	_ = s.persistSession(ctx, session)
+	// 会话属于运行时状态，默认仅写缓存，不做数据库持久化。
 	_ = s.cacheSession(ctx, session)
 
 	return cloneSession(session), nil
@@ -111,16 +111,8 @@ func (s *SessionService) GetSession(ctx context.Context, sessionID string) (*aut
 			s.trackSession(cached)
 		}
 	}
-	if session == nil && s.mysql != nil {
-		dbSession, dbErr := s.loadSessionFromDB(ctx, id)
-		if dbErr == nil && dbSession != nil {
-			session = dbSession
-			s.trackSession(dbSession)
-			_ = s.cacheSession(ctx, dbSession)
-		}
-	}
 	if session == nil {
-		return nil, fmt.Errorf("session not found")
+		return nil, &modelsystem.ErrSessionNotFound
 	}
 
 	return cloneSession(session), nil
@@ -142,10 +134,10 @@ func (s *SessionService) TouchSession(
 
 	session := s.byID[id]
 	if session == nil {
-		return fmt.Errorf("session not found")
+		return &modelsystem.ErrSessionNotFound
 	}
 	if session.Status != authmodel.SessionActive {
-		return fmt.Errorf("session is not active")
+		return &modelsystem.ErrSessionNotActive
 	}
 
 	if meta.SourceIP != "" {
@@ -164,7 +156,6 @@ func (s *SessionService) TouchSession(
 	session.LastSeenAt = now
 	session.UpdatedAt = now
 	session.Version++
-	_ = s.persistSession(ctx, session)
 	_ = s.cacheSession(ctx, session)
 
 	return nil
@@ -175,26 +166,33 @@ func (s *SessionService) ValidateSession(
 	ctx context.Context, req *authmodel.SessionValidateRequest) (*authmodel.Session, error) {
 
 	if req == nil {
-		return nil, fmt.Errorf("session validate request is nil")
+		return nil, &modelsystem.ErrSessionValidateRequestNil
 	}
 
 	s.mu.RLock()
 	session := s.byID[req.SessionID]
 	s.mu.RUnlock()
+	if session == nil && s.redis != nil {
+		cached, cacheErr := s.loadSessionFromCache(ctx, req.SessionID)
+		if cacheErr == nil && cached != nil {
+			session = cached
+			s.trackSession(cached)
+		}
+	}
 	if session == nil {
-		return nil, fmt.Errorf("session not found")
+		return nil, &modelsystem.ErrSessionNotFound
 	}
 	if req.PrincipalID != "" && req.PrincipalID != session.PrincipalID {
-		return nil, fmt.Errorf("session principal mismatch")
+		return nil, &modelsystem.ErrSessionPrincipalMismatch
 	}
 	if req.RequireActive && session.Status != authmodel.SessionActive {
-		return nil, fmt.Errorf("session is not active")
+		return nil, &modelsystem.ErrSessionNotActive
 	}
 	if req.MinVersion > 0 && session.Version < req.MinVersion {
-		return nil, fmt.Errorf("session version is stale")
+		return nil, &modelsystem.ErrSessionVersionStale
 	}
 	if time.Now().After(session.ExpiresAt) {
-		return nil, fmt.Errorf("session expired")
+		return nil, &modelsystem.ErrSessionExpired
 	}
 
 	return cloneSession(session), nil
@@ -203,7 +201,7 @@ func (s *SessionService) ValidateSession(
 // RevokeSession 根据会话ID撤销会话。
 func (s *SessionService) RevokeSession(ctx context.Context, req *authmodel.SessionRevokeRequest) error {
 	if req == nil {
-		return fmt.Errorf("session revoke request is nil")
+		return &modelsystem.ErrSessionRevokeRequestNil
 	}
 
 	s.mu.Lock()
@@ -217,7 +215,6 @@ func (s *SessionService) RevokeSession(ctx context.Context, req *authmodel.Sessi
 	session.RevokedAt = time.Now()
 	session.UpdatedAt = time.Now()
 	session.Version++
-	_ = s.persistSession(ctx, session)
 	_ = s.cacheSession(ctx, session)
 
 	return nil
@@ -228,7 +225,7 @@ func (s *SessionService) RevokePrincipalSessions(
 	ctx context.Context, principalID string, reason string, revokedBy string) error {
 
 	if principalID == "" {
-		return fmt.Errorf("principal id is required")
+		return &modelsystem.ErrPrincipalIDRequired
 	}
 
 	s.mu.Lock()
@@ -241,7 +238,6 @@ func (s *SessionService) RevokePrincipalSessions(
 		session.RevokedAt = now
 		session.UpdatedAt = now
 		session.Version++
-		_ = s.persistSession(ctx, session)
 		_ = s.cacheSession(ctx, session)
 	}
 
@@ -327,7 +323,7 @@ func (s *SessionService) cacheSession(ctx context.Context, session *authmodel.Se
 
 func (s *SessionService) loadSessionFromCache(ctx context.Context, id uuid.UUID) (*authmodel.Session, error) {
 	if s.redis == nil {
-		return nil, fmt.Errorf("redis not configured")
+		return nil, &modelsystem.ErrRedisNotConfigured
 	}
 	str, err := s.redis.Get(ctx, "auth:session:id:"+id.String())
 	if err != nil {
@@ -345,7 +341,7 @@ func (s *SessionService) loadSessionFromCache(ctx context.Context, id uuid.UUID)
 
 func (s *SessionService) loadSessionFromDB(ctx context.Context, id uuid.UUID) (*authmodel.Session, error) {
 	if s.mysql == nil {
-		return nil, fmt.Errorf("mysql not configured")
+		return nil, &modelsystem.ErrMySQLNotConfigured
 	}
 	var row sessionRow
 	err := s.mysql.Get(ctx, &row, `

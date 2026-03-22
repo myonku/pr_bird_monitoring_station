@@ -16,9 +16,10 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
+
+	modelsystem "gateway/src/models/system"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -49,7 +50,7 @@ func (c *CryptoUtils) DeriveRandomSymmetricKey(keySize KeySize) (string, error) 
 // DeriveRandomSymmetricKeyBytes 生成一个确定长度的随机的 AES 对称密钥，返回原始字节切片形式。
 func (c *CryptoUtils) DeriveRandomSymmetricKeyBytes(keySize KeySize) ([]byte, error) {
 	if keySize != KeySizeAES128 && keySize != KeySizeAES256 {
-		return nil, fmt.Errorf("unsupported symmetric key size: %d", keySize)
+		return nil, fmt.Errorf("%w: %d", &modelsystem.ErrUnsupportedSymmetricKeySize, keySize)
 	}
 
 	buf := make([]byte, int(keySize))
@@ -75,7 +76,7 @@ func (c *CryptoUtils) DeriveRandomAsymmetricKey(keySize KeySize) (string, string
 // 返回 X.509/SPKI 格式的公钥和 PKCS#8 格式的私钥，均为原始字节切片形式。
 func (c *CryptoUtils) DeriveRandomAsymmetricKeyBytes(keySize KeySize) ([]byte, []byte, error) {
 	if keySize != KeySizeRSA2048 && keySize != KeySizeRSA4096 {
-		return nil, nil, fmt.Errorf("unsupported asymmetric key size: %d", keySize)
+		return nil, nil, fmt.Errorf("%w: %d", &modelsystem.ErrUnsupportedAsymmetricKeySize, keySize)
 	}
 
 	priv, err := rsa.GenerateKey(rand.Reader, int(keySize))
@@ -161,7 +162,7 @@ func (c *CryptoUtils) DecryptWithSymmetricKey(cipherText string, key []byte) (st
 	}
 
 	if len(raw) < gcm.NonceSize() {
-		return "", errors.New("invalid ciphertext length")
+		return "", &modelsystem.ErrInvalidCiphertextLength
 	}
 
 	nonce := raw[:gcm.NonceSize()]
@@ -193,7 +194,7 @@ func (c *CryptoUtils) DecryptWithSymmetricKeyAndAAD(cipherText string, key []byt
 	}
 
 	if len(raw) < gcm.NonceSize() {
-		return "", errors.New("invalid ciphertext length")
+		return "", &modelsystem.ErrInvalidCiphertextLength
 	}
 
 	nonce := raw[:gcm.NonceSize()]
@@ -223,7 +224,7 @@ func (c *CryptoUtils) EncryptWithCipherSuite(cipherSuite string, plainText strin
 		out := append(nonce, cipherBytes...)
 		return base64.StdEncoding.EncodeToString(out), nil
 	default:
-		return "", fmt.Errorf("unsupported cipher suite: %s", cipherSuite)
+		return "", fmt.Errorf("%w: %s", &modelsystem.ErrUnsupportedCipherSuite, cipherSuite)
 	}
 }
 
@@ -242,7 +243,7 @@ func (c *CryptoUtils) DecryptWithCipherSuite(cipherSuite string, cipherText stri
 			return "", err
 		}
 		if len(raw) < chacha20poly1305.NonceSizeX {
-			return "", errors.New("invalid ciphertext length")
+			return "", &modelsystem.ErrInvalidCiphertextLength
 		}
 		nonce := raw[:chacha20poly1305.NonceSizeX]
 		cipherBytes := raw[chacha20poly1305.NonceSizeX:]
@@ -252,7 +253,7 @@ func (c *CryptoUtils) DecryptWithCipherSuite(cipherSuite string, cipherText stri
 		}
 		return string(plain), nil
 	default:
-		return "", fmt.Errorf("unsupported cipher suite: %s", cipherSuite)
+		return "", fmt.Errorf("%w: %s", &modelsystem.ErrUnsupportedCipherSuite, cipherSuite)
 	}
 }
 
@@ -260,7 +261,7 @@ func (c *CryptoUtils) DecryptWithCipherSuite(cipherSuite string, cipherText stri
 func (c *CryptoUtils) EncryptWithPublicKey(plainText string, publicKey []byte) (string, error) {
 	block, _ := pem.Decode(publicKey)
 	if block == nil {
-		return "", errors.New("invalid public key pem")
+		return "", &modelsystem.ErrInvalidPublicKeyPEM
 	}
 
 	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
@@ -270,7 +271,7 @@ func (c *CryptoUtils) EncryptWithPublicKey(plainText string, publicKey []byte) (
 
 	rsaPub, ok := parsed.(*rsa.PublicKey)
 	if !ok {
-		return "", errors.New("public key is not rsa")
+		return "", &modelsystem.ErrPublicKeyNotRSA
 	}
 
 	enc, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, rsaPub, []byte(plainText), nil)
@@ -290,7 +291,7 @@ func (c *CryptoUtils) DecryptWithPrivateKey(cipherText string, privateKey []byte
 
 	block, _ := pem.Decode(privateKey)
 	if block == nil {
-		return "", errors.New("invalid private key pem")
+		return "", &modelsystem.ErrInvalidPrivateKeyPEM
 	}
 
 	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
@@ -300,7 +301,7 @@ func (c *CryptoUtils) DecryptWithPrivateKey(cipherText string, privateKey []byte
 
 	rsaPriv, ok := parsed.(*rsa.PrivateKey)
 	if !ok {
-		return "", errors.New("private key is not rsa")
+		return "", &modelsystem.ErrPrivateKeyNotRSA
 	}
 
 	plain, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, rsaPriv, raw, nil)
@@ -322,14 +323,14 @@ func (c *CryptoUtils) SignByAlgorithm(algorithm string, message []byte, privateK
 	case "ed25519":
 		priv, ok := privAny.(ed25519.PrivateKey)
 		if !ok {
-			return "", errors.New("private key is not ed25519")
+			return "", &modelsystem.ErrPrivateKeyNotEd25519
 		}
 		sig := ed25519.Sign(priv, message)
 		return base64.StdEncoding.EncodeToString(sig), nil
 	case "ecdsa_p256_sha256":
 		priv, ok := privAny.(*ecdsa.PrivateKey)
 		if !ok {
-			return "", errors.New("private key is not ecdsa")
+			return "", &modelsystem.ErrPrivateKeyNotECDSA
 		}
 		h := sha256.Sum256(message)
 		sigDER, signErr := ecdsa.SignASN1(rand.Reader, priv, h[:])
@@ -340,7 +341,7 @@ func (c *CryptoUtils) SignByAlgorithm(algorithm string, message []byte, privateK
 	case "rsa_pss_sha256":
 		priv, ok := privAny.(*rsa.PrivateKey)
 		if !ok {
-			return "", errors.New("private key is not rsa")
+			return "", &modelsystem.ErrPrivateKeyNotRSA
 		}
 		h := sha256.Sum256(message)
 		sig, signErr := rsa.SignPSS(rand.Reader, priv, crypto.SHA256, h[:], nil)
@@ -349,7 +350,7 @@ func (c *CryptoUtils) SignByAlgorithm(algorithm string, message []byte, privateK
 		}
 		return base64.StdEncoding.EncodeToString(sig), nil
 	default:
-		return "", fmt.Errorf("unsupported signature algorithm: %s", algorithm)
+		return "", fmt.Errorf("%w: %s", &modelsystem.ErrUnsupportedSignatureAlgorithm, algorithm)
 	}
 }
 
@@ -369,31 +370,31 @@ func (c *CryptoUtils) VerifyByAlgorithm(algorithm string, message []byte, signat
 	case "ed25519":
 		pub, ok := pubAny.(ed25519.PublicKey)
 		if !ok {
-			return errors.New("public key is not ed25519")
+			return &modelsystem.ErrPublicKeyNotEd25519
 		}
 		if !ed25519.Verify(pub, message, sig) {
-			return errors.New("signature verification failed")
+			return &modelsystem.ErrSignatureVerificationFailed
 		}
 		return nil
 	case "ecdsa_p256_sha256":
 		pub, ok := pubAny.(*ecdsa.PublicKey)
 		if !ok {
-			return errors.New("public key is not ecdsa")
+			return &modelsystem.ErrPublicKeyNotECDSA
 		}
 		h := sha256.Sum256(message)
 		if !ecdsa.VerifyASN1(pub, h[:], sig) {
-			return errors.New("signature verification failed")
+			return &modelsystem.ErrSignatureVerificationFailed
 		}
 		return nil
 	case "rsa_pss_sha256":
 		pub, ok := pubAny.(*rsa.PublicKey)
 		if !ok {
-			return errors.New("public key is not rsa")
+			return &modelsystem.ErrPublicKeyNotRSA
 		}
 		h := sha256.Sum256(message)
 		return rsa.VerifyPSS(pub, crypto.SHA256, h[:], sig, nil)
 	default:
-		return fmt.Errorf("unsupported signature algorithm: %s", algorithm)
+		return fmt.Errorf("%w: %s", &modelsystem.ErrUnsupportedSignatureAlgorithm, algorithm)
 	}
 }
 
@@ -434,7 +435,7 @@ func (c *CryptoUtils) DeriveSessionKeyByHandshake(
 func parsePrivateKey(privateKeyPEM []byte) (any, error) {
 	block, _ := pem.Decode(privateKeyPEM)
 	if block == nil {
-		return nil, errors.New("invalid private key pem")
+		return nil, &modelsystem.ErrInvalidPrivateKeyPEM
 	}
 
 	if keyAny, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
@@ -455,13 +456,13 @@ func parsePrivateKey(privateKeyPEM []byte) (any, error) {
 		return ecKey, nil
 	}
 
-	return nil, errors.New("unsupported private key format")
+	return nil, &modelsystem.ErrUnsupportedPrivateKeyFormat
 }
 
 func parsePublicKey(publicKeyPEM []byte) (any, error) {
 	block, _ := pem.Decode(publicKeyPEM)
 	if block == nil {
-		return nil, errors.New("invalid public key pem")
+		return nil, &modelsystem.ErrInvalidPublicKeyPEM
 	}
 	keyAny, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
@@ -471,6 +472,6 @@ func parsePublicKey(publicKeyPEM []byte) (any, error) {
 	case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey:
 		return key, nil
 	default:
-		return nil, errors.New("unsupported public key type")
+		return nil, &modelsystem.ErrUnsupportedPublicKeyType
 	}
 }

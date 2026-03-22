@@ -2,7 +2,8 @@ package app
 
 import (
 	"context"
-	"errors"
+
+	modelsystem "certification_server/src/models/system"
 )
 
 // Lifecycle 定义认证中心通用行为生命周期。
@@ -26,7 +27,7 @@ type CertificationApp struct {
 // Run 启动认证中心应用。
 func (a *CertificationApp) Run(ctx context.Context) error {
 	if a == nil || a.Lifecycle == nil || a.GRPC == nil {
-		return errors.New("certification app dependencies are required")
+		return &modelsystem.ErrAppDependenciesRequired
 	}
 
 	if err := a.Lifecycle.Boot(ctx); err != nil {
@@ -38,7 +39,7 @@ func (a *CertificationApp) Run(ctx context.Context) error {
 // Stop 关闭认证中心应用。
 func (a *CertificationApp) Stop(ctx context.Context) error {
 	if a == nil || a.Lifecycle == nil || a.GRPC == nil {
-		return errors.New("certification app dependencies are required")
+		return &modelsystem.ErrAppDependenciesRequired
 	}
 	if err := a.GRPC.Stop(ctx); err != nil {
 		return err

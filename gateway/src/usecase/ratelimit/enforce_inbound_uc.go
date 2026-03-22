@@ -2,14 +2,14 @@ package ratelimit
 
 import (
 	"context"
-	"errors"
 
 	ratelimitif "gateway/src/interfaces/ratelimit"
 	authmodel "gateway/src/models/auth"
+	modelsystem "gateway/src/models/system"
 )
 
 // ErrRateLimited 表示请求被限流拒绝。
-var ErrRateLimited = errors.New("request is rate limited")
+var ErrRateLimited = &modelsystem.ErrRequestRateLimited
 
 // EnforceInboundRequest 是入站限流用例输入。
 type EnforceInboundRequest struct {
@@ -28,10 +28,10 @@ func (u *EnforceInboundUsecase) Execute(
 	req *EnforceInboundRequest,
 ) (*authmodel.RateLimitDecision, error) {
 	if u == nil || u.Factory == nil || u.Limiter == nil {
-		return nil, errors.New("ratelimit dependencies are required")
+		return nil, &modelsystem.ErrRateLimitDependenciesRequired
 	}
 	if req == nil || req.Input == nil {
-		return nil, errors.New("ratelimit request is invalid")
+		return nil, &modelsystem.ErrRateLimitRequestInvalid
 	}
 
 	descriptor, err := u.Factory.Build(req.Input)

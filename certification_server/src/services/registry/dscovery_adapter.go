@@ -4,10 +4,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	registryif "gateway/src/interfaces/registry"
-	registrymodel "gateway/src/models/registry"
-	modelsystem "gateway/src/models/system"
-	"gateway/src/utils"
+	registryif "certification_server/src/interfaces/registry"
+	registrymodel "certification_server/src/models/registry"
+	modelsystem "certification_server/src/models/system"
+	"certification_server/src/utils"
 )
 
 var _ registryif.IDiscoveryAdapter = (*DiscoveryAdapter)(nil)
@@ -43,7 +43,7 @@ func (d *DiscoveryAdapter) ChooseEndpoint(
 		return nil, &modelsystem.ErrNilRegistryClient
 	}
 	if serviceName == "" {
-		return nil, &modelsystem.ErrServiceNameRequired
+		return nil, &modelsystem.ErrNoAvaliableInstances
 	}
 
 	instances, err := d.registry.GetServiceInstances(serviceName)

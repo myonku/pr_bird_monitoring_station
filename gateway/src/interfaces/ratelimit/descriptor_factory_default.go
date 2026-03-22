@@ -1,8 +1,8 @@
 package ratelimit
 
 import (
-	"errors"
 	authmodel "gateway/src/models/auth"
+	modelsystem "gateway/src/models/system"
 )
 
 // DefaultDescriptorFactory 是协议无关的默认描述符构建器。
@@ -11,7 +11,7 @@ type DefaultDescriptorFactory struct{}
 // Build 将 InboundRateLimitInput 转为统一描述符。
 func (f *DefaultDescriptorFactory) Build(input *InboundRateLimitInput) (*authmodel.RateLimitDescriptor, error) {
 	if input == nil {
-		return nil, errors.New("inbound ratelimit input is nil")
+		return nil, &modelsystem.ErrInboundRateLimitInputNil
 	}
 
 	descriptor := &authmodel.RateLimitDescriptor{

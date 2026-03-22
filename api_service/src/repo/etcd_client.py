@@ -8,7 +8,7 @@ from msgspec import json
 
 from src.models.registry.instance import ServiceInstance
 from src.models.sys.config import ProjectConfig
-from utils.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 from etcd3 import etcdrpc as _etcdrpc
 
 # 将 etcdrpc 标注为 Any，避免由缺失类型信息引起的静态检查误报

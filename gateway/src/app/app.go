@@ -2,7 +2,8 @@ package app
 
 import (
 	"context"
-	"errors"
+
+	modelsystem "gateway/src/models/system"
 )
 
 // Lifecycle 定义网关通用行为生命周期。
@@ -26,7 +27,7 @@ type GatewayApp struct {
 // Run 启动网关应用。
 func (a *GatewayApp) Run(ctx context.Context) error {
 	if a == nil || a.Lifecycle == nil || a.HTTP == nil {
-		return errors.New("gateway app dependencies are required")
+		return &modelsystem.ErrGatewayAppDependenciesRequired
 	}
 
 	if err := a.Lifecycle.Boot(ctx); err != nil {
@@ -38,7 +39,7 @@ func (a *GatewayApp) Run(ctx context.Context) error {
 // Stop 关闭网关应用。
 func (a *GatewayApp) Stop(ctx context.Context) error {
 	if a == nil || a.Lifecycle == nil || a.HTTP == nil {
-		return errors.New("gateway app dependencies are required")
+		return &modelsystem.ErrGatewayAppDependenciesRequired
 	}
 	if err := a.HTTP.Stop(ctx); err != nil {
 		return err

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from pymongo import AsyncMongoClient
 
 from src.models.sys.config import ProjectConfig
-from utils.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 
 
 class MongoDBClient:

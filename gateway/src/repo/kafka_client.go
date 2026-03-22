@@ -76,12 +76,12 @@ func (c *KafkaClient) Close() error {
 	var firstErr error
 	for key, writer := range c.writers {
 		if err := writer.Close(); err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("close writer %s: %w", key, err)
+			firstErr = fmt.Errorf("%w: %s: %v", &modelsystem.ErrKafkaCloseWriterFailed, key, err)
 		}
 	}
 	for key, reader := range c.readers {
 		if err := reader.Close(); err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("close reader %s: %w", key, err)
+			firstErr = fmt.Errorf("%w: %s: %v", &modelsystem.ErrKafkaCloseReaderFailed, key, err)
 		}
 	}
 

@@ -2,12 +2,12 @@ package outbound
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	commif "gateway/src/interfaces/communication"
+	modelsystem "gateway/src/models/system"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -40,13 +40,13 @@ func (f *GRPCOutboundForwarder) Forward(
 	security *commif.OutboundSecurityContext,
 ) (*commif.OutboundForwardResponse, error) {
 	if f == nil || f.ConnProvider == nil || f.Codec == nil {
-		return nil, errors.New("grpc outbound dependencies are required")
+		return nil, &modelsystem.ErrGRPCOutboundDependenciesRequired
 	}
 	if req == nil {
-		return nil, errors.New("forward request is nil")
+		return nil, &modelsystem.ErrForwardRequestNil
 	}
 	if req.Endpoint == "" {
-		return nil, errors.New("endpoint is required")
+		return nil, &modelsystem.ErrEndpointRequired
 	}
 
 	fullMethod := req.RPCMethod
@@ -54,7 +54,7 @@ func (f *GRPCOutboundForwarder) Forward(
 		fullMethod = req.Method
 	}
 	if fullMethod == "" {
-		return nil, errors.New("grpc method is required")
+		return nil, &modelsystem.ErrGRPCMethodRequired
 	}
 
 	conn, err := f.ConnProvider.GetConn(ctx, req.Endpoint)
@@ -77,7 +77,7 @@ func (f *GRPCOutboundForwarder) Forward(
 
 	header := metadata.MD{}
 	if err = conn.Invoke(callCtx, fullMethod, invokeReq, invokeResp, grpc.Header(&header)); err != nil {
-		return nil, fmt.Errorf("grpc invoke failed: %w", err)
+		return nil, fmt.Errorf("%w: %v", &modelsystem.ErrGRPCInvokeFailed, err)
 	}
 
 	return f.Codec.BuildResponse(invokeResp, flattenMetadata(header))

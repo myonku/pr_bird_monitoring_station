@@ -4,7 +4,7 @@ from typing import Any
 
 import aiomysql
 from src.models.sys.config import MySQLConfig, ProjectConfig
-from utils.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 
 
 
@@ -36,6 +36,30 @@ class MySQLClient:
             kv[k.strip().lower()] = v.strip()
         return kv
 
+    async def _connect_single(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+        db: str,
+        **pool_kwargs: Any,
+    ) -> None:
+        pool_defaults: dict[str, Any] = {
+            "host": host,
+            "port": port,
+            "user": user,
+            "password": password,
+            "db": db,
+            "autocommit": False,
+            "minsize": 1,
+            "maxsize": 10,
+            "connect_timeout": 5,
+            "charset": "utf8mb4",
+        }
+        pool_defaults.update(pool_kwargs)
+        self.pool = await aiomysql.create_pool(**pool_defaults)
+
     async def connect(self, **pool_kwargs: Any):
         """基于配置连接：
         - 若提供多个 URI（HOSTS），按顺序尝试连接到第一个可用实例。
@@ -65,7 +89,14 @@ class MySQLClient:
             port_s = kv.get("port") or ""
             try:
                 port = int(port_s) if port_s else (mysql_cfg.PORT or 3306)
-                await self.connect(host=host, port=port, user=user, password=password, db=db, **pool_kwargs)
+                await self._connect_single(
+                    host=host,
+                    port=port,
+                    user=user,
+                    password=password,
+                    db=db,
+                    **pool_kwargs,
+                )
                 return
             except Exception as e:  # 尝试下一个
                 last_err = e

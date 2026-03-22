@@ -11,6 +11,7 @@ import (
 	interfaces "certification_server/src/interfaces/auth"
 	commseciface "certification_server/src/interfaces/commsec"
 	authmodel "certification_server/src/models/auth"
+	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
 	"certification_server/src/utils"
 
@@ -65,10 +66,10 @@ func (s *BootstrapService) InitChallenge(
 	ctx context.Context, req *authmodel.ChallengeRequest) (*authmodel.ChallengePayload, error) {
 
 	if req == nil {
-		return nil, fmt.Errorf("challenge request is nil")
+		return nil, &modelsystem.ErrChallengeRequestNil
 	}
 	if req.EntityID == "" || req.KeyID == "" {
-		return nil, fmt.Errorf("entity id and key id are required")
+		return nil, &modelsystem.ErrEntityIDAndKeyIDRequired
 	}
 
 	ttlSec := req.TTLSec
@@ -95,7 +96,7 @@ func (s *BootstrapService) InitChallenge(
 	s.challenges[payload.ChallengeID] = payload
 	s.stages[principalID] = authmodel.BootstrapStageChallenging
 	s.mu.Unlock()
-	_ = s.persistChallenge(ctx, payload)
+	// challenge/stage 属于短期冷启动状态，默认仅缓存。
 	_ = s.cacheChallenge(ctx, payload)
 	_ = s.persistStage(ctx, principalID, authmodel.BootstrapStageChallenging)
 
@@ -107,7 +108,7 @@ func (s *BootstrapService) AuthenticateBootstrap(
 	ctx context.Context, req *authmodel.BootstrapAuthRequest) (*authmodel.BootstrapAuthResult, error) {
 
 	if req == nil {
-		return nil, fmt.Errorf("bootstrap auth request is nil")
+		return nil, &modelsystem.ErrBootstrapAuthRequestNil
 	}
 
 	s.mu.RLock()
@@ -119,20 +120,14 @@ func (s *BootstrapService) AuthenticateBootstrap(
 			stored = cached
 		}
 	}
-	if stored == nil && s.mysql != nil {
-		dbPayload, dbErr := s.loadChallengeFromDB(ctx, req.Challenge.ChallengeID)
-		if dbErr == nil {
-			stored = dbPayload
-		}
-	}
 	if stored == nil {
-		return nil, fmt.Errorf("challenge not found")
+		return nil, &modelsystem.ErrChallengeNotFound
 	}
 	if time.Now().After(stored.ExpiresAt) {
-		return nil, fmt.Errorf("challenge expired")
+		return nil, &modelsystem.ErrChallengeExpired
 	}
 	if req.Signed.ChallengeID != stored.ChallengeID || req.Signed.KeyID != stored.KeyID {
-		return nil, fmt.Errorf("challenge response mismatch")
+		return nil, &modelsystem.ErrChallengeResponseMismatch
 	}
 
 	if s.keySvc != nil {
@@ -141,18 +136,18 @@ func (s *BootstrapService) AuthenticateBootstrap(
 			return nil, err
 		}
 		if !lookup.Found {
-			return nil, fmt.Errorf("public key not found for key id")
+			return nil, &modelsystem.ErrPublicKeyNotFoundForKeyID
 		}
 		sigAlgo := req.Signed.SignatureAlgorithm
 		if sigAlgo == "" {
 			sigAlgo = lookup.Key.SignatureAlgorithm
 		}
 		if sigAlgo == "" {
-			return nil, fmt.Errorf("signature algorithm is required")
+			return nil, &modelsystem.ErrSignatureAlgorithmRequired
 		}
 		if req.Signed.SignatureAlgorithm != "" && lookup.Key.SignatureAlgorithm != "" &&
 			req.Signed.SignatureAlgorithm != lookup.Key.SignatureAlgorithm {
-			return nil, fmt.Errorf("signature algorithm mismatch with key catalog")
+			return nil, &modelsystem.ErrSignatureAlgorithmMismatch
 		}
 		signPayload := buildBootstrapSignaturePayload(stored)
 		if verifyErr := s.crypto.VerifyByAlgorithm(
@@ -173,7 +168,7 @@ func (s *BootstrapService) AuthenticateBootstrap(
 	_ = s.persistStage(ctx, principalID, authmodel.BootstrapStageAuthenticating)
 
 	if s.sessionSvc == nil || s.tokenSvc == nil {
-		return nil, fmt.Errorf("bootstrap dependencies are not ready")
+		return nil, &modelsystem.ErrBootstrapDepsNotReady
 	}
 
 	session, err := s.sessionSvc.CreateSession(ctx, &authmodel.SessionIssueRequest{
@@ -244,7 +239,7 @@ func (s *BootstrapService) GetBootstrapStage(
 	ctx context.Context, entityType authmodel.EntityType, entityID string) (authmodel.BootstrapStage, error) {
 
 	if entityID == "" {
-		return authmodel.BootstrapStageUninitialized, fmt.Errorf("entity id is required")
+		return authmodel.BootstrapStageUninitialized, &modelsystem.ErrEntityIDRequired
 	}
 
 	principalID := authmodel.Principal{EntityType: entityType, EntityID: entityID}.PrincipalID()
@@ -259,13 +254,6 @@ func (s *BootstrapService) GetBootstrapStage(
 			ok = true
 		}
 	}
-	if !ok && s.mysql != nil {
-		dbStage, dbErr := s.loadStageFromDB(ctx, principalID)
-		if dbErr == nil && dbStage != "" {
-			stage = dbStage
-			ok = true
-		}
-	}
 	if !ok {
 		return authmodel.BootstrapStageUninitialized, nil
 	}
@@ -274,18 +262,10 @@ func (s *BootstrapService) GetBootstrapStage(
 }
 
 func (s *BootstrapService) persistChallenge(ctx context.Context, payload *authmodel.ChallengePayload) error {
-	if s.mysql == nil || payload == nil {
+	if payload == nil {
 		return nil
 	}
-	_, err := s.mysql.Exec(ctx, `
-INSERT INTO auth_bootstrap_challenges(
- challenge_id, issuer, audience, entity_type, entity_id, key_id, nonce, issued_at, expires_at
-) VALUES(?,?,?,?,?,?,?,?,?)
-ON DUPLICATE KEY UPDATE
- issuer=VALUES(issuer), audience=VALUES(audience), entity_type=VALUES(entity_type), entity_id=VALUES(entity_id),
- key_id=VALUES(key_id), nonce=VALUES(nonce), issued_at=VALUES(issued_at), expires_at=VALUES(expires_at)
-`, payload.ChallengeID.String(), payload.Issuer, payload.Audience, string(payload.EntityType), payload.EntityID, payload.KeyID, payload.Nonce, payload.IssuedAt, payload.ExpiresAt)
-	return err
+	return nil
 }
 
 func (s *BootstrapService) cacheChallenge(ctx context.Context, payload *authmodel.ChallengePayload) error {
@@ -305,7 +285,7 @@ func (s *BootstrapService) cacheChallenge(ctx context.Context, payload *authmode
 
 func (s *BootstrapService) loadChallengeFromCache(ctx context.Context, challengeID uuid.UUID) (*authmodel.ChallengePayload, error) {
 	if s.redis == nil {
-		return nil, fmt.Errorf("redis not configured")
+		return nil, &modelsystem.ErrRedisNotConfigured
 	}
 	raw, err := s.redis.Get(ctx, "auth:bootstrap:challenge:"+challengeID.String())
 	if err != nil {
@@ -322,50 +302,14 @@ func (s *BootstrapService) loadChallengeFromCache(ctx context.Context, challenge
 }
 
 func (s *BootstrapService) loadChallengeFromDB(ctx context.Context, challengeID uuid.UUID) (*authmodel.ChallengePayload, error) {
-	if s.mysql == nil {
-		return nil, fmt.Errorf("mysql not configured")
-	}
-	var row struct {
-		ChallengeID string    `db:"challenge_id"`
-		Issuer      string    `db:"issuer"`
-		Audience    string    `db:"audience"`
-		EntityType  string    `db:"entity_type"`
-		EntityID    string    `db:"entity_id"`
-		KeyID       string    `db:"key_id"`
-		Nonce       string    `db:"nonce"`
-		IssuedAt    time.Time `db:"issued_at"`
-		ExpiresAt   time.Time `db:"expires_at"`
-	}
-	err := s.mysql.Get(ctx, &row, `
-SELECT challenge_id, issuer, audience, entity_type, entity_id, key_id, nonce, issued_at, expires_at
-FROM auth_bootstrap_challenges WHERE challenge_id = ? LIMIT 1
-`, challengeID.String())
-	if err != nil {
-		if repo.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	id, _ := uuid.Parse(row.ChallengeID)
-	return &authmodel.ChallengePayload{
-		ChallengeID: id,
-		Issuer:      row.Issuer,
-		Audience:    row.Audience,
-		EntityType:  authmodel.EntityType(row.EntityType),
-		EntityID:    row.EntityID,
-		KeyID:       row.KeyID,
-		Nonce:       row.Nonce,
-		IssuedAt:    row.IssuedAt,
-		ExpiresAt:   row.ExpiresAt,
-	}, nil
+	_ = ctx
+	_ = challengeID
+	return nil, nil
 }
 
 func (s *BootstrapService) deleteChallenge(ctx context.Context, challengeID uuid.UUID) error {
 	if s.redis != nil {
 		_, _ = s.redis.Del(ctx, "auth:bootstrap:challenge:"+challengeID.String())
-	}
-	if s.mysql != nil {
-		_, _ = s.mysql.Exec(ctx, `DELETE FROM auth_bootstrap_challenges WHERE challenge_id = ?`, challengeID.String())
 	}
 	return nil
 }
@@ -377,19 +321,12 @@ func (s *BootstrapService) persistStage(ctx context.Context, principalID string,
 	if s.redis != nil {
 		_ = s.redis.Set(ctx, "auth:bootstrap:stage:"+principalID, string(stage), 24*time.Hour)
 	}
-	if s.mysql != nil {
-		_, _ = s.mysql.Exec(ctx, `
-INSERT INTO auth_bootstrap_stages(principal_id, stage, updated_at)
-VALUES(?,?,?)
-ON DUPLICATE KEY UPDATE stage=VALUES(stage), updated_at=VALUES(updated_at)
-`, principalID, string(stage), time.Now())
-	}
 	return nil
 }
 
 func (s *BootstrapService) loadStageFromCache(ctx context.Context, principalID string) (authmodel.BootstrapStage, error) {
 	if s.redis == nil {
-		return "", fmt.Errorf("redis not configured")
+		return "", &modelsystem.ErrRedisNotConfigured
 	}
 	raw, err := s.redis.Get(ctx, "auth:bootstrap:stage:"+principalID)
 	if err != nil {
@@ -402,20 +339,9 @@ func (s *BootstrapService) loadStageFromCache(ctx context.Context, principalID s
 }
 
 func (s *BootstrapService) loadStageFromDB(ctx context.Context, principalID string) (authmodel.BootstrapStage, error) {
-	if s.mysql == nil {
-		return "", fmt.Errorf("mysql not configured")
-	}
-	var row struct {
-		Stage string `db:"stage"`
-	}
-	err := s.mysql.Get(ctx, &row, `SELECT stage FROM auth_bootstrap_stages WHERE principal_id = ? LIMIT 1`, principalID)
-	if err != nil {
-		if repo.IsNotFound(err) {
-			return "", nil
-		}
-		return "", err
-	}
-	return authmodel.BootstrapStage(row.Stage), nil
+	_ = ctx
+	_ = principalID
+	return "", nil
 }
 
 // buildBootstrapSignaturePayload 构建挑战签名的原始载荷，供调用方签名使用。

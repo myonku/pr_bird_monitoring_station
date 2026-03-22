@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	registryif "gateway/src/interfaces/registry"
-	registrymodel "gateway/src/models/registry"
-	modelsystem "gateway/src/models/system"
-	"gateway/src/repo"
+	registryif "certification_server/src/interfaces/registry"
+	registrymodel "certification_server/src/models/registry"
+	modelsystem "certification_server/src/models/system"
+	"certification_server/src/repo"
 
 	"github.com/google/uuid"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -36,7 +36,7 @@ func NewRegistryService(
 	etcdClient *repo.EtcdClient, keyRoot string, opTimeout time.Duration) registryif.IRegistry {
 
 	if keyRoot == "" {
-		keyRoot = "gateway/registry"
+		keyRoot = "certification_server/registry"
 	}
 	if opTimeout <= 0 {
 		opTimeout = 3 * time.Second

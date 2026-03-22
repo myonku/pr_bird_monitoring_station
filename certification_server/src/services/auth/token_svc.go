@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	interfaces "certification_server/src/interfaces/auth"
 	authmodel "certification_server/src/models/auth"
+	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
 
 	"github.com/google/uuid"
@@ -51,10 +53,10 @@ func (s *TokenService) IssueToken(
 	ctx context.Context, req *authmodel.TokenIssueRequest) (*authmodel.IssuedToken, error) {
 
 	if req == nil {
-		return nil, fmt.Errorf("token issue request is nil")
+		return nil, &modelsystem.ErrTokenIssueRequestNil
 	}
 	if req.Principal.PrincipalID() == "" {
-		return nil, fmt.Errorf("principal is required")
+		return nil, &modelsystem.ErrPrincipalRequired
 	}
 
 	now := time.Now()
@@ -138,10 +140,10 @@ func (s *TokenService) IssueTokenBundle(
 ) (*authmodel.TokenBundle, error) {
 
 	if session == nil {
-		return nil, fmt.Errorf("session is nil")
+		return nil, &modelsystem.ErrSessionNil
 	}
 	if req == nil {
-		return nil, fmt.Errorf("token issue request is nil")
+		return nil, &modelsystem.ErrTokenIssueRequestNil
 	}
 
 	common := *req
@@ -185,7 +187,7 @@ func (s *TokenService) RefreshTokenBundle(
 	ctx context.Context, req *authmodel.TokenRefreshRequest) (*authmodel.TokenBundle, error) {
 
 	if req == nil || req.RefreshToken == "" {
-		return nil, fmt.Errorf("refresh token is required")
+		return nil, &modelsystem.ErrRefreshTokenRequired
 	}
 
 	s.mu.RLock()
@@ -214,13 +216,13 @@ func (s *TokenService) RefreshTokenBundle(
 		}
 	}
 	if !ok || record == nil {
-		return nil, fmt.Errorf("refresh token not found")
+		return nil, &modelsystem.ErrRefreshTokenNotFound
 	}
 	if record.Type != authmodel.TokenRefresh {
-		return nil, fmt.Errorf("token is not refresh type")
+		return nil, &modelsystem.ErrTokenNotRefreshType
 	}
 	if record.Status != authmodel.TokenStatusActive || time.Now().After(record.ExpiresAt) {
-		return nil, fmt.Errorf("refresh token is not active")
+		return nil, &modelsystem.ErrRefreshTokenNotActive
 	}
 
 	issueReq := &authmodel.TokenIssueRequest{
@@ -265,7 +267,7 @@ func (s *TokenService) VerifyToken(
 	ctx context.Context, req *authmodel.TokenVerifyRequest) (*authmodel.TokenVerificationResult, error) {
 
 	if req == nil || req.RawToken == "" {
-		return nil, fmt.Errorf("raw token is required")
+		return nil, &modelsystem.ErrRawTokenRequired
 	}
 
 	s.mu.RLock()
@@ -280,7 +282,7 @@ func (s *TokenService) VerifyToken(
 			ok = true
 		}
 	}
-	if (!ok || record == nil) && s.mysql != nil {
+	if (!ok || record == nil) && s.mysql != nil && shouldTryTokenDBByRaw(req.RawToken) {
 		dbRecord, dbClaims, dbErr := s.loadTokenFromDB(ctx, req.RawToken)
 		if dbErr == nil && dbRecord != nil {
 			record = dbRecord
@@ -349,7 +351,7 @@ func (s *TokenService) VerifyToken(
 // RevokeToken 根据令牌ID或令牌家族ID撤销令牌。
 func (s *TokenService) RevokeToken(ctx context.Context, req *authmodel.TokenRevokeRequest) error {
 	if req == nil {
-		return fmt.Errorf("token revoke request is nil")
+		return &modelsystem.ErrTokenRevokeRequestNil
 	}
 
 	if req.FamilyID != uuid.Nil {
@@ -357,7 +359,7 @@ func (s *TokenService) RevokeToken(ctx context.Context, req *authmodel.TokenRevo
 	}
 
 	if req.TokenID == uuid.Nil {
-		return fmt.Errorf("token id or family id is required")
+		return &modelsystem.ErrTokenIDOrFamilyIDRequired
 	}
 
 	s.mu.Lock()
@@ -377,7 +379,7 @@ func (s *TokenService) RevokeToken(ctx context.Context, req *authmodel.TokenRevo
 // RevokeTokenFamily 根据令牌家族ID撤销该家族下的所有令牌。
 func (s *TokenService) RevokeTokenFamily(ctx context.Context, familyID string, revokedBy string) error {
 	if familyID == "" {
-		return fmt.Errorf("family id is required")
+		return &modelsystem.ErrFamilyIDRequired
 	}
 
 	parsed, err := uuid.Parse(familyID)
@@ -435,6 +437,10 @@ func (s *TokenService) persistTokenRecord(
 	ctx context.Context, raw string, record *authmodel.TokenRecord, claims *authmodel.TokenClaims) error {
 
 	if s.mysql == nil || record == nil {
+		return nil
+	}
+	// 仅长期令牌（refresh）落库，短期令牌（access/downstream/service）仅走缓存。
+	if !shouldPersistTokenToDB(record.Type) {
 		return nil
 	}
 
@@ -511,7 +517,7 @@ func (s *TokenService) loadTokenFromCache(
 	ctx context.Context, raw string) (*authmodel.TokenRecord, *authmodel.TokenClaims, error) {
 
 	if s.redis == nil {
-		return nil, nil, fmt.Errorf("redis not configured")
+		return nil, nil, &modelsystem.ErrRedisNotConfigured
 	}
 	str, err := s.redis.Get(ctx, "auth:token:raw:"+raw)
 	if err != nil {
@@ -531,7 +537,7 @@ func (s *TokenService) loadTokenFromDB(
 	ctx context.Context, raw string) (*authmodel.TokenRecord, *authmodel.TokenClaims, error) {
 
 	if s.mysql == nil {
-		return nil, nil, fmt.Errorf("mysql not configured")
+		return nil, nil, &modelsystem.ErrMySQLNotConfigured
 	}
 	var recRow authmodel.TokenRecordRow
 	err := s.mysql.Get(ctx, &recRow, `
@@ -647,4 +653,16 @@ func nullableTime(t time.Time) any {
 		return nil
 	}
 	return t
+}
+
+func shouldPersistTokenToDB(t authmodel.TokenType) bool {
+	return t == authmodel.TokenRefresh
+}
+
+func shouldTryTokenDBByRaw(raw string) bool {
+	parts := strings.SplitN(raw, ".", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	return shouldPersistTokenToDB(authmodel.TokenType(parts[0]))
 }

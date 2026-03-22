@@ -4,27 +4,27 @@ import (
 	"context"
 	"time"
 
-	interfaces "certification_server/src/interfaces/auth"
-	authmodel "certification_server/src/models/auth"
-	commsecmodel "certification_server/src/models/commsec"
-	modelsystem "certification_server/src/models/system"
+	authif "gateway/src/interfaces/auth"
+	authmodel "gateway/src/models/auth"
+	commsecmodel "gateway/src/models/commsec"
+	modelsystem "gateway/src/models/system"
 
 	"github.com/google/uuid"
 )
 
-var _ interfaces.IDownstreamGrantService = (*DownstreamGrantService)(nil)
+var _ authif.IDownstreamGrantClient = (*DownstreamGrantClientService)(nil)
 
-// DownstreamGrantService 负责根据认证上下文签发服务间下游访问授权。
-type DownstreamGrantService struct{}
+// DownstreamGrantClientService 在网关侧组装下游授权上下文。
+type DownstreamGrantClientService struct{}
 
-func NewDownstreamGrantService() *DownstreamGrantService {
-	return &DownstreamGrantService{}
+func NewDownstreamGrantClientService() *DownstreamGrantClientService {
+	return &DownstreamGrantClientService{}
 }
 
-// IssueDownstreamGrant 根据认证上下文和目标服务签发下游访问授权。
-func (s *DownstreamGrantService) IssueDownstreamGrant(
+func (s *DownstreamGrantClientService) IssueDownstreamGrant(
 	ctx context.Context, req *authmodel.DownstreamGrantRequest,
 ) (*authmodel.DownstreamAccessGrant, error) {
+	_ = ctx
 	if req == nil {
 		return nil, &modelsystem.ErrDownstreamGrantRequestNil
 	}
@@ -36,16 +36,17 @@ func (s *DownstreamGrantService) IssueDownstreamGrant(
 	}
 
 	now := time.Now()
-	ttlSec := req.TTLSec
-	if ttlSec <= 0 {
-		ttlSec = 120
+	ttl := req.TTLSec
+	if ttl <= 0 {
+		ttl = 120
 	}
 
-	bindingType := req.BindingType
-	if bindingType == "" {
-		bindingType = commsecmodel.ChannelBindingSession
+	binding := req.BindingType
+	if binding == "" {
 		if req.Identity.SessionID == uuid.Nil {
-			bindingType = commsecmodel.ChannelBindingToken
+			binding = commsecmodel.ChannelBindingToken
+		} else {
+			binding = commsecmodel.ChannelBindingSession
 		}
 	}
 
@@ -56,13 +57,12 @@ func (s *DownstreamGrantService) IssueDownstreamGrant(
 		SessionID:       req.Identity.SessionID,
 		TokenID:         req.Identity.TokenID,
 		PrincipalID:     req.Identity.PrincipalID,
-		BindingType:     bindingType,
+		BindingType:     binding,
 		Scopes:          append([]string(nil), req.Identity.Scopes...),
 		SecureChannelID: req.Identity.SecureChannelID,
 		CipherSuite:     req.Identity.CipherSuite,
 		IssuedAt:        now,
-		ExpiresAt:       now.Add(time.Duration(ttlSec) * time.Second),
+		ExpiresAt:       now.Add(time.Duration(ttl) * time.Second),
 	}
-
 	return grant, nil
 }

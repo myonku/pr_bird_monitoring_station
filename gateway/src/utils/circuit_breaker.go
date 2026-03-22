@@ -82,7 +82,7 @@ func (cb *CircuitBreaker) CallWithResult(
 	defer func() {
 		if r := recover(); r != nil {
 			cb.recordFailure(time.Now())
-			err = fmt.Errorf("circuit breaker protected call panic: %v", r)
+			err = fmt.Errorf("%w: %v", &modelsystem.ErrCircuitProtectedCallPanic, r)
 			result = nil
 		}
 	}()

@@ -3,7 +3,7 @@ from uuid import UUID
 
 from msgspec import Struct
 
-from src.models.auth.auth import IdentityContext, Session, TokenBundle
+from src.models.auth.auth import EntityType, IdentityContext, Session, TokenBundle
 from src.models.commsec.commsec import ServicePublicKeyRecord
 
 
@@ -14,7 +14,7 @@ class ChallengeRequest(Struct, kw_only=True):
     """引导认证流程中的挑战请求，包括请求的实体类型和ID、使用的密钥ID、预期的受众、客户端信息、
     请求上下文和挑战的有效期等。"""
 
-    entity_type: str
+    entity_type: EntityType
     entity_id: str
     key_id: str
 
@@ -39,7 +39,7 @@ class ChallengePayload(Struct, kw_only=True):
     issuer: str
     audience: str
 
-    entity_type: str
+    entity_type: EntityType
     entity_id: str
     key_id: str
 

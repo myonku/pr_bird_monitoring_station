@@ -2,10 +2,10 @@ package security
 
 import (
 	"context"
-	"errors"
 
 	commif "gateway/src/interfaces/communication"
 	commsecmodel "gateway/src/models/commsec"
+	modelsystem "gateway/src/models/system"
 )
 
 // IPrepareOutboundSecurityUsecase 定义出站安全准备用例接口。
@@ -25,10 +25,10 @@ func (u *PrepareOutboundSecurityUsecase) Execute(
 	req *commif.OutboundInvocationRequest,
 ) (*commif.OutboundInvocationContext, error) {
 	if u == nil || u.AuthCoordinator == nil || u.ChannelCoordinator == nil {
-		return nil, errors.New("outbound security dependencies are required")
+		return nil, &modelsystem.ErrOutboundSecurityDependenciesRequired
 	}
 	if req == nil || req.GrantRequest == nil || req.ChannelQuery == nil {
-		return nil, errors.New("outbound invocation request is invalid")
+		return nil, &modelsystem.ErrOutboundInvocationRequestInvalid
 	}
 
 	grant, err := u.AuthCoordinator.IssueDownstreamGrant(ctx, req.GrantRequest)

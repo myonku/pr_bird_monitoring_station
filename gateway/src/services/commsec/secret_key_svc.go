@@ -5,32 +5,37 @@ import (
 	"sync"
 	"time"
 
-	interfaces "certification_server/src/interfaces/commsec"
-	commsecmodel "certification_server/src/models/commsec"
-	modelsystem "certification_server/src/models/system"
-	"certification_server/src/repo"
+	commsecif "gateway/src/interfaces/commsec"
+	commsecmodel "gateway/src/models/commsec"
+	modelsystem "gateway/src/models/system"
+	"gateway/src/repo"
 )
 
-var _ interfaces.ISecretKeyService = (*SecretKeyService)(nil)
+var _ commsecif.ISecretKeyService = (*SecretKeyService)(nil)
 
-// SecretKeyService 提供通信密钥目录访问能力。
+// SecretKeyService 维护网关本地私钥引用和公钥目录缓存。
 type SecretKeyService struct {
 	mu sync.RWMutex
 
 	localPublic  commsecmodel.ServicePublicKeyRecord
 	localPrivate commsecmodel.LocalPrivateKeyRef
-
-	mysql *repo.MySQLClient
-
 	catalogByKey map[string]commsecmodel.ServicePublicKeyRecord
+	mysql        *repo.MySQLClient
 }
 
-// NewSecretKeyService 创建通信密钥服务实例。
 func NewSecretKeyService(
-	mysql *repo.MySQLClient,
 	localPublic commsecmodel.ServicePublicKeyRecord,
 	localPrivate commsecmodel.LocalPrivateKeyRef,
 	catalog []commsecmodel.ServicePublicKeyRecord,
+) *SecretKeyService {
+	return NewSecretKeyServiceWithMySQL(localPublic, localPrivate, catalog, nil)
+}
+
+func NewSecretKeyServiceWithMySQL(
+	localPublic commsecmodel.ServicePublicKeyRecord,
+	localPrivate commsecmodel.LocalPrivateKeyRef,
+	catalog []commsecmodel.ServicePublicKeyRecord,
+	mysql *repo.MySQLClient,
 ) *SecretKeyService {
 	m := make(map[string]commsecmodel.ServicePublicKeyRecord)
 	for _, item := range catalog {
@@ -45,45 +50,37 @@ func NewSecretKeyService(
 	return &SecretKeyService{
 		localPublic:  localPublic,
 		localPrivate: localPrivate,
-		mysql:        mysql,
 		catalogByKey: m,
+		mysql:        mysql,
 	}
 }
 
-// GetPublicKey 获取本地服务的公钥信息。
-// TODO: 后续根据实际需求，更新函数内部实现，支持从数据库加载或定期刷新本地公钥信息。
 func (s *SecretKeyService) GetPublicKey(ctx context.Context) (commsecmodel.ServicePublicKeyRecord, error) {
 	_ = ctx
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
 	if s.localPublic.KeyID == "" {
 		return commsecmodel.ServicePublicKeyRecord{}, &modelsystem.ErrLocalPublicKeyNotConfigured
 	}
 	return s.localPublic, nil
 }
 
-// GetPrivateKeyRef 获取本地服务的私钥引用信息。
-// TODO: 后续根据实际需求，更新函数内部实现，支持从安全存储加载或定期刷新本地私钥引用信息。
 func (s *SecretKeyService) GetPrivateKeyRef(ctx context.Context) (commsecmodel.LocalPrivateKeyRef, error) {
 	_ = ctx
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
 	if s.localPrivate.KeyID == "" {
 		return commsecmodel.LocalPrivateKeyRef{}, &modelsystem.ErrLocalPrivateKeyRefNotConfigured
 	}
 	return s.localPrivate, nil
 }
 
-// GetPublicKeyByKeyID 根据密钥ID查询公钥信息。
 func (s *SecretKeyService) GetPublicKeyByKeyID(
-	ctx context.Context, keyID string) (commsecmodel.PublicKeyLookupResult, error) {
-
+	ctx context.Context, keyID string,
+) (commsecmodel.PublicKeyLookupResult, error) {
 	if keyID == "" {
 		return commsecmodel.PublicKeyLookupResult{}, &modelsystem.ErrKeyIDRequired
 	}
-
 	s.mu.RLock()
 	key, ok := s.catalogByKey[keyID]
 	s.mu.RUnlock()
@@ -97,30 +94,22 @@ func (s *SecretKeyService) GetPublicKeyByKeyID(
 			s.mu.Unlock()
 		}
 	}
-
-	result := commsecmodel.PublicKeyLookupResult{CheckedAt: time.Now()}
 	if !ok {
-		result.Found = false
-		result.FailureReason = "key id not found"
-		return result, nil
+		return commsecmodel.PublicKeyLookupResult{Found: false, FailureReason: "key id not found"}, nil
 	}
-
-	result.Found = true
-	result.Key = key
-	return result, nil
+	return commsecmodel.PublicKeyLookupResult{Found: true, Key: key}, nil
 }
 
-// GetPublicKeysByOwner 根据密钥拥有者查询公钥信息列表。
 func (s *SecretKeyService) GetPublicKeysByOwner(
-	ctx context.Context, owner commsecmodel.ServiceKeyOwner) ([]commsecmodel.ServicePublicKeyRecord, error) {
+	ctx context.Context, owner commsecmodel.ServiceKeyOwner,
+) ([]commsecmodel.ServicePublicKeyRecord, error) {
 	s.mu.RLock()
-
 	items := make([]commsecmodel.ServicePublicKeyRecord, 0)
-	for _, key := range s.catalogByKey {
-		if !matchOwner(owner, key.Owner) {
+	for _, item := range s.catalogByKey {
+		if !matchOwner(owner, item.Owner) {
 			continue
 		}
-		items = append(items, key)
+		items = append(items, item)
 	}
 	s.mu.RUnlock()
 
@@ -135,13 +124,15 @@ func (s *SecretKeyService) GetPublicKeysByOwner(
 			s.mu.Unlock()
 		}
 	}
-
 	return items, nil
 }
 
 func (s *SecretKeyService) loadPublicKeyByIDFromDB(
-	ctx context.Context, keyID string) (*commsecmodel.ServicePublicKeyRecord, error) {
-
+	ctx context.Context, keyID string,
+) (*commsecmodel.ServicePublicKeyRecord, error) {
+	if s.mysql == nil {
+		return nil, &modelsystem.ErrNilMySQLClient
+	}
 	var row struct {
 		KeyID                string    `db:"key_id"`
 		OwnerType            string    `db:"owner_type"`
@@ -157,14 +148,14 @@ func (s *SecretKeyService) loadPublicKeyByIDFromDB(
 		CreatedAt            time.Time `db:"created_at"`
 		ActivatedAt          time.Time `db:"activated_at"`
 		ExpiresAt            time.Time `db:"expires_at"`
-		RevokedAtRaw         []byte    `db:"revoked_at"`
 	}
 	err := s.mysql.Get(ctx, &row, `
 SELECT key_id, owner_type, service_id, service_name, instance_id, instance_name,
        key_exchange_algorithm, signature_algorithm, public_key_pem, fingerprint,
-       status, created_at, activated_at, expires_at, revoked_at
+       status, created_at, activated_at, expires_at
 FROM auth_service_public_keys
-WHERE key_id = ? LIMIT 1
+WHERE key_id = ?
+LIMIT 1
 `, keyID)
 	if err != nil {
 		if repo.IsNotFound(err) {
@@ -172,7 +163,7 @@ WHERE key_id = ? LIMIT 1
 		}
 		return nil, err
 	}
-	item := commsecmodel.ServicePublicKeyRecord{
+	out := commsecmodel.ServicePublicKeyRecord{
 		KeyID: row.KeyID,
 		Owner: commsecmodel.ServiceKeyOwner{
 			OwnerType:    commsecmodel.CommKeyOwnerType(row.OwnerType),
@@ -190,16 +181,19 @@ WHERE key_id = ? LIMIT 1
 		ActivatedAt:          row.ActivatedAt,
 		ExpiresAt:            row.ExpiresAt,
 	}
-	return &item, nil
+	return &out, nil
 }
 
 func (s *SecretKeyService) loadPublicKeysByOwnerFromDB(
-	ctx context.Context, owner commsecmodel.ServiceKeyOwner) ([]commsecmodel.ServicePublicKeyRecord, error) {
-
+	ctx context.Context, owner commsecmodel.ServiceKeyOwner,
+) ([]commsecmodel.ServicePublicKeyRecord, error) {
+	if s.mysql == nil {
+		return nil, &modelsystem.ErrNilMySQLClient
+	}
 	query := `
 SELECT key_id, owner_type, service_id, service_name, instance_id, instance_name,
        key_exchange_algorithm, signature_algorithm, public_key_pem, fingerprint,
-       status, created_at, activated_at, expires_at, revoked_at
+       status, created_at, activated_at, expires_at
 FROM auth_service_public_keys WHERE 1=1`
 	args := make([]any, 0)
 	if owner.OwnerType != "" {

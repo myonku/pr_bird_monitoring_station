@@ -2,10 +2,10 @@ package bootstrap
 
 import (
 	"context"
-	"errors"
 
 	authif "gateway/src/interfaces/auth"
 	authmodel "gateway/src/models/auth"
+	modelsystem "gateway/src/models/system"
 )
 
 // ReadinessRequest 表示网关启动时的 bootstrap 就绪请求。
@@ -31,10 +31,10 @@ type ReadinessUsecase struct {
 // Execute 执行 bootstrap 就绪编排。
 func (u *ReadinessUsecase) Execute(ctx context.Context, req *ReadinessRequest) (*authmodel.BootstrapAuthResult, error) {
 	if u == nil || u.Coordinator == nil {
-		return nil, errors.New("bootstrap coordinator is required")
+		return nil, &modelsystem.ErrBootstrapCoordinatorRequired
 	}
 	if req == nil || req.ChallengeRequest == nil {
-		return nil, errors.New("readiness request is invalid")
+		return nil, &modelsystem.ErrReadinessRequestInvalid
 	}
 
 	return u.Coordinator.EnsureReady(ctx, &authmodel.BootstrapEnsureReadyRequest{

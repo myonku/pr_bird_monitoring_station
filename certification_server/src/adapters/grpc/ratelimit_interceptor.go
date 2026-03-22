@@ -6,6 +6,7 @@ import (
 
 	ratelimitif "certification_server/src/interfaces/ratelimit"
 	authmodel "certification_server/src/models/auth"
+	modelsystem "certification_server/src/models/system"
 	ratelimituc "certification_server/src/usecase/ratelimit"
 
 	"google.golang.org/grpc"
@@ -36,7 +37,7 @@ func (i *UnaryRateLimitInterceptor) Intercept(
 		return handler(ctx, req)
 	}
 	if info == nil {
-		return nil, status.Error(codes.Internal, "grpc method info is nil")
+		return nil, status.Error(codes.Internal, modelsystem.ErrGRPCMethodInfoNil.Error())
 	}
 
 	input, err := i.Builder.Build(ctx, info.FullMethod, req)

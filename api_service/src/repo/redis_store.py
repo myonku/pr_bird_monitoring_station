@@ -4,7 +4,7 @@ from redis.asyncio import Redis, from_url
 from redis.asyncio.sentinel import Sentinel
 from redis.asyncio.cluster import RedisCluster, ClusterNode
 from src.models.sys.config import ProjectConfig
-from utils.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 
 
 class RedisManager:

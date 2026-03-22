@@ -12,6 +12,7 @@ import (
 
 	interfaces "certification_server/src/interfaces/commsec"
 	commsecmodel "certification_server/src/models/commsec"
+	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
 	"certification_server/src/utils"
 
@@ -62,10 +63,10 @@ func (s *CommSecurityService) InitHandshake(
 ) (*commsecmodel.ECDHEHandshakeInitResult, error) {
 
 	if req == nil {
-		return nil, fmt.Errorf("handshake init request is nil")
+		return nil, &modelsystem.ErrHandshakeInitRequestNil
 	}
 	if req.Initiator.ServiceID == "" || req.Responder.ServiceID == "" {
-		return nil, fmt.Errorf("initiator and responder service id are required")
+		return nil, &modelsystem.ErrInitiatorResponderServiceRequired
 	}
 
 	var initiatorKey *commsecmodel.ServicePublicKeyRecord
@@ -75,7 +76,7 @@ func (s *CommSecurityService) InitHandshake(
 			return nil, err
 		}
 		if !lookup.Found {
-			return nil, fmt.Errorf("initiator public key not found")
+			return nil, &modelsystem.ErrInitiatorPublicKeyNotFound
 		}
 		initiatorKey = &lookup.Key
 	}
@@ -147,23 +148,23 @@ func (s *CommSecurityService) CompleteHandshake(
 ) (*commsecmodel.ECDHEHandshakeCompleteResult, error) {
 
 	if req == nil {
-		return nil, fmt.Errorf("handshake complete request is nil")
+		return nil, &modelsystem.ErrHandshakeCompleteRequestNil
 	}
 
 	s.mu.Lock()
 	handshake := s.handshakes[req.HandshakeID]
 	if handshake == nil {
 		s.mu.Unlock()
-		return nil, fmt.Errorf("handshake not found")
+		return nil, &modelsystem.ErrHandshakeNotFound
 	}
 	if handshake.Status != commsecmodel.HandshakePending {
 		s.mu.Unlock()
-		return nil, fmt.Errorf("handshake state is invalid")
+		return nil, &modelsystem.ErrHandshakeStateInvalid
 	}
 	if time.Now().After(handshake.ExpiresAt) {
 		handshake.Status = commsecmodel.HandshakeExpired
 		s.mu.Unlock()
-		return nil, fmt.Errorf("handshake expired")
+		return nil, &modelsystem.ErrHandshakeExpired
 	}
 
 	handshake.ResponderEphemeralPublicKey = req.ResponderEphemeralPublicKey
@@ -244,7 +245,7 @@ func (s *CommSecurityService) UpsertChannel(
 ) (*commsecmodel.SecureChannelSession, error) {
 
 	if req == nil {
-		return nil, fmt.Errorf("channel upsert request is nil")
+		return nil, &modelsystem.ErrChannelUpsertRequestNil
 	}
 
 	now := time.Now()
@@ -285,7 +286,7 @@ func (s *CommSecurityService) GetChannel(
 ) (*commsecmodel.SecureChannelSession, error) {
 
 	if req == nil {
-		return nil, fmt.Errorf("channel query is nil")
+		return nil, &modelsystem.ErrChannelQueryNil
 	}
 
 	s.mu.RLock()
@@ -305,14 +306,6 @@ func (s *CommSecurityService) GetChannel(
 			return cloneChannel(cached), nil
 		}
 	}
-	if req.ChannelID != uuid.Nil && s.mysql != nil {
-		dbChannel, dbErr := s.loadChannelFromDB(ctx, req.ChannelID)
-		if dbErr == nil && dbChannel != nil {
-			s.trackChannel(dbChannel)
-			_ = s.cacheChannel(ctx, dbChannel)
-			return cloneChannel(dbChannel), nil
-		}
-	}
 
 	s.mu.RLock()
 	for _, channel := range s.channels {
@@ -330,16 +323,7 @@ func (s *CommSecurityService) GetChannel(
 	}
 	s.mu.RUnlock()
 
-	if s.mysql != nil {
-		dbChannel, dbErr := s.loadChannelByQueryFromDB(ctx, req)
-		if dbErr == nil && dbChannel != nil {
-			s.trackChannel(dbChannel)
-			_ = s.cacheChannel(ctx, dbChannel)
-			return cloneChannel(dbChannel), nil
-		}
-	}
-
-	return nil, fmt.Errorf("channel not found")
+	return nil, &modelsystem.ErrChannelNotFound
 }
 
 // RevokeChannel 根据查询条件撤销安全通道记录。
@@ -347,7 +331,7 @@ func (s *CommSecurityService) RevokeChannel(
 	ctx context.Context, req *commsecmodel.SecureChannelRevokeRequest) error {
 
 	if req == nil {
-		return fmt.Errorf("channel revoke request is nil")
+		return &modelsystem.ErrChannelRevokeRequestNil
 	}
 
 	s.mu.Lock()
@@ -361,7 +345,6 @@ func (s *CommSecurityService) RevokeChannel(
 			_ = s.cacheChannel(ctx, channel)
 		}
 		s.mu.Unlock()
-		_ = s.revokeChannelInDB(ctx, req.ChannelID)
 		return nil
 	}
 
@@ -376,10 +359,6 @@ func (s *CommSecurityService) RevokeChannel(
 	}
 	s.mu.Unlock()
 
-	if s.mysql != nil {
-		_ = s.revokeChannelByBindingInDB(ctx, req.Binding)
-	}
-
 	return nil
 }
 
@@ -388,17 +367,17 @@ func (s *CommSecurityService) EncryptByChannel(
 	ctx context.Context, req *commsecmodel.ChannelEncryptRequest,
 ) (*commsecmodel.ChannelEncryptResult, error) {
 	if req == nil {
-		return nil, fmt.Errorf("channel encrypt request is nil")
+		return nil, &modelsystem.ErrChannelEncryptRequestNil
 	}
 	channel, err := s.GetChannel(ctx, &commsecmodel.SecureChannelQuery{ChannelID: req.ChannelID})
 	if err != nil {
 		return nil, err
 	}
 	if channel.Status != commsecmodel.SecureChannelActive {
-		return nil, fmt.Errorf("channel is not active")
+		return nil, &modelsystem.ErrChannelNotActive
 	}
 	if time.Now().After(channel.ExpiresAt) {
-		return nil, fmt.Errorf("channel expired")
+		return nil, &modelsystem.ErrChannelExpired
 	}
 
 	key, err := decodeDerivedKey(channel.DerivedKeyRef)
@@ -444,21 +423,21 @@ func (s *CommSecurityService) DecryptByChannel(
 	ctx context.Context, req *commsecmodel.ChannelDecryptRequest,
 ) (string, error) {
 	if req == nil {
-		return "", fmt.Errorf("channel decrypt request is nil")
+		return "", &modelsystem.ErrChannelDecryptRequestNil
 	}
 	channel, err := s.GetChannel(ctx, &commsecmodel.SecureChannelQuery{ChannelID: req.ChannelID})
 	if err != nil {
 		return "", err
 	}
 	if channel.Status != commsecmodel.SecureChannelActive {
-		return "", fmt.Errorf("channel is not active")
+		return "", &modelsystem.ErrChannelNotActive
 	}
 	if time.Now().After(channel.ExpiresAt) {
-		return "", fmt.Errorf("channel expired")
+		return "", &modelsystem.ErrChannelExpired
 	}
 
 	if req.Sequence > 0 && req.Sequence < channel.Sequence {
-		return "", fmt.Errorf("message sequence is stale")
+		return "", &modelsystem.ErrMessageSequenceStale
 	}
 
 	key, err := decodeDerivedKey(channel.DerivedKeyRef)
@@ -493,32 +472,11 @@ func (s *CommSecurityService) DecryptByChannel(
 func (s *CommSecurityService) persistHandshake(
 	ctx context.Context, handshake *commsecmodel.ECDHEHandshakeRecord) error {
 
-	if s.mysql == nil || handshake == nil {
+	if handshake == nil {
 		return nil
 	}
-	_, err := s.mysql.Exec(ctx, `
-INSERT INTO auth_commsec_handshakes(
-  id, initiator_owner_type, initiator_service_id, initiator_service_name, initiator_instance_id, initiator_instance_name,
-  responder_owner_type, responder_service_id, responder_service_name, responder_instance_id, responder_instance_name,
-  initiator_key_id, responder_key_id, key_exchange_algorithm, signature_algorithm, cipher_suite,
-  initiator_ephemeral_public_key, responder_ephemeral_public_key, initiator_nonce, responder_nonce,
-  initiator_signature, responder_signature, status, failure_reason, started_at, completed_at, expires_at, updated_at
-) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-ON DUPLICATE KEY UPDATE
-  responder_key_id=VALUES(responder_key_id), responder_ephemeral_public_key=VALUES(responder_ephemeral_public_key),
-  responder_nonce=VALUES(responder_nonce), responder_signature=VALUES(responder_signature), status=VALUES(status),
-  failure_reason=VALUES(failure_reason), completed_at=VALUES(completed_at), updated_at=VALUES(updated_at)
-`,
-		handshake.ID.String(), string(handshake.Initiator.OwnerType), handshake.Initiator.ServiceID, handshake.Initiator.ServiceName,
-		handshake.Initiator.InstanceID, handshake.Initiator.InstanceName,
-		string(handshake.Responder.OwnerType), handshake.Responder.ServiceID, handshake.Responder.ServiceName,
-		handshake.Responder.InstanceID, handshake.Responder.InstanceName,
-		handshake.InitiatorKeyID, handshake.ResponderKeyID, string(handshake.KeyExchangeAlgorithm), string(handshake.SignatureAlgorithm), string(handshake.CipherSuite),
-		handshake.InitiatorEphemeralPublicKey, handshake.ResponderEphemeralPublicKey, handshake.InitiatorNonce, handshake.ResponderNonce,
-		handshake.InitiatorSignature, handshake.ResponderSignature, string(handshake.Status), handshake.FailureReason,
-		handshake.StartedAt, nullableTime(handshake.CompletedAt), handshake.ExpiresAt, time.Now(),
-	)
-	return err
+	_ = ctx
+	return nil
 }
 
 func (s *CommSecurityService) cacheHandshake(
@@ -541,29 +499,11 @@ func (s *CommSecurityService) cacheHandshake(
 func (s *CommSecurityService) persistChannel(
 	ctx context.Context, channel *commsecmodel.SecureChannelSession) error {
 
-	if s.mysql == nil || channel == nil {
+	if channel == nil {
 		return nil
 	}
-	_, err := s.mysql.Exec(ctx, `
-INSERT INTO auth_secure_channels(
-  id, handshake_id, binding_type, binding_session_id, binding_token_id, binding_family_id,
-  source_owner_type, source_service_id, source_service_name, source_instance_id, source_instance_name,
-  target_owner_type, target_service_id, target_service_name, target_instance_id, target_instance_name,
-  local_key_id, peer_key_id, cipher_suite, status, derived_key_ref, seq_no,
-	established_at, last_used_at, expires_at, revoked_at, updated_at
-) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-ON DUPLICATE KEY UPDATE
-  status=VALUES(status), derived_key_ref=VALUES(derived_key_ref), seq_no=VALUES(seq_no),
-	last_used_at=VALUES(last_used_at), expires_at=VALUES(expires_at), revoked_at=VALUES(revoked_at),
-	updated_at=VALUES(updated_at)
-`,
-		channel.ID.String(), channel.HandshakeID.String(), string(channel.Binding.BindingType), nullableUUID(channel.Binding.SessionID), nullableUUID(channel.Binding.TokenID), nullableUUID(channel.Binding.TokenFamilyID),
-		string(channel.Source.OwnerType), channel.Source.ServiceID, channel.Source.ServiceName, channel.Source.InstanceID, channel.Source.InstanceName,
-		string(channel.Target.OwnerType), channel.Target.ServiceID, channel.Target.ServiceName, channel.Target.InstanceID, channel.Target.InstanceName,
-		channel.LocalKeyID, channel.PeerKeyID, string(channel.CipherSuite), string(channel.Status), channel.DerivedKeyRef, channel.Sequence,
-		channel.EstablishedAt, channel.LastUsedAt, channel.ExpiresAt, nullableTime(channel.RevokedAt), time.Now(),
-	)
-	return err
+	_ = ctx
+	return nil
 }
 
 func (s *CommSecurityService) cacheChannel(ctx context.Context, channel *commsecmodel.SecureChannelSession) error {
@@ -583,7 +523,7 @@ func (s *CommSecurityService) cacheChannel(ctx context.Context, channel *commsec
 
 func (s *CommSecurityService) loadChannelFromCache(ctx context.Context, id uuid.UUID) (*commsecmodel.SecureChannelSession, error) {
 	if s.redis == nil {
-		return nil, fmt.Errorf("redis not configured")
+		return nil, &modelsystem.ErrRedisNotConfigured
 	}
 	raw, err := s.redis.Get(ctx, "auth:commsec:channel:id:"+id.String())
 	if err != nil {
@@ -601,116 +541,29 @@ func (s *CommSecurityService) loadChannelFromCache(ctx context.Context, id uuid.
 
 func (s *CommSecurityService) loadChannelFromDB(
 	ctx context.Context, id uuid.UUID) (*commsecmodel.SecureChannelSession, error) {
-
-	if s.mysql == nil {
-		return nil, fmt.Errorf("mysql not configured")
-	}
-	var row commsecmodel.ChannelRow
-	err := s.mysql.Get(ctx, &row, `
-SELECT id, handshake_id, binding_type, binding_session_id, binding_token_id, binding_family_id,
-       source_owner_type, source_service_id, source_service_name, source_instance_id, source_instance_name,
-       target_owner_type, target_service_id, target_service_name, target_instance_id, target_instance_name,
-       local_key_id, peer_key_id, cipher_suite, status, derived_key_ref, seq_no,
-       established_at, last_used_at, expires_at, revoked_at
-FROM auth_secure_channels
-WHERE id = ?
-LIMIT 1
-`, id.String())
-	if err != nil {
-		if repo.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return mapChannelRow(row)
+	_ = ctx
+	_ = id
+	return nil, nil
 }
 
 func (s *CommSecurityService) loadChannelByQueryFromDB(
 	ctx context.Context, req *commsecmodel.SecureChannelQuery) (*commsecmodel.SecureChannelSession, error) {
-
-	if s.mysql == nil {
-		return nil, fmt.Errorf("mysql not configured")
-	}
-	query := `
-SELECT id, handshake_id, binding_type, binding_session_id, binding_token_id, binding_family_id,
-       source_owner_type, source_service_id, source_service_name, source_instance_id, source_instance_name,
-       target_owner_type, target_service_id, target_service_name, target_instance_id, target_instance_name,
-       local_key_id, peer_key_id, cipher_suite, status, derived_key_ref, seq_no,
-       established_at, last_used_at, expires_at, revoked_at
-FROM auth_secure_channels WHERE 1=1`
-	args := make([]any, 0)
-	if req.Binding.BindingType != "" {
-		query += " AND binding_type = ?"
-		args = append(args, string(req.Binding.BindingType))
-	}
-	if req.Binding.SessionID != uuid.Nil {
-		query += " AND binding_session_id = ?"
-		args = append(args, req.Binding.SessionID.String())
-	}
-	if req.Binding.TokenID != uuid.Nil {
-		query += " AND binding_token_id = ?"
-		args = append(args, req.Binding.TokenID.String())
-	}
-	if req.Binding.TokenFamilyID != uuid.Nil {
-		query += " AND binding_family_id = ?"
-		args = append(args, req.Binding.TokenFamilyID.String())
-	}
-	if req.SourceServiceID != "" {
-		query += " AND source_service_id = ?"
-		args = append(args, req.SourceServiceID)
-	}
-	if req.TargetServiceID != "" {
-		query += " AND target_service_id = ?"
-		args = append(args, req.TargetServiceID)
-	}
-	query += " ORDER BY updated_at DESC LIMIT 1"
-
-	var row commsecmodel.ChannelRow
-	err := s.mysql.Get(ctx, &row, query, args...)
-	if err != nil {
-		if repo.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return mapChannelRow(row)
+	_ = ctx
+	_ = req
+	return nil, nil
 }
 
 func (s *CommSecurityService) revokeChannelInDB(ctx context.Context, id uuid.UUID) error {
-	if s.mysql == nil || id == uuid.Nil {
-		return nil
-	}
-	_, err := s.mysql.Exec(ctx, `UPDATE auth_secure_channels SET status=?, revoked_at=?, updated_at=? WHERE id=?`,
-		string(commsecmodel.SecureChannelRevoked), time.Now(), time.Now(), id.String())
-	return err
+	_ = ctx
+	_ = id
+	return nil
 }
 
 func (s *CommSecurityService) revokeChannelByBindingInDB(
 	ctx context.Context, binding commsecmodel.SecureChannelBinding) error {
-
-	if s.mysql == nil {
-		return nil
-	}
-	query := "UPDATE auth_secure_channels SET status=?, revoked_at=?, updated_at=? WHERE 1=1"
-	args := []any{string(commsecmodel.SecureChannelRevoked), time.Now(), time.Now()}
-	if binding.BindingType != "" {
-		query += " AND binding_type=?"
-		args = append(args, string(binding.BindingType))
-	}
-	if binding.SessionID != uuid.Nil {
-		query += " AND binding_session_id=?"
-		args = append(args, binding.SessionID.String())
-	}
-	if binding.TokenID != uuid.Nil {
-		query += " AND binding_token_id=?"
-		args = append(args, binding.TokenID.String())
-	}
-	if binding.TokenFamilyID != uuid.Nil {
-		query += " AND binding_family_id=?"
-		args = append(args, binding.TokenFamilyID.String())
-	}
-	_, err := s.mysql.Exec(ctx, query, args...)
-	return err
+	_ = ctx
+	_ = binding
+	return nil
 }
 
 func (s *CommSecurityService) trackChannel(channel *commsecmodel.SecureChannelSession) {
@@ -854,7 +707,7 @@ func (s *CommSecurityService) selectResponderPublicKey(
 	sig commsecmodel.SignatureAlgorithm,
 ) (*commsecmodel.ServicePublicKeyRecord, error) {
 	if s.secretKeySvc == nil {
-		return nil, fmt.Errorf("secret key service is not configured")
+		return nil, &modelsystem.ErrSecretKeyServiceNotConfigured
 	}
 	keys, err := s.secretKeySvc.GetPublicKeysByOwner(ctx, owner)
 	if err != nil {
@@ -869,7 +722,7 @@ func (s *CommSecurityService) selectResponderPublicKey(
 		}
 		return &key, nil
 	}
-	return nil, fmt.Errorf("no responder key matched signature algorithm")
+	return nil, &modelsystem.ErrNoResponderKeyMatchedSignature
 }
 
 func buildHandshakeSignPayload(h *commsecmodel.ECDHEHandshakeRecord) []byte {
@@ -895,7 +748,7 @@ func buildHandshakeSignPayload(h *commsecmodel.ECDHEHandshakeRecord) []byte {
 
 func decodeDerivedKey(ref string) ([]byte, error) {
 	if ref == "" {
-		return nil, fmt.Errorf("empty derived key ref")
+		return nil, &modelsystem.ErrEmptyDerivedKeyRef
 	}
 	return base64.StdEncoding.DecodeString(ref)
 }

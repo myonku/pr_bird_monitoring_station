@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from src.adapters.grpc.client_hub import GrpcClientHub
 from src.usecase.security.prepare_outbound_security_uc import OutboundSecurityContext
@@ -38,5 +37,23 @@ class OutboundInvokeService:
         req: OutboundInvokeRequest,
         security_ctx: OutboundSecurityContext | None = None,
     ) -> OutboundInvokeResponse | None:
-        _client: Any = await self.client_hub.get_client(req.target_service)
-        ...
+        client = await self.client_hub.get_client(req.target_service)
+        headers = dict(req.headers)
+        if security_ctx and security_ctx.grant:
+            headers["x-downstream-principal"] = security_ctx.grant.principal_id
+            headers["x-downstream-gateway"] = security_ctx.grant.gateway_id
+            headers["x-downstream-target"] = security_ctx.grant.target_service
+        if security_ctx and security_ctx.channel:
+            headers["x-secure-channel-id"] = str(security_ctx.channel.id)
+            headers["x-cipher-suite"] = security_ctx.channel.cipher_suite
+
+        payload = req.payload
+        if security_ctx and security_ctx.cipher_text:
+            payload = security_ctx.cipher_text.encode("utf-8")
+
+        resp = await client.invoke(req.rpc_method, payload, headers) # type: ignore
+        return OutboundInvokeResponse(
+            status_code=resp.status_code,
+            payload=resp.payload,
+            headers=resp.headers,
+        )
