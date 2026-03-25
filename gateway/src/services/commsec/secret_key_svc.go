@@ -55,6 +55,7 @@ func NewSecretKeyServiceWithMySQL(
 	}
 }
 
+// TODO: 后续根据实际需求，更新函数内部实现，支持从数据库加载或定期刷新本地公钥信息。
 func (s *SecretKeyService) GetPublicKey(ctx context.Context) (commsecmodel.ServicePublicKeyRecord, error) {
 	_ = ctx
 	s.mu.RLock()
@@ -65,6 +66,7 @@ func (s *SecretKeyService) GetPublicKey(ctx context.Context) (commsecmodel.Servi
 	return s.localPublic, nil
 }
 
+// TODO: 后续根据实际需求，更新函数内部实现，支持从安全存储加载或定期刷新本地私钥引用信息。
 func (s *SecretKeyService) GetPrivateKeyRef(ctx context.Context) (commsecmodel.LocalPrivateKeyRef, error) {
 	_ = ctx
 	s.mu.RLock()

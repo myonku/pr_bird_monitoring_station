@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 from msgspec import json as msgjson
 
+from src.repo.mysql_dao import AuthTokenClaimsDAO, AuthTokenRecordsDAO
 from src.models.auth.auth import IssuedToken, TokenBundle, TokenVerificationResult
 from src.models.auth.auth import IdentityContext, Principal, TokenClaims, TokenRecord
 from src.models.auth.auth_contract import (
@@ -36,6 +37,12 @@ class TokenService:
         self._revoked_family_ids: set[UUID] = set()
         self._redis_manager = redis_manager
         self._mysql_client = mysql_client
+        self._token_records_dao = (
+            AuthTokenRecordsDAO(mysql_client) if mysql_client else None
+        )
+        self._token_claims_dao = (
+            AuthTokenClaimsDAO(mysql_client) if mysql_client else None
+        )
 
     def _latest_token_key(self, token_type: str) -> str:
         return f"auth:token:{token_type}:latest"
@@ -51,7 +58,9 @@ class TokenService:
             return
         redis = self._redis_manager.get_client()
         ttl = max(int(token.claims.expires_at - time()), max(token.ttl_sec, 1))
-        await redis.set(self._latest_token_key(token.type), msgjson.encode(token), ex=ttl)
+        await redis.set(
+            self._latest_token_key(token.type), msgjson.encode(token), ex=ttl
+        )
 
     async def _load_cached_token(self, token_type: str) -> IssuedToken | None:
         if self._redis_manager is None:
@@ -73,7 +82,9 @@ class TokenService:
         if family_id != NIL_UUID:
             await redis.set(self._revoked_family_key(family_id), "1", ex=24 * 3600)
 
-    async def _load_revocation(self, token_id: UUID, family_id: UUID) -> tuple[bool, bool]:
+    async def _load_revocation(
+        self, token_id: UUID, family_id: UUID
+    ) -> tuple[bool, bool]:
         if self._redis_manager is None:
             return False, False
         redis = self._redis_manager.get_client()
@@ -86,147 +97,179 @@ class TokenService:
         return token_revoked, family_revoked
 
     async def _persist_refresh_token(self, token: IssuedToken) -> None:
-        if self._mysql_client is None or token.type != "refresh":
+        if (
+            self._token_records_dao is None
+            or self._token_claims_dao is None
+            or token.type != "refresh"
+        ):
             return
         claims = token.claims
         scope_json = json.dumps(claims.scopes, ensure_ascii=False)
         issued_at_dt = datetime.fromtimestamp(claims.issued_at)
         expires_at_dt = datetime.fromtimestamp(claims.expires_at)
-
-        async with self._mysql_client.cursor() as cur:
-            await cur.execute(
-                """
-                INSERT INTO auth_token_records(
-                    id, raw_token, family_id, session_id, token_type, status, storage,
-                    principal_type, principal_id, parent_token_id, client_id, gateway_id,
-                    role_snapshot, scope_snapshot, issued_at, expires_at, last_validated_at, revoked_at
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON DUPLICATE KEY UPDATE
-                    status=VALUES(status), storage=VALUES(storage), parent_token_id=VALUES(parent_token_id),
-                    client_id=VALUES(client_id), gateway_id=VALUES(gateway_id), role_snapshot=VALUES(role_snapshot),
-                    scope_snapshot=VALUES(scope_snapshot), issued_at=VALUES(issued_at), expires_at=VALUES(expires_at),
-                    last_validated_at=VALUES(last_validated_at), revoked_at=VALUES(revoked_at)
-                """,
-                (
-                    str(claims.token_id),
-                    token.raw,
-                    str(claims.family_id),
-                    str(claims.session_id),
-                    token.type,
-                    "active",
-                    token.storage,
-                    claims.entity_type,
-                    claims.principal_id,
-                    None if claims.parent_id == NIL_UUID else str(claims.parent_id),
-                    claims.client_id,
-                    claims.gateway_id,
-                    claims.role,
-                    scope_json,
-                    issued_at_dt,
-                    expires_at_dt,
-                    issued_at_dt,
-                    None,
+        await self._token_records_dao.upsert_one(
+            data={
+                "id": str(claims.token_id),
+                "raw_token": token.raw,
+                "family_id": str(claims.family_id),
+                "session_id": str(claims.session_id),
+                "token_type": token.type,
+                "status": "active",
+                "storage": token.storage,
+                "principal_type": claims.entity_type,
+                "principal_id": claims.principal_id,
+                "parent_token_id": (
+                    None if claims.parent_id == NIL_UUID else str(claims.parent_id)
                 ),
-            )
-            await cur.execute(
-                """
-                INSERT INTO auth_token_claims(
-                    token_id, issuer, audience, subject, token_type, entity_type, entity_id, principal_id,
-                    session_id, family_id, parent_id, role, scopes, auth_method, client_id, gateway_id,
-                    source_service, target_service, issued_at, expires_at
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON DUPLICATE KEY UPDATE
-                    issuer=VALUES(issuer), audience=VALUES(audience), subject=VALUES(subject),
-                    entity_type=VALUES(entity_type), entity_id=VALUES(entity_id), principal_id=VALUES(principal_id),
-                    session_id=VALUES(session_id), family_id=VALUES(family_id), parent_id=VALUES(parent_id),
-                    role=VALUES(role), scopes=VALUES(scopes), auth_method=VALUES(auth_method),
-                    client_id=VALUES(client_id), gateway_id=VALUES(gateway_id),
-                    source_service=VALUES(source_service), target_service=VALUES(target_service),
-                    issued_at=VALUES(issued_at), expires_at=VALUES(expires_at)
-                """,
-                (
-                    str(claims.token_id),
-                    claims.issuer,
-                    claims.audience,
-                    claims.subject,
-                    claims.type,
-                    claims.entity_type,
-                    claims.entity_id,
-                    claims.principal_id,
-                    str(claims.session_id),
-                    str(claims.family_id),
-                    None if claims.parent_id == NIL_UUID else str(claims.parent_id),
-                    claims.role,
-                    scope_json,
-                    claims.auth_method,
-                    claims.client_id,
-                    claims.gateway_id,
-                    claims.source_service,
-                    claims.target_service,
-                    issued_at_dt,
-                    expires_at_dt,
+                "client_id": claims.client_id,
+                "gateway_id": claims.gateway_id,
+                "role_snapshot": claims.role,
+                "scope_snapshot": scope_json,
+                "issued_at": issued_at_dt,
+                "expires_at": expires_at_dt,
+                "last_validated_at": issued_at_dt,
+                "revoked_at": None,
+            },
+            conflict_columns=["id"],
+            update_columns=[
+                "raw_token",
+                "family_id",
+                "session_id",
+                "token_type",
+                "status",
+                "storage",
+                "principal_type",
+                "principal_id",
+                "parent_token_id",
+                "client_id",
+                "gateway_id",
+                "role_snapshot",
+                "scope_snapshot",
+                "issued_at",
+                "expires_at",
+                "last_validated_at",
+                "revoked_at",
+            ],
+        )
+        await self._token_claims_dao.upsert_one(
+            data={
+                "token_id": str(claims.token_id),
+                "issuer": claims.issuer,
+                "audience": claims.audience,
+                "subject": claims.subject,
+                "token_type": claims.type,
+                "entity_type": claims.entity_type,
+                "entity_id": claims.entity_id,
+                "principal_id": claims.principal_id,
+                "session_id": str(claims.session_id),
+                "family_id": str(claims.family_id),
+                "parent_id": (
+                    None if claims.parent_id == NIL_UUID else str(claims.parent_id)
                 ),
-            )
-            conn = cast(Any, cur.connection)
-            if conn is not None:
-                await conn.commit()
+                "role": claims.role,
+                "scopes": scope_json,
+                "auth_method": claims.auth_method,
+                "client_id": claims.client_id,
+                "gateway_id": claims.gateway_id,
+                "source_service": claims.source_service,
+                "target_service": claims.target_service,
+                "issued_at": issued_at_dt,
+                "expires_at": expires_at_dt,
+            },
+            conflict_columns=["token_id"],
+            update_columns=[
+                "issuer",
+                "audience",
+                "subject",
+                "token_type",
+                "entity_type",
+                "entity_id",
+                "principal_id",
+                "session_id",
+                "family_id",
+                "parent_id",
+                "role",
+                "scopes",
+                "auth_method",
+                "client_id",
+                "gateway_id",
+                "source_service",
+                "target_service",
+                "issued_at",
+                "expires_at",
+            ],
+        )
 
-    async def _load_refresh_from_db(self, raw_token: str | None = None) -> IssuedToken | None:
-        if self._mysql_client is None:
+    async def _load_refresh_from_db(
+        self, raw_token: str | None = None
+    ) -> IssuedToken | None:
+        if self._token_records_dao is None:
             return None
-
-        where_clause = "r.token_type = %s"
-        params: list[object] = ["refresh"]
+        filters: dict[str, Any] = {"token_type": "refresh"}
         if raw_token:
-            where_clause += " AND r.raw_token = %s"
-            params.append(raw_token)
+            filters["raw_token"] = raw_token
 
-        async with self._mysql_client.cursor() as cur:
-            await cur.execute(
-                f"""
-                SELECT
-                    r.id, r.raw_token, r.family_id, r.session_id, r.token_type, r.storage,
-                    r.principal_type, r.principal_id, r.parent_token_id, r.client_id, r.gateway_id,
-                    r.role_snapshot, r.scope_snapshot, r.issued_at, r.expires_at,
-                    c.issuer, c.audience, c.subject, c.entity_type, c.entity_id,
-                    c.scopes, c.auth_method, c.source_service, c.target_service, c.parent_id
-                FROM auth_token_records r
-                LEFT JOIN auth_token_claims c ON c.token_id = r.id
-                WHERE {where_clause}
-                ORDER BY r.issued_at DESC
-                LIMIT 1
-                """,
-                tuple(params),
-            )
-            row = await cur.fetchone()
+        records = await self._token_records_dao.find_many(
+            filters=filters,
+            order_by=["-issued_at"],
+            limit=1,
+        )
+        row = records[0] if records else None
 
         if not row:
             return None
 
-        scope_snapshot_raw = row.get("scope_snapshot") or row.get("scopes") or "[]"
+        claims_row: dict[str, Any] | None = None
+        if self._token_claims_dao is not None:
+            claims_row = await self._token_claims_dao.find_by_id(str(row["id"]))
+        merged = dict(row)
+        if claims_row:
+            merged.update(claims_row)
+
+        scope_snapshot_raw = (
+            merged.get("scope_snapshot") or merged.get("scopes") or "[]"
+        )
         if isinstance(scope_snapshot_raw, (bytes, bytearray)):
             scope_snapshot_raw = scope_snapshot_raw.decode("utf-8")
-        scopes = json.loads(scope_snapshot_raw) if isinstance(scope_snapshot_raw, str) else list(scope_snapshot_raw)
+        scopes = (
+            json.loads(scope_snapshot_raw)
+            if isinstance(scope_snapshot_raw, str)
+            else list(scope_snapshot_raw)
+        )
 
-        principal_id = str(row.get("principal_id") or "")
-        entity_type = cast(str, row.get("entity_type") or row.get("principal_type") or "service")
-        entity_id = str(row.get("entity_id") or principal_id.split(":")[-1] if principal_id else "")
+        principal_id = str(merged.get("principal_id") or "")
+        entity_type = cast(
+            str, merged.get("entity_type") or merged.get("principal_type") or "service"
+        )
+        entity_id = str(
+            merged.get("entity_id") or principal_id.split(":")[-1]
+            if principal_id
+            else ""
+        )
 
-        token_id = UUID(str(row["id"]))
-        family_id = UUID(str(row["family_id"]))
-        session_id = UUID(str(row["session_id"]))
-        parent_id_raw = row.get("parent_id") or row.get("parent_token_id")
+        token_id = UUID(str(merged["id"]))
+        family_id = UUID(str(merged["family_id"]))
+        session_id = UUID(str(merged["session_id"]))
+        parent_id_raw = merged.get("parent_id") or merged.get("parent_token_id")
         parent_id = UUID(str(parent_id_raw)) if parent_id_raw else NIL_UUID
 
-        issued_at_dt = row["issued_at"]
-        expires_at_dt = row["expires_at"]
-        issued_at = issued_at_dt.timestamp() if hasattr(issued_at_dt, "timestamp") else float(issued_at_dt)
-        expires_at = expires_at_dt.timestamp() if hasattr(expires_at_dt, "timestamp") else float(expires_at_dt)
+        issued_at_dt = merged["issued_at"]
+        expires_at_dt = merged["expires_at"]
+        issued_at = (
+            issued_at_dt.timestamp()
+            if hasattr(issued_at_dt, "timestamp")
+            else float(issued_at_dt)
+        )
+        expires_at = (
+            expires_at_dt.timestamp()
+            if hasattr(expires_at_dt, "timestamp")
+            else float(expires_at_dt)
+        )
 
         claims = TokenClaims(
-            issuer=str(row.get("issuer") or "api_service"),
-            audience=str(row.get("audience") or "internal"),
-            subject=str(row.get("subject") or entity_id),
+            issuer=str(merged.get("issuer") or "api_service"),
+            audience=str(merged.get("audience") or "internal"),
+            subject=str(merged.get("subject") or entity_id),
             type="refresh",
             entity_type=cast(Any, entity_type),
             entity_id=entity_id,
@@ -235,19 +278,19 @@ class TokenService:
             token_id=token_id,
             family_id=family_id,
             parent_id=parent_id,
-            role=str(row.get("role_snapshot") or ""),
+            role=str(merged.get("role_snapshot") or ""),
             scopes=list(scopes),
-            auth_method=cast(Any, str(row.get("auth_method") or "refresh_token")),
-            client_id=str(row.get("client_id") or ""),
-            gateway_id=str(row.get("gateway_id") or ""),
-            source_service=str(row.get("source_service") or ""),
-            target_service=str(row.get("target_service") or ""),
+            auth_method=cast(Any, str(merged.get("auth_method") or "refresh_token")),
+            client_id=str(merged.get("client_id") or ""),
+            gateway_id=str(merged.get("gateway_id") or ""),
+            source_service=str(merged.get("source_service") or ""),
+            target_service=str(merged.get("target_service") or ""),
             issued_at=issued_at,
             expires_at=expires_at,
         )
         ttl = max(int(expires_at - time()), 1)
         return IssuedToken(
-            raw=str(row["raw_token"]),
+            raw=str(merged["raw_token"]),
             type="refresh",
             storage="database",
             claims=claims,
@@ -304,7 +347,9 @@ class TokenService:
             if cached_refresh and cached_refresh.raw == req.refresh_token:
                 self._refresh_token = cached_refresh
             else:
-                self._refresh_token = await self._load_refresh_from_db(req.refresh_token)
+                self._refresh_token = await self._load_refresh_from_db(
+                    req.refresh_token
+                )
         if self._refresh_token is None:
             return None
         if time() >= self._refresh_token.claims.expires_at:
@@ -390,9 +435,7 @@ class TokenService:
         await self._persist_refresh_token(new_refresh)
         return TokenBundle(access_token=new_access, refresh_token=new_refresh)
 
-    async def verify(
-        self, req: TokenVerifyRequest
-    ) -> TokenVerificationResult | None:
+    async def verify(self, req: TokenVerifyRequest) -> TokenVerificationResult | None:
         token = None
         if self._access_token and req.raw_token == self._access_token.raw:
             token = self._access_token
@@ -446,7 +489,9 @@ class TokenService:
             )
 
         identity = IdentityContext(
-            principal=Principal(entity_type=claims.entity_type, entity_id=claims.entity_id),
+            principal=Principal(
+                entity_type=claims.entity_type, entity_id=claims.entity_id
+            ),
             entity_type=claims.entity_type,
             entity_id=claims.entity_id,
             principal_id=claims.principal_id,

@@ -1,177 +1,126 @@
 from __future__ import annotations
 
-import contextlib
-import time
 from pathlib import Path
 from typing import Any
 
-import torch
-from torch import nn
-from torch.amp.grad_scaler import GradScaler
-
-from src.logger import RunLogger
-
-
-def _accuracy(logits: torch.Tensor, targets: torch.Tensor) -> float:
-    predictions = torch.argmax(logits, dim=1)
-    correct = (predictions == targets).sum().item()
-    return correct / max(1, targets.size(0))
+from src.config import PipelineConfig
+from src.core.comparator import compare_records
+from src.core.contracts import EvaluationResult, Evaluator
+from src.core.datasets import DatasetAdapter
+from src.core.model_factory import TrainerBackend, build_backend_registry
 
 
-def train_one_epoch(
-    model: nn.Module,
-    loader: torch.utils.data.DataLoader,
-    optimizer: torch.optim.Optimizer,
-    criterion: nn.Module,
-    device: str,
-    use_amp: bool,
-) -> dict[str, Any | float]:
-    """训练模型一个 epoch，并返回训练损失和准确率。"""
-    model.train()
-    total_loss = 0.0
-    total_correct = 0
-    total_count = 0
-    scaler = GradScaler("cuda", enabled=use_amp)
+def _best_model_path(
+    records: list[dict[str, Any]],
+    tier: str,
+    task: str,
+) -> str | None:
+    matched = [item for item in records if item.get("tier") == tier and item.get("task") == task]
+    if not matched:
+        return None
 
-    for images, labels in loader:
-        images = images.to(device, non_blocking=True)
-        labels = labels.to(device, non_blocking=True)
+    if task == "detection":
+        ranked = sorted(matched, key=lambda item: float(item.get("map50_95", 0.0) or 0.0), reverse=True)
+    else:
+        ranked = sorted(matched, key=lambda item: float(item.get("top1", 0.0) or 0.0), reverse=True)
 
-        optimizer.zero_grad(set_to_none=True)
-        autocast_context = (
-            torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True)
-            if use_amp
-            else contextlib.nullcontext()
+    winner = ranked[0]
+    exported = winner.get("exported_paths", [])
+    if exported:
+        return str(exported[0])
+    return str(winner.get("checkpoint_path")) if winner.get("checkpoint_path") else None
+
+
+def _build_deployment_paths(pipeline: PipelineConfig, records: list[dict[str, Any]]) -> dict[str, str | None]:
+    auto_paths = {
+        "edge_detection_model_path": _best_model_path(records, tier="lightweight", task="detection"),
+        "edge_classification_model_path": _best_model_path(records, tier="lightweight", task="classification"),
+        "server_detection_model_path": _best_model_path(records, tier="standard", task="detection"),
+        "server_classification_model_path": _best_model_path(records, tier="standard", task="classification"),
+    }
+
+    manual = pipeline.deployment.to_dict()
+    return {
+        "edge_detection_model_path": manual["edge_detection_model_path"] or auto_paths["edge_detection_model_path"],
+        "edge_classification_model_path": manual["edge_classification_model_path"]
+        or auto_paths["edge_classification_model_path"],
+        "server_detection_model_path": manual["server_detection_model_path"]
+        or auto_paths["server_detection_model_path"],
+        "server_classification_model_path": manual["server_classification_model_path"]
+        or auto_paths["server_classification_model_path"],
+    }
+
+
+def _record_from_output(output: Any) -> dict[str, Any]:
+    return {
+        "candidate_id": output.candidate_id,
+        "framework": output.framework,
+        "model_name": output.model_name,
+        "tier": output.tier,
+        "task": output.task,
+        "map50": output.map50,
+        "map50_95": output.map50_95,
+        "top1": output.top1,
+        "latency_ms": output.latency_ms,
+        "size_mb": output.size_mb,
+        "checkpoint_path": output.checkpoint_path,
+        "exported_paths": output.exported_paths,
+    }
+
+
+class DefaultEvaluator:
+    def evaluate(self, records: list[dict[str, Any]]) -> EvaluationResult:
+        compared = compare_records(records)
+        return EvaluationResult(
+            leaderboard=compared["leaderboard"],
+            best_lightweight=compared["best_lightweight"],
+            best_standard=compared["best_standard"],
+            overall_winner=compared["overall_winner"],
         )
-        with autocast_context:
-            logits = model(images)
-            loss = criterion(logits, labels)
-
-        if use_amp:
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            loss.backward()
-            optimizer.step()
-
-        batch_size = labels.size(0)
-        total_loss += loss.item() * batch_size
-        total_correct += int((logits.argmax(dim=1) == labels).sum().item())
-        total_count += batch_size
-
-    return {
-        "loss": total_loss / max(1, total_count),
-        "accuracy": total_correct / max(1, total_count),
-    }
 
 
-@torch.no_grad()
-def evaluate(
-    model: nn.Module,
-    loader: torch.utils.data.DataLoader,
-    criterion: nn.Module,
-    device: str,
-) -> dict[str, Any | float]:
-    """评估模型在验证集上的性能，返回损失和准确率。"""
-    model.eval()
-    total_loss = 0.0
-    total_correct = 0
-    total_count = 0
-
-    for images, labels in loader:
-        images = images.to(device, non_blocking=True)
-        labels = labels.to(device, non_blocking=True)
-
-        logits = model(images)
-        loss = criterion(logits, labels)
-
-        batch_size = labels.size(0)
-        total_loss += loss.item() * batch_size
-        total_correct += int((logits.argmax(dim=1) == labels).sum().item())
-        total_count += batch_size
-
-    return {
-        "loss": total_loss / max(1, total_count),
-        "accuracy": total_correct / max(1, total_count),
-    }
-
-
-def fit(
-    model: nn.Module,
-    train_loader: torch.utils.data.DataLoader,
-    val_loader: torch.utils.data.DataLoader,
-    optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler.CosineAnnealingLR,
-    criterion: nn.Module,
-    device: str,
-    epochs: int,
-    use_amp: bool,
-    checkpoint_dir: Path,
-    logger: RunLogger,
+def run_experiment(
+    pipeline: PipelineConfig,
+    dataset_adapter: DatasetAdapter,
+    backend_registry: dict | None = None,
+    evaluator: Evaluator | None = None,
 ) -> dict[str, Any]:
-    """训练模型，并在每个 epoch 结束时评估验证集性能，保存最佳和最后的 checkpoint。"""
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    best_val_acc = -1.0
-    best_checkpoint = checkpoint_dir / "best.pt"
-    last_checkpoint = checkpoint_dir / "last.pt"
-    history = []
+    if not pipeline.dataset:
+        raise ValueError("pipeline.dataset is required")
 
-    for epoch in range(1, epochs + 1):
-        epoch_start = time.time()
-        train_metrics = train_one_epoch(
-            model=model,
-            loader=train_loader,
-            optimizer=optimizer,
-            criterion=criterion,
-            device=device,
-            use_amp=use_amp,
+    registry: dict = backend_registry or build_backend_registry()
+    dataset_bundle = dataset_adapter.load(pipeline.dataset)
+
+    run_root = Path(pipeline.output_root) / pipeline.experiment_name
+    run_root.mkdir(parents=True, exist_ok=True)
+
+    results: list[dict[str, Any]] = []
+    for candidate in pipeline.candidates:
+        backend: TrainerBackend | None = registry.get(candidate.framework)
+        if backend is None:
+            raise ValueError(f"No backend registered for framework={candidate.framework}")
+
+        candidate_dir = run_root / candidate.candidate_id
+        output = backend.train(
+            candidate=candidate,
+            dataset=dataset_bundle,
+            output_dir=candidate_dir,
         )
-        val_metrics = evaluate(
-            model=model,
-            loader=val_loader,
-            criterion=criterion,
-            device=device,
-        )
-        scheduler.step()
+        results.append(_record_from_output(output))
 
-        record = {
-            "epoch": epoch,
-            "train_loss": train_metrics["loss"],
-            "train_accuracy": train_metrics["accuracy"],
-            "val_loss": val_metrics["loss"],
-            "val_accuracy": val_metrics["accuracy"],
-            "lr": optimizer.param_groups[0]["lr"],
-            "elapsed_sec": time.time() - epoch_start,
-        }
-        history.append(record)
-        logger.log_epoch(record)
-
-        if val_metrics["accuracy"] > best_val_acc:
-            best_val_acc = val_metrics["accuracy"]
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "val_accuracy": best_val_acc,
-                },
-                best_checkpoint,
-            )
-
-        torch.save(
-            {
-                "epoch": epoch,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "val_accuracy": val_metrics["accuracy"],
-            },
-            last_checkpoint,
-        )
-
+    active_evaluator = evaluator or DefaultEvaluator()
+    comparison = active_evaluator.evaluate(results)
+    deployment_paths = _build_deployment_paths(pipeline=pipeline, records=results)
     return {
-        "history": history,
-        "best_val_accuracy": best_val_acc,
-        "best_checkpoint": str(best_checkpoint),
-        "last_checkpoint": str(last_checkpoint),
+        "project": pipeline.project_name,
+        "experiment": pipeline.experiment_name,
+        "dataset": dataset_bundle.metadata,
+        "results": results,
+        "deployment_paths": deployment_paths,
+        "comparison": {
+            "leaderboard": comparison.leaderboard,
+            "best_lightweight": comparison.best_lightweight,
+            "best_standard": comparison.best_standard,
+            "overall_winner": comparison.overall_winner,
+        },
     }

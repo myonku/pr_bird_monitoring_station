@@ -1,0 +1,77 @@
+[pipeline]
+project_name = "bird_model_delivery_tool"
+experiment_name = "baseline_dual_tier"
+output_root = "output_models"
+logs_root = "logs"
+
+[training]
+seed = 42
+epochs = 50
+batch_size = 16
+image_size = 640
+learning_rate = 0.001
+weight_decay = 0.0001
+num_workers = 4
+amp = true
+early_stop_patience = 20
+
+[deployment]
+# 留空表示自动选择本次实验中的最佳模型产物路径
+edge_detection_model_path = ""
+edge_classification_model_path = ""
+server_detection_model_path = ""
+server_classification_model_path = ""
+
+[dataset]
+dataset_id = "placeholder_dataset"
+root = "dataset"
+task = "detection"
+notes = "PIR trigger + infrared camera scenario, waiting for unified dataset schema"
+
+[[candidates]]
+candidate_id = "edge_yolo_n"
+framework = "yolo"
+model_name = "yolo11n"
+tier = "lightweight"
+task = "detection"
+export_formats = ["onnx", "tflite"]
+
+[candidates.train_params]
+epochs = 50
+imgsz = 640
+
+[[candidates]]
+candidate_id = "server_yolo_m"
+framework = "yolo"
+model_name = "yolo11m"
+tier = "standard"
+task = "detection"
+export_formats = ["onnx"]
+
+[candidates.train_params]
+epochs = 80
+imgsz = 640
+
+[[candidates]]
+candidate_id = "edge_mobilenet_cls"
+framework = "pytorch"
+model_name = "mobilenet_v3_large"
+tier = "lightweight"
+task = "classification"
+export_formats = ["onnx", "torchscript"]
+
+[candidates.train_params]
+epochs = 40
+batch_size = 64
+
+[[candidates]]
+candidate_id = "server_convnext_cls"
+framework = "pytorch"
+model_name = "convnext_base"
+tier = "standard"
+task = "classification"
+export_formats = ["onnx", "torchscript"]
+
+[candidates.train_params]
+epochs = 60
+batch_size = 32

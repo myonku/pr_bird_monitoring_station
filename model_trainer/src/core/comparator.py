@@ -3,49 +3,60 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
+from typing import Any
 
 
-def _load_summary(path: Path) -> dict:
-    content = path.read_text(encoding="utf-8")
-    payload = json.loads(content)
-    payload["summary_path"] = str(path)
-    return payload
+def _primary_score(item: dict[str, Any]) -> float:
+    if item.get("task") == "detection":
+        return float(item.get("map50_95", 0.0) or 0.0)
+    return float(item.get("top1", 0.0) or 0.0)
 
 
-def compare_summaries(
-    summary_paths: list[Path], output_csv: Path, output_json: Path
-) -> dict:
-    """比较多个 summary.json 文件，生成排名和统计信息，并将结果保存为 CSV 和 JSON 格式。"""
-    rows = []
-    for summary_path in summary_paths:
-        summary = _load_summary(summary_path)
-        rows.append(
-            {
-                "model": summary.get("model_name"),
-                "run_id": summary.get("run_id"),
-                "best_val_accuracy": summary.get("best_val_accuracy"),
-                "final_val_accuracy": summary.get("final_val_accuracy"),
-                "epochs": summary.get("epochs"),
-                "best_checkpoint": summary.get("best_checkpoint"),
-                "summary_path": summary.get("summary_path"),
-            }
-        )
+def compare_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    ranked = sorted(records, key=_primary_score, reverse=True)
 
-    rows.sort(key=lambda item: item["best_val_accuracy"], reverse=True)
+    best_lightweight = next(
+        (item for item in ranked if item.get("tier") == "lightweight"), None
+    )
+    best_standard = next(
+        (item for item in ranked if item.get("tier") == "standard"), None
+    )
+
+    return {
+        "leaderboard": ranked,
+        "best_lightweight": best_lightweight,
+        "best_standard": best_standard,
+        "overall_winner": ranked[0] if ranked else None,
+    }
+
+
+def compare_summary_files(summary_paths: list[Path]) -> dict[str, Any]:
+    all_records: list[dict[str, Any]] = []
+    for path in summary_paths:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for item in payload.get("results", []):
+            copied = dict(item)
+            copied["source_summary"] = str(path)
+            all_records.append(copied)
+    return compare_records(all_records)
+
+
+def save_comparison(
+    comparison: dict[str, Any],
+    output_csv: Path,
+    output_json: Path,
+) -> None:
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     output_json.parent.mkdir(parents=True, exist_ok=True)
 
-    with output_csv.open("w", encoding="utf-8", newline="") as fp:
-        writer = csv.DictWriter(fp, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
+    leaderboard = comparison.get("leaderboard", [])
+    if leaderboard:
+        with output_csv.open("w", encoding="utf-8", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=list(leaderboard[0].keys()))
+            writer.writeheader()
+            writer.writerows(leaderboard)
 
-    comparison = {
-        "winner": rows[0]["model"],
-        "winner_best_val_accuracy": rows[0]["best_val_accuracy"],
-        "rows": rows,
-    }
     output_json.write_text(
-        json.dumps(comparison, indent=2, ensure_ascii=False), encoding="utf-8"
+        json.dumps(comparison, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
-    return comparison
