@@ -1,5 +1,6 @@
 import time
-from edge_server.src.interface import IUploader, ISpoolStorage
+
+from src.interface import ISpoolStorage, IUploader
 
 
 class SyncWorker:

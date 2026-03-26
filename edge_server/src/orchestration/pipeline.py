@@ -1,6 +1,12 @@
-from models.models import EdgeEvent
-from edge_server.src.interface import ICaptureModule, IInferenceModule, ISpoolStorage, IUploader
-from orchestration.decision_engine import DecisionEngine
+from src.interface import (
+    ICaptureModule,
+    IInferenceModule,
+    IModelBundleLoader,
+    ISpoolStorage,
+    IUploader,
+)
+from src.models.models import EdgeEvent
+from src.orchestration.decision_engine import DecisionEngine
 
 
 class EdgePipeline:
@@ -13,12 +19,14 @@ class EdgePipeline:
     def __init__(
         self,
         capture: ICaptureModule,
+        model_loader: IModelBundleLoader,
         infer: IInferenceModule,
         uploader: IUploader,
         spool: ISpoolStorage,
         decision_engine: DecisionEngine,
     ):
         self.capture = capture
+        self.model_loader = model_loader
         self.infer = infer
         self.uploader = uploader
         self.spool = spool
@@ -32,9 +40,11 @@ class EdgePipeline:
         decision = self.decision_engine.decide_before_infer()
 
         if decision.do_local_infer:
-            result = self.infer.infer(image)
+            models = self.model_loader.current_bundle()
+            result = self.infer.infer_two_stage(image=image, models=models)
             event.local_inference = result
-            event.metadata["edge_model_version"] = self.infer.current_model_version()
+            event.metadata["edge_model_contract_version"] = models.contract.contract_version
+            event.metadata["edge_model_package_version"] = models.contract.package_version
             decision = self.decision_engine.decide_after_infer(result, decision)
 
         event.requires_server_assist = decision.mark_server_assist

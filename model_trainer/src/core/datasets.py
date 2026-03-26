@@ -31,9 +31,9 @@ class PlaceholderDatasetAdapter:
         metadata = {
             "root": str(contract.root),
             "task": contract.task.value,
-            "metadata_path": str(contract.metadata_path)
-            if contract.metadata_path
-            else None,
+            "metadata_path": (
+                str(contract.metadata_path) if contract.metadata_path else None
+            ),
             "notes": contract.notes,
             "status": "placeholder",
         }

@@ -1,63 +1,145 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Any, Literal
+
 import time
 import uuid
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 
-def _now_ms() -> int:
+def now_ms() -> int:
     return int(time.time() * 1000)
 
-@dataclass
+
+@dataclass(slots=True)
 class DeviceInfo:
-    """设备基本信息，用于会话验证"""
     device_id: str
     model: str
     firmware_version: str
     location: str | None = None
-    dev_secret: str | None = None
 
-@dataclass
+
+@dataclass(slots=True)
 class CaptureContext:
-    """捕拍上下文信息"""
     device_id: str
     trigger_type: Literal["motion", "scheduled", "manual"] = "motion"
     sensor_snapshot: dict[str, Any] = field(default_factory=dict)
-    captured_at_ms: int = field(default_factory=_now_ms)
+    captured_at_ms: int = field(default_factory=now_ms)
 
 
-@dataclass
+@dataclass(slots=True)
 class ImagePayload:
-    """图像数据及相关信息"""
     image_id: str
     bytes_data: bytes
     format: str = "jpg"
     width: int | None = None
     height: int | None = None
-    checksum: str | None = None
+    checksum_sha256: str | None = None
 
 
-@dataclass
-class InferenceResult:
-    """本地推理结果"""
+@dataclass(slots=True)
+class ModelArtifactContract:
+    """训练侧与边缘侧共享的单模型协定。"""
+
+    artifact_id: str
+    task: Literal["detection", "classification"]
+    tier: Literal["lightweight", "standard"]
+    framework: str
+    model_name: str
+    format: Literal["onnx", "tflite", "torchscript", "openvino", "custom"]
     model_version: str
-    top1_label: str | None = None
-    top1_confidence: float | None = None
-    topk: list[dict[str, Any]] = field(default_factory=list)
+    artifact_path: str
+    labels: list[str] = field(default_factory=list)
+    input_size: tuple[int, int] = (640, 640)
+    score_threshold: float = 0.25
+    nms_iou_threshold: float = 0.45
+    topk: int = 5
+    checksum_sha256: str | None = None
+
+
+@dataclass(slots=True)
+class EdgeModelContract:
+    """边缘端推理需要同时提供检测和分类两个模型。"""
+
+    contract_version: str
+    package_version: str
+    exported_at_ms: int
+    exported_by: str
+    detection: ModelArtifactContract
+    classification: ModelArtifactContract
+    notes: str = ""
+
+
+@dataclass(slots=True)
+class LoadedModelBundle:
+    """模型加载模块暴露给推理模块的统一模型句柄。"""
+
+    contract: EdgeModelContract
+    detection_handle: Any
+    classification_handle: Any
+    loaded_at_ms: int = field(default_factory=now_ms)
+
+
+@dataclass(slots=True)
+class DetectionBox:
+    label: str
+    confidence: float
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+@dataclass(slots=True)
+class DetectionResult:
+    success: bool
+    boxes: list[DetectionBox] = field(default_factory=list)
     latency_ms: int | None = None
-    success: bool = True
     reason: str | None = None
 
 
-@dataclass
+@dataclass(slots=True)
+class ClassificationHit:
+    label: str
+    confidence: float
+
+
+@dataclass(slots=True)
+class ClassificationResult:
+    success: bool
+    top1_label: str | None = None
+    top1_confidence: float | None = None
+    topk: list[ClassificationHit] = field(default_factory=list)
+    latency_ms: int | None = None
+    reason: str | None = None
+
+
+@dataclass(slots=True)
+class TwoStageInferenceResult:
+    """两阶段推理结果：先检测后分类，检测失败时提前返回。"""
+
+    success: bool
+    stage: Literal[
+        "skipped",
+        "detected_only",
+        "classified",
+        "detector_failed",
+        "classifier_failed",
+    ]
+    detection: DetectionResult
+    classification: ClassificationResult | None = None
+    detector_model_version: str | None = None
+    classifier_model_version: str | None = None
+    reason: str | None = None
+
+
+@dataclass(slots=True)
 class EdgeEvent:
-    """边缘事件数据结构，包含捕拍上下文、图像数据和本地推理结果等信息"""
     event_id: str
     trace_id: str
     context: CaptureContext
     image: ImagePayload
-    local_inference: InferenceResult | None = None
-    requires_server_assist: bool = False # 是否需要云端辅助识别（如本地推理结果不确定或失败）
+    local_inference: TwoStageInferenceResult | None = None
+    requires_server_assist: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod

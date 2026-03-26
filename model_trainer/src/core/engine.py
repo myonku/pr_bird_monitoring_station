@@ -15,14 +15,24 @@ def _best_model_path(
     tier: str,
     task: str,
 ) -> str | None:
-    matched = [item for item in records if item.get("tier") == tier and item.get("task") == task]
+    matched = [
+        item
+        for item in records
+        if item.get("tier") == tier and item.get("task") == task
+    ]
     if not matched:
         return None
 
     if task == "detection":
-        ranked = sorted(matched, key=lambda item: float(item.get("map50_95", 0.0) or 0.0), reverse=True)
+        ranked = sorted(
+            matched,
+            key=lambda item: float(item.get("map50_95", 0.0) or 0.0),
+            reverse=True,
+        )
     else:
-        ranked = sorted(matched, key=lambda item: float(item.get("top1", 0.0) or 0.0), reverse=True)
+        ranked = sorted(
+            matched, key=lambda item: float(item.get("top1", 0.0) or 0.0), reverse=True
+        )
 
     winner = ranked[0]
     exported = winner.get("exported_paths", [])
@@ -31,17 +41,28 @@ def _best_model_path(
     return str(winner.get("checkpoint_path")) if winner.get("checkpoint_path") else None
 
 
-def _build_deployment_paths(pipeline: PipelineConfig, records: list[dict[str, Any]]) -> dict[str, str | None]:
+def _build_deployment_paths(
+    pipeline: PipelineConfig, records: list[dict[str, Any]]
+) -> dict[str, str | None]:
     auto_paths = {
-        "edge_detection_model_path": _best_model_path(records, tier="lightweight", task="detection"),
-        "edge_classification_model_path": _best_model_path(records, tier="lightweight", task="classification"),
-        "server_detection_model_path": _best_model_path(records, tier="standard", task="detection"),
-        "server_classification_model_path": _best_model_path(records, tier="standard", task="classification"),
+        "edge_detection_model_path": _best_model_path(
+            records, tier="lightweight", task="detection"
+        ),
+        "edge_classification_model_path": _best_model_path(
+            records, tier="lightweight", task="classification"
+        ),
+        "server_detection_model_path": _best_model_path(
+            records, tier="standard", task="detection"
+        ),
+        "server_classification_model_path": _best_model_path(
+            records, tier="standard", task="classification"
+        ),
     }
 
     manual = pipeline.deployment.to_dict()
     return {
-        "edge_detection_model_path": manual["edge_detection_model_path"] or auto_paths["edge_detection_model_path"],
+        "edge_detection_model_path": manual["edge_detection_model_path"]
+        or auto_paths["edge_detection_model_path"],
         "edge_classification_model_path": manual["edge_classification_model_path"]
         or auto_paths["edge_classification_model_path"],
         "server_detection_model_path": manual["server_detection_model_path"]
@@ -98,7 +119,9 @@ def run_experiment(
     for candidate in pipeline.candidates:
         backend: TrainerBackend | None = registry.get(candidate.framework)
         if backend is None:
-            raise ValueError(f"No backend registered for framework={candidate.framework}")
+            raise ValueError(
+                f"No backend registered for framework={candidate.framework}"
+            )
 
         candidate_dir = run_root / candidate.candidate_id
         output = backend.train(

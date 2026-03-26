@@ -1,7 +1,16 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from src.models.models import CaptureContext, EdgeEvent, ImagePayload, InferenceResult
+from src.models.models import (
+    CaptureContext,
+    ClassificationResult,
+    DetectionResult,
+    EdgeEvent,
+    EdgeModelContract,
+    ImagePayload,
+    LoadedModelBundle,
+    TwoStageInferenceResult,
+)
 
 
 class ICaptureModule(ABC):
@@ -16,14 +25,44 @@ class ICaptureModule(ABC):
 
 
 class IInferenceModule(ABC):
-    """推理模块接口；负责加载和执行边缘端的推理模型，提供推理结果和置信度等信息"""
+    """推理模块接口；仅负责推理逻辑，不负责模型加载。"""
 
     @abstractmethod
-    def infer(self, image: ImagePayload) -> InferenceResult:
+    def detect(self, image: ImagePayload, models: LoadedModelBundle) -> DetectionResult:
         raise NotImplementedError
 
     @abstractmethod
-    def current_model_version(self) -> str:
+    def classify(
+        self,
+        image: ImagePayload,
+        detection: DetectionResult,
+        models: LoadedModelBundle,
+    ) -> ClassificationResult:
+        raise NotImplementedError
+
+    @abstractmethod
+    def infer_two_stage(
+        self,
+        image: ImagePayload,
+        models: LoadedModelBundle,
+    ) -> TwoStageInferenceResult:
+        """先检测后分类，检测失败时提前退出。"""
+        raise NotImplementedError
+
+
+class IModelBundleLoader(ABC):
+    """模型加载模块接口；一次加载检测和分类模型，并暴露统一句柄。"""
+
+    @abstractmethod
+    def load(self, contract: EdgeModelContract) -> LoadedModelBundle:
+        raise NotImplementedError
+
+    @abstractmethod
+    def current_bundle(self) -> LoadedModelBundle:
+        raise NotImplementedError
+
+    @abstractmethod
+    def current_contract(self) -> EdgeModelContract:
         raise NotImplementedError
 
 
@@ -51,42 +90,48 @@ class ISpoolStorage(ABC):
 
 
 class IUploader(ABC):
-    """统一上行通道接口；实现类可内部切换 Kafka/HTTP/gRPC 等传输方式"""
+    """上行接口；边缘端统一使用 HTTP 上传。"""
 
     @abstractmethod
     def upload(self, event: EdgeEvent) -> bool:
-        """统一上行通道；成功 True，失败 False"""
+        """上传事件；成功 True，失败 False。"""
         raise NotImplementedError
 
     @abstractmethod
     def is_connection_ready(self) -> bool:
         raise NotImplementedError
 
-class ITransportClient(ABC):
-    """底层传输客户端接口；提供发送数据和健康检查等功能"""
+
+class IHttpTransportClient(ABC):
+    """HTTP 传输客户端接口。"""
 
     @abstractmethod
     def send(self, payload: dict, image_bytes: bytes) -> bool:
-        """发送数据；成功 True，失败 False"""
+        """通过 HTTP POST 发送数据；成功 True，失败 False。"""
         raise NotImplementedError
 
     @abstractmethod
     def healthcheck(self) -> bool:
-        """检查连接是否可用"""
+        """通过 HTTP 健康检查确认连接可用。"""
         raise NotImplementedError
+
 
 class IModelManager(ABC):
-    """模型管理接口；负责检查/更新边缘端使用的推理模型版本，提供当前模型路径等信息"""
+    """模型管理接口；负责双模型包版本管理和更新。"""
 
     @abstractmethod
-    def get_active_model_path(self) -> str:
+    def get_active_contract(self) -> EdgeModelContract:
         raise NotImplementedError
 
     @abstractmethod
-    def get_active_model_version(self) -> str:
+    def get_active_model_paths(self) -> dict[str, str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_active_package_version(self) -> str:
         raise NotImplementedError
 
     @abstractmethod
     def try_apply_remote_update(self) -> bool:
-        """轮询服务端是否有新模型，有则下载+校验+切换"""
+        """轮询服务端是否有新模型包，有则下载+校验+切换。"""
         raise NotImplementedError

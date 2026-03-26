@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from models.models import InferenceResult
+
+from src.models.models import TwoStageInferenceResult
 
 
 @dataclass
@@ -30,12 +31,22 @@ class DecisionEngine:
             do_local_infer=True, upload_event=True, mark_server_assist=False
         )
 
-    def decide_after_infer(
-        self, infer_result: InferenceResult, prior: Decision
-    ) -> Decision:
+    def decide_after_infer(self, infer_result: TwoStageInferenceResult, prior: Decision) -> Decision:
+        # 检测失败：建议服务端接管。
+        if infer_result.stage == "detector_failed":
+            prior.mark_server_assist = True
+            return prior
+
+        # 未检测到目标：本地提前退出，不强制服务端识别。
+        if infer_result.stage == "detected_only":
+            prior.mark_server_assist = False
+            return prior
+
         if not infer_result.success:
             prior.mark_server_assist = True
             return prior
-        if (infer_result.top1_confidence or 0.0) < self.confidence_threshold:
+
+        top1 = infer_result.classification.top1_confidence if infer_result.classification else None
+        if (top1 or 0.0) < self.confidence_threshold:
             prior.mark_server_assist = True
         return prior

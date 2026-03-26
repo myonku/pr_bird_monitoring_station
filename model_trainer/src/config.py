@@ -51,12 +51,16 @@ class TrainingCommonConfig:
     @staticmethod
     def _validate_int(name: str, value: int, min_v: int, max_v: int) -> None:
         if not (min_v <= value <= max_v):
-            raise ValueError(f"{name} out of range: {value}, expected [{min_v}, {max_v}]")
+            raise ValueError(
+                f"{name} out of range: {value}, expected [{min_v}, {max_v}]"
+            )
 
     @staticmethod
     def _validate_float(name: str, value: float, min_v: float, max_v: float) -> None:
         if not (min_v <= value <= max_v):
-            raise ValueError(f"{name} out of range: {value}, expected [{min_v}, {max_v}]")
+            raise ValueError(
+                f"{name} out of range: {value}, expected [{min_v}, {max_v}]"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -73,18 +77,26 @@ class DeploymentPathConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "edge_detection_model_path": str(self.edge_detection_model_path)
-            if self.edge_detection_model_path
-            else None,
-            "edge_classification_model_path": str(self.edge_classification_model_path)
-            if self.edge_classification_model_path
-            else None,
-            "server_detection_model_path": str(self.server_detection_model_path)
-            if self.server_detection_model_path
-            else None,
-            "server_classification_model_path": str(self.server_classification_model_path)
-            if self.server_classification_model_path
-            else None,
+            "edge_detection_model_path": (
+                str(self.edge_detection_model_path)
+                if self.edge_detection_model_path
+                else None
+            ),
+            "edge_classification_model_path": (
+                str(self.edge_classification_model_path)
+                if self.edge_classification_model_path
+                else None
+            ),
+            "server_detection_model_path": (
+                str(self.server_detection_model_path)
+                if self.server_detection_model_path
+                else None
+            ),
+            "server_classification_model_path": (
+                str(self.server_classification_model_path)
+                if self.server_classification_model_path
+                else None
+            ),
         }
 
 
@@ -169,22 +181,26 @@ def load_pipeline_config(path: Path) -> PipelineConfig:
 
     deployment_payload = payload.get("deployment", {})
     deployment = DeploymentPathConfig(
-        edge_detection_model_path=Path(deployment_payload["edge_detection_model_path"])
-        if deployment_payload.get("edge_detection_model_path")
-        else None,
-        edge_classification_model_path=Path(
-            deployment_payload["edge_classification_model_path"]
-        )
-        if deployment_payload.get("edge_classification_model_path")
-        else None,
-        server_detection_model_path=Path(deployment_payload["server_detection_model_path"])
-        if deployment_payload.get("server_detection_model_path")
-        else None,
-        server_classification_model_path=Path(
-            deployment_payload["server_classification_model_path"]
-        )
-        if deployment_payload.get("server_classification_model_path")
-        else None,
+        edge_detection_model_path=(
+            Path(deployment_payload["edge_detection_model_path"])
+            if deployment_payload.get("edge_detection_model_path")
+            else None
+        ),
+        edge_classification_model_path=(
+            Path(deployment_payload["edge_classification_model_path"])
+            if deployment_payload.get("edge_classification_model_path")
+            else None
+        ),
+        server_detection_model_path=(
+            Path(deployment_payload["server_detection_model_path"])
+            if deployment_payload.get("server_detection_model_path")
+            else None
+        ),
+        server_classification_model_path=(
+            Path(deployment_payload["server_classification_model_path"])
+            if deployment_payload.get("server_classification_model_path")
+            else None
+        ),
     )
 
     dataset_payload = payload.get("dataset")
@@ -194,9 +210,11 @@ def load_pipeline_config(path: Path) -> PipelineConfig:
             dataset_id=dataset_payload["dataset_id"],
             root=Path(dataset_payload["root"]),
             task=TaskType(dataset_payload["task"]),
-            metadata_path=Path(dataset_payload["metadata_path"])
-            if dataset_payload.get("metadata_path")
-            else None,
+            metadata_path=(
+                Path(dataset_payload["metadata_path"])
+                if dataset_payload.get("metadata_path")
+                else None
+            ),
             notes=dataset_payload.get("notes", ""),
         )
 
@@ -247,22 +265,26 @@ def load_pipeline_from_settings_toml(path: Path) -> PipelineConfig:
     )
 
     deployment = DeploymentPathConfig(
-        edge_detection_model_path=Path(str(deployment_tbl["edge_detection_model_path"]))
-        if deployment_tbl.get("edge_detection_model_path")
-        else None,
-        edge_classification_model_path=Path(
-            str(deployment_tbl["edge_classification_model_path"])
-        )
-        if deployment_tbl.get("edge_classification_model_path")
-        else None,
-        server_detection_model_path=Path(str(deployment_tbl["server_detection_model_path"]))
-        if deployment_tbl.get("server_detection_model_path")
-        else None,
-        server_classification_model_path=Path(
-            str(deployment_tbl["server_classification_model_path"])
-        )
-        if deployment_tbl.get("server_classification_model_path")
-        else None,
+        edge_detection_model_path=(
+            Path(str(deployment_tbl["edge_detection_model_path"]))
+            if deployment_tbl.get("edge_detection_model_path")
+            else None
+        ),
+        edge_classification_model_path=(
+            Path(str(deployment_tbl["edge_classification_model_path"]))
+            if deployment_tbl.get("edge_classification_model_path")
+            else None
+        ),
+        server_detection_model_path=(
+            Path(str(deployment_tbl["server_detection_model_path"]))
+            if deployment_tbl.get("server_detection_model_path")
+            else None
+        ),
+        server_classification_model_path=(
+            Path(str(deployment_tbl["server_classification_model_path"]))
+            if deployment_tbl.get("server_classification_model_path")
+            else None
+        ),
     )
 
     dataset = None
@@ -271,9 +293,11 @@ def load_pipeline_from_settings_toml(path: Path) -> PipelineConfig:
             dataset_id=str(dataset_tbl.get("dataset_id", "placeholder_dataset")),
             root=Path(str(dataset_tbl.get("root", "dataset"))),
             task=TaskType(str(dataset_tbl.get("task", TaskType.DETECTION.value))),
-            metadata_path=Path(str(dataset_tbl["metadata_path"]))
-            if dataset_tbl.get("metadata_path")
-            else None,
+            metadata_path=(
+                Path(str(dataset_tbl["metadata_path"]))
+                if dataset_tbl.get("metadata_path")
+                else None
+            ),
             notes=str(dataset_tbl.get("notes", "")),
         )
 

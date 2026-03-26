@@ -1,0 +1,55 @@
+[runtime]
+device_id = "edge_device_001"
+spool_dir = "data/spool"
+sync_interval_sec = 3.0
+sync_batch_size = 20
+
+[upload_http]
+upload_url = "http://127.0.0.1:8080/v1/edge/events"
+healthcheck_url = "http://127.0.0.1:8080/health"
+timeout_sec = 3.0
+auth_token = ""
+
+[decision_policy]
+enable_local_inference = true
+confidence_threshold = 0.60
+high_load_skip_inference = false
+
+[model_contract]
+contract_version = "1.0.0"
+package_version = "20260326_edge_dual_models"
+exported_at_ms = 0
+exported_by = "model_trainer"
+notes = "edge package with detector and classifier"
+
+[model_contract_detection]
+artifact_id = "edge_detector_v1"
+task = "detection"
+tier = "lightweight"
+framework = "yolo"
+model_name = "yolo11n"
+format = "onnx"
+model_version = "1.0.0"
+artifact_path = "models/edge_detector_v1.onnx"
+labels = ["bird"]
+input_size = [640, 640]
+score_threshold = 0.25
+nms_iou_threshold = 0.45
+topk = 1
+checksum_sha256 = ""
+
+[model_contract_classification]
+artifact_id = "edge_classifier_v1"
+task = "classification"
+tier = "lightweight"
+framework = "pytorch"
+model_name = "mobilenet_v3_large"
+format = "onnx"
+model_version = "1.0.0"
+artifact_path = "models/edge_classifier_v1.onnx"
+labels = ["sparrow", "crow", "egret"]
+input_size = [224, 224]
+score_threshold = 0.0
+nms_iou_threshold = 0.0
+topk = 5
+checksum_sha256 = ""

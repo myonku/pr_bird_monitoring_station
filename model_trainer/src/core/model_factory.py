@@ -86,7 +86,9 @@ class YoloBackend:
         )
 
         base = f"{candidate.candidate_id}:{candidate.model_name}:{dataset.dataset_id}"
-        exported = _make_export_artifacts(output_dir, candidate, candidate.export_formats)
+        exported = _make_export_artifacts(
+            output_dir, candidate, candidate.export_formats
+        )
         return TrainingOutput(
             candidate_id=candidate.candidate_id,
             framework=candidate.framework.value,
@@ -122,7 +124,9 @@ class PytorchBackend:
         )
 
         base = f"{candidate.candidate_id}:{candidate.model_name}:{dataset.dataset_id}"
-        exported = _make_export_artifacts(output_dir, candidate, candidate.export_formats)
+        exported = _make_export_artifacts(
+            output_dir, candidate, candidate.export_formats
+        )
         return TrainingOutput(
             candidate_id=candidate.candidate_id,
             framework=candidate.framework.value,
