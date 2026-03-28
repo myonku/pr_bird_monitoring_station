@@ -1,3 +1,7 @@
+# yolo model trainer related files to ignore
+weights/
+runs/
+
 # Some segments of this file are generated from templates, and may be overwritten.
 logs/
 data/

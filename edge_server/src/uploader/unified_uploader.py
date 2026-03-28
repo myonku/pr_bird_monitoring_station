@@ -18,6 +18,8 @@ class UnifiedUploader(IUploader):
                     "success": event.local_inference.success,
                     "stage": event.local_inference.stage,
                     "reason": event.local_inference.reason,
+                    "crop_applied": event.local_inference.crop_applied,
+                    "crop_box": event.local_inference.crop_box,
                     "detector_model_version": event.local_inference.detector_model_version,
                     "classifier_model_version": event.local_inference.classifier_model_version,
                     "detection": {

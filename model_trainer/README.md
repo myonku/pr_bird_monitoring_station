@@ -1,16 +1,29 @@
-# model_trainer（多框架/双层级模型训练编排）
+# model_trainer（手动单模型训练与产物记录）
 
-本分区已重构为“接口驱动”的训练编排框架，目标是支持：
+本分区当前目标是手动配置并执行单模型训练，核心能力：
 
 - 多训练框架并行演进（如 YOLO、PyTorch）
-- 统一对比轻量模型与标准模型（对应边缘端与服务端）
-- 可插拔数据集适配（当前保留空实现，占位等待数据规范统一）
-- 统一产物导出清单（如 ONNX、TFLite、TorchScript）
+- 按 `task+tier` 手动选择单次训练模型
+- 检测任务使用真实检测数据适配（分类任务可暂时保留占位）
+- 自动记录本次摘要，并和上一次同 lane 训练做对比
 
-当前代码重点是“架构与接口”，不是最终训练精度。
+当前代码重点是“稳定可追溯的单次训练流程”，不是最终训练精度。
 
 说明：边缘端已有 PIR + 红外相机触发链路，训练侧通过检测任务与分类任务候选并行产出模型。
 检测阶段用于定位活体目标并过滤背景；分类阶段用于细粒度鸟种识别。
+
+当前流程已调整为：
+
+- 先用公开检测数据训练检测模型（标签统一归并为 bird）。
+- 再用检测模型对自有分类数据做目标裁切。
+- 使用裁切后的分类数据训练分类模型。
+
+检测数据集已支持 CUB 转换后的统一结构（det_bird）：
+
+- images/{train,val,test}
+- labels/{train,val,test}
+- annotations/instances_{train,val,test}.json
+- yolo.yaml
 
 ## 设计目标
 
@@ -20,46 +33,68 @@
 
 ## TaskType
 
-- TaskType：描述单个候选模型训练任务（detection 或 classification）
-- 两阶段方案由候选组合体现：同一实验中同时配置 detection 与 classification 候选模型即可。
+- TaskType：描述单个候选模型训练任务（detection 或 classification）。
+- `run` 命令现在强制指定 `--task` + `--tier`，一次只执行一个模型基线。
+- 候选模型固定为 4 个组合：
+- detection x lightweight
+- detection x standard
+- classification x lightweight
+- classification x standard
+- 每次运行只会命中上述组合中的一个候选，因此每次仅产生一份模型产物。
 
 ## 当前模块结构
 
 ```text
 main.py
 src/
-	cli.py                 # 命令行入口（plan/run/compare）
+	cli.py                 # 命令行入口（plan/run/crop-dataset）
 	config.py              # 统一配置与默认候选模型定义
 	logger.py              # 结构化运行日志落盘
-	core/
-		contracts.py         # 核心接口协议（Evaluator/Exporter/Planner）
-		datasets.py          # DatasetAdapter 与占位数据集实现
-		model_factory.py     # TrainerBackend 注册与后端实现（YOLO/PyTorch）
-		engine.py            # 编排器：执行候选训练并生成结果
-		comparator.py        # 排名、分层胜者选择与比较文件导出
+	datasets/
+		datasets.py              # 数据集服务路由（placeholder / unified / auto）
+		detection_dataset.py     # CUB det_bird 检测数据适配
+		classification_dataset.py# 分类占位适配
+	factory/
+		model_factory.py           # 训练后端注册（YOLO/PyTorch）
+		torch_backend.py
+		yolo_backend.py
+	cropper/
+		dataset_cropper.py       # 基于检测模型生成分类裁切
+		yolo_cropper.py          # YOLO 裁切后端
+		torch_cropper.py         # PyTorch 裁切后端
+	evaluator/
+		comparator.py            # 排名与结果导出
+	models/
+		common.py                # 公共枚举与常量
+		dataset_model.py         # DatasetBundle
+		cropper.py               # CropBox/CropRunSummary
+	engine.py                  # 编排器：执行候选训练并生成结果
 ```
 
-## 核心接口说明
+## 核心组件说明
 
-1. 数据集接口
-- `DatasetAdapter.load(contract) -> DatasetBundle`
-- 输入：`DatasetContract`（数据集 ID、root、任务类型、元信息）
-- 输出：标准化数据集描述（样本统计、类别、元信息）
+1. 数据集服务
 
-2. 训练后端接口
-- `TrainerBackend.train(candidate, dataset, output_dir) -> TrainingOutput`
-- 每个框架（YOLO/PyTorch/Custom）都通过该接口接入
+- `DatasetService.load(contract) -> DatasetBundle`
+- 检测任务固定走真实检测适配器（`UnifiedBirdDetectionDatasetAdapter`），不再支持占位数据集。
+- 分类任务可继续使用占位适配器（用于裁切数据链路尚未完全落地时）。
 
-3. 评估接口
-- `Evaluator.evaluate(records) -> EvaluationResult`
-- 默认评估器支持：
-	- 检测任务按 `map50_95` 排序
-	- 分类任务按 `top1` 排序
-	- 自动选出 `best_lightweight` 与 `best_standard`
+2. 训练后端
 
-4. 模型导出接口（协议预留）
-- `ModelExporter.export(candidate_id, checkpoint_path, output_dir) -> list[Path]`
-- 用于后续接入真实导出链路（ONNX/TFLite/TensorRT 等）
+- 检测任务：`YoloBackend` 与 `PytorchBackend` 均已接入真实训练流程。
+- 分类任务：当前仍保留占位训练输出（后续可按需要接入真实分类训练）。
+
+3. 结果比较
+
+- 由 `src/core/evaluator/comparator.py` 直接对结果排序。
+- 检测任务按 `map50_95`，分类任务按 `top1`。
+- 单次运行只包含一个候选，`comparison` 字段用于统一记录本次指标。
+- 每次 `run` 完成后会自动与同 lane 的上一次 `summary.json` 对比。
+- 对比时间线会追加到 `logs/<lane>/summary_compare_timeline.jsonl`。
+
+4. 裁切生成
+
+- `crop-dataset` 命令会使用检测模型对分类源图做裁切并输出 `crop_manifest.json`。
 
 ## 默认候选模型（示例）
 
@@ -76,58 +111,69 @@ src/
 
 全局配置使用 settings.toml，包含：
 
-- [pipeline]：项目名、实验名、输出目录
+- [pipeline]：输出目录根路径
 - [training]：训练通用项（含基础范围校验）
-- [deployment]：边缘/服务端的检测与分类模型路径（可手动固定）
 - [dataset]：数据集契约占位信息
+- [detection_dataset]：检测训练数据集（位置标注，标签可归并）
+- [classification_dataset]：分类训练数据集（裁切后，仅类别标签）
+- [crop_generation]：裁切任务配置（模型路径、输入输出路径、阈值）
 - [[candidates]]：候选模型与每个候选的 train_params
 
 说明：
-- 若 [deployment] 中路径为空字符串，则运行时自动从本次结果中选择最佳模型路径并写入 summary。
-- 你现在关心的“检测模型路径”对应：
-	- edge_detection_model_path
-	- server_detection_model_path
+
+- 运行时按 `--task + --tier` 只选择一个候选执行。
+- 建议固定保留四个候选并仅替换模型名/参数，不新增组合。
 
 ## 命令行
 
 1. 查看有效配置
 
 ```bash
-uv run python main.py plan --settings settings.toml --dataset-root dataset
+uv run python main.py plan --settings settings.toml
 ```
 
-2. 执行训练编排（当前为接口占位流程，会生成可追踪产物）
+2. 执行单次训练（统一命令模板）
 
 ```bash
-uv run python main.py run --settings settings.toml --dataset-root dataset --dataset-adapter placeholder
+uv run python main.py run --settings settings.toml --task <detection|classification> --tier <lightweight|standard> --dataset-adapter auto
 ```
 
-3. 对比多个运行摘要
+3. 生成分类裁切数据集
 
 ```bash
-uv run python main.py compare --summaries logs/run_a/summary.json logs/run_b/summary.json
+uv run python main.py crop-dataset --settings settings.toml
 ```
 
 ## 输出内容
 
-- 运行目录：`logs/<run_id>/`
+- lane 目录：
+  - `detection_lite`
+  - `detection_std`
+  - `classification_lite`
+  - `classification_std`
+- 日志目录：`logs/<lane>/<run_id>/`
 - 核心文件：
-	- `pipeline.json`：本次实验配置快照
-	- `summary.json`：所有候选模型结果与比较摘要
-	- `summary.json` 中 `deployment_paths`：检测/分类模型路径索引
-	- `comparison.csv`：排行榜
-	- `comparison.json`：结构化比较结果
+  - `pipeline.json`：本次运行配置快照
+    - `summary.json`：单模型训练结果与摘要
+    - `comparison.csv`：本次摘要对比表（单候选）
+  - `comparison.json`：当前任务本次结构化比较结果
+    - `comparison_with_previous.csv/json`：自动生成的“本次 vs 上次同 lane”对比（首跑无此文件）
+    - `logs/<lane>/summary_compare_timeline.jsonl`：同 lane 历次训练对比时间线
 
-模型产物目录：`output_models/<experiment_name>/<candidate_id>/`
+模型产物目录：`output_models/<lane>/<run_id>/`
+产物文件直接落在 run_id 目录下，文件名内嵌 task/tier/candidate 标签，不再使用多级实验目录。
 
 ## 下一步接入建议
 
 1. 数据集
-- 在 `src/core/datasets.py` 实现真实适配器（如 YOLO 标注格式、分类目录格式、统一索引格式）。
+
+- 在 `src/core/datasets/classification_dataset.py` 接入真实分类数据读取（当前仍为占位实现）。
 
 2. 真实训练
-- 在 `src/core/model_factory.py` 的 `YoloBackend` / `PytorchBackend` 中替换占位逻辑，调用真实训练 API。
 
-3. 协同推理策略
-- 在边缘侧消费 `best_lightweight`，在服务端消费 `best_standard`。
-- 推理时依据边缘置信度阈值和设备负载决定是否回退到服务端二次推理。
+- 检测任务已接入真实训练路径；分类任务后续可继续替换占位训练逻辑。
+
+3. 推理侧接入
+
+- 按 lane 选择对应的最新 run 目录产物（如 `detection_lite` 或 `classification_std`）。
+- 线上切换建议通过外部发布清单管理，不依赖训练端自动挑选最佳模型。

@@ -1,27 +1,75 @@
-from __future__ import annotations
-
 import json
 import tomllib
 from dataclasses import asdict, dataclass, field
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-
-class ModelTier(StrEnum):
-    LIGHTWEIGHT = "lightweight"
-    STANDARD = "standard"
+from src.models.dataset_model import DatasetContract
+from src.models.common import ModelTier, FrameworkKind, LabelPolicy, TaskType
 
 
-class FrameworkKind(StrEnum):
-    YOLO = "yolo"
-    PYTORCH = "pytorch"
-    CUSTOM = "custom"
+def _resolve_path(base_dir: Path, raw: str | Path) -> Path:
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    return (base_dir / path).resolve()
 
 
-class TaskType(StrEnum):
-    DETECTION = "detection"
-    CLASSIFICATION = "classification"
+def _resolve_optional_path(base_dir: Path, raw: str | Path | None) -> Path | None:
+    if raw is None:
+        return None
+    return _resolve_path(base_dir, raw)
+
+
+def _normalize_export_formats(raw_formats: list[str] | None) -> list[str]:
+    # 统一禁用 tflite 导出，避免在 Python 3.13 环境触发不可安装依赖链。
+    formats = raw_formats or ["onnx"]
+    filtered: list[str] = []
+    for fmt in formats:
+        key = str(fmt).strip().lower()
+        if not key or key == "tflite":
+            continue
+        if key not in filtered:
+            filtered.append(key)
+    return filtered or ["onnx"]
+
+
+def _normalize_candidate_train_params(
+    *,
+    base_dir: Path,
+    framework: FrameworkKind,
+    model_name: str,
+    raw_params: dict[str, Any] | None,
+) -> dict[str, Any]:
+    params = dict(raw_params or {})
+    if framework != FrameworkKind.YOLO:
+        return params
+
+    pretrained = params.get("pretrained")
+    if pretrained in (None, ""):
+        params["pretrained"] = str(_resolve_path(base_dir, f"weights/{model_name}.pt"))
+        return params
+
+    if isinstance(pretrained, Path):
+        params["pretrained"] = str(_resolve_path(base_dir, pretrained))
+        return params
+
+    if isinstance(pretrained, str):
+        value = pretrained.strip()
+        if value.startswith(
+            (
+                "http://",
+                "https://",
+                "rtsp://",
+                "rtmp://",
+                "tcp://",
+                "ul://",
+            )
+        ):
+            params["pretrained"] = value
+        else:
+            params["pretrained"] = str(_resolve_path(base_dir, value))
+    return params
 
 
 @dataclass(slots=True)
@@ -67,56 +115,35 @@ class TrainingCommonConfig:
 
 
 @dataclass(slots=True)
-class DeploymentPathConfig:
-    """训练产物路径路由，支持手动固定部署路径。"""
+class CropGenerationConfig:
+    """基于检测模型生成分类裁切数据集的配置。"""
 
-    edge_detection_model_path: Path | None = None
-    edge_classification_model_path: Path | None = None
-    server_detection_model_path: Path | None = None
-    server_classification_model_path: Path | None = None
+    enabled: bool = False
+    framework: FrameworkKind = FrameworkKind.YOLO
+    detector_model_path: Path = Path(
+        "output_models/detection_lite/latest_detection_lightweight_edge_yolo_n.onnx"
+    )
+    source_root: Path = Path("dataset/classification_source")
+    output_root: Path = Path("dataset/classification_cropped")
+    score_threshold: float = 0.25
+    max_crops_per_image: int = 1
+
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.score_threshold <= 1.0):
+            raise ValueError("score_threshold must be within [0.0, 1.0]")
+        if self.max_crops_per_image < 1:
+            raise ValueError("max_crops_per_image must be >= 1")
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "edge_detection_model_path": (
-                str(self.edge_detection_model_path)
-                if self.edge_detection_model_path
-                else None
-            ),
-            "edge_classification_model_path": (
-                str(self.edge_classification_model_path)
-                if self.edge_classification_model_path
-                else None
-            ),
-            "server_detection_model_path": (
-                str(self.server_detection_model_path)
-                if self.server_detection_model_path
-                else None
-            ),
-            "server_classification_model_path": (
-                str(self.server_classification_model_path)
-                if self.server_classification_model_path
-                else None
-            ),
+            "enabled": self.enabled,
+            "framework": self.framework.value,
+            "detector_model_path": str(self.detector_model_path),
+            "source_root": str(self.source_root),
+            "output_root": str(self.output_root),
+            "score_threshold": self.score_threshold,
+            "max_crops_per_image": self.max_crops_per_image,
         }
-
-
-@dataclass(slots=True)
-class DatasetContract:
-    """数据集契约：仅定义统一元信息，不绑定具体目录结构。"""
-
-    dataset_id: str
-    root: Path
-    task: TaskType
-    metadata_path: Path | None = None
-    notes: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        payload = asdict(self)
-        payload["root"] = str(self.root)
-        payload["task"] = self.task.value
-        if self.metadata_path is not None:
-            payload["metadata_path"] = str(self.metadata_path)
-        return payload
 
 
 @dataclass(slots=True)
@@ -141,29 +168,47 @@ class ModelCandidate:
 
 @dataclass(slots=True)
 class PipelineConfig:
-    project_name: str
-    experiment_name: str
+    """整体实验配置：训练通用配置 + 数据集契约 + 模型候选列表。"""
+
     output_root: Path = Path("output_models")
     logs_root: Path = Path("logs")
     training: TrainingCommonConfig = field(default_factory=TrainingCommonConfig)
-    deployment: DeploymentPathConfig = field(default_factory=DeploymentPathConfig)
-    dataset: DatasetContract | None = None
+    detection_dataset: DatasetContract | None = None
+    classification_dataset: DatasetContract | None = None
+    crop_generation: CropGenerationConfig = field(default_factory=CropGenerationConfig)
     candidates: list[ModelCandidate] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "project_name": self.project_name,
-            "experiment_name": self.experiment_name,
             "output_root": str(self.output_root),
             "logs_root": str(self.logs_root),
             "training": self.training.to_dict(),
-            "deployment": self.deployment.to_dict(),
-            "dataset": self.dataset.to_dict() if self.dataset else None,
+            "detection_dataset": (
+                self.detection_dataset.to_dict() if self.detection_dataset else None
+            ),
+            "classification_dataset": (
+                self.classification_dataset.to_dict()
+                if self.classification_dataset
+                else None
+            ),
+            "crop_generation": self.crop_generation.to_dict(),
             "candidates": [candidate.to_dict() for candidate in self.candidates],
         }
 
 
+def _parse_dataset_contract(payload: dict[str, Any], base_dir: Path) -> DatasetContract:
+    return DatasetContract(
+        dataset_id=payload["dataset_id"],
+        root=_resolve_path(base_dir, payload["root"]),
+        task=TaskType(payload["task"]),
+        label_policy=LabelPolicy(payload.get("label_policy", LabelPolicy.AS_IS.value)),
+        metadata_path=_resolve_optional_path(base_dir, payload.get("metadata_path")),
+        notes=payload.get("notes", ""),
+    )
+
+
 def load_pipeline_config(path: Path) -> PipelineConfig:
+    base_dir = path.parent.resolve()
     payload = json.loads(path.read_text(encoding="utf-8"))
 
     training_payload = payload.get("training", {})
@@ -179,77 +224,88 @@ def load_pipeline_config(path: Path) -> PipelineConfig:
         early_stop_patience=int(training_payload.get("early_stop_patience", 20)),
     )
 
-    deployment_payload = payload.get("deployment", {})
-    deployment = DeploymentPathConfig(
-        edge_detection_model_path=(
-            Path(deployment_payload["edge_detection_model_path"])
-            if deployment_payload.get("edge_detection_model_path")
-            else None
-        ),
-        edge_classification_model_path=(
-            Path(deployment_payload["edge_classification_model_path"])
-            if deployment_payload.get("edge_classification_model_path")
-            else None
-        ),
-        server_detection_model_path=(
-            Path(deployment_payload["server_detection_model_path"])
-            if deployment_payload.get("server_detection_model_path")
-            else None
-        ),
-        server_classification_model_path=(
-            Path(deployment_payload["server_classification_model_path"])
-            if deployment_payload.get("server_classification_model_path")
-            else None
-        ),
+    detection_dataset_payload = payload.get("detection_dataset")
+    detection_dataset = (
+        _parse_dataset_contract(detection_dataset_payload, base_dir=base_dir)
+        if detection_dataset_payload
+        else None
     )
 
-    dataset_payload = payload.get("dataset")
-    dataset = None
-    if dataset_payload:
-        dataset = DatasetContract(
-            dataset_id=dataset_payload["dataset_id"],
-            root=Path(dataset_payload["root"]),
-            task=TaskType(dataset_payload["task"]),
-            metadata_path=(
-                Path(dataset_payload["metadata_path"])
-                if dataset_payload.get("metadata_path")
-                else None
-            ),
-            notes=dataset_payload.get("notes", ""),
-        )
+    classification_dataset_payload = payload.get("classification_dataset")
+    classification_dataset = (
+        _parse_dataset_contract(classification_dataset_payload, base_dir=base_dir)
+        if classification_dataset_payload
+        else None
+    )
 
-    candidates = [
-        ModelCandidate(
-            candidate_id=item["candidate_id"],
-            framework=FrameworkKind(item["framework"]),
-            model_name=item["model_name"],
-            tier=ModelTier(item["tier"]),
-            task=TaskType(item["task"]),
-            train_params=item.get("train_params", {}),
-            export_formats=item.get("export_formats", ["onnx"]),
+    crop_payload = payload.get("crop_generation", {})
+    crop_generation = CropGenerationConfig(
+        enabled=bool(crop_payload.get("enabled", False)),
+        framework=FrameworkKind(
+            crop_payload.get("framework", FrameworkKind.YOLO.value)
+        ),
+        detector_model_path=_resolve_path(
+            base_dir,
+            crop_payload.get(
+                "detector_model_path",
+                "output_models/detection_lite/latest_detection_lightweight_edge_yolo_n.onnx",
+            ),
+        ),
+        source_root=_resolve_path(
+            base_dir,
+            crop_payload.get("source_root", "dataset/classification_source"),
+        ),
+        output_root=_resolve_path(
+            base_dir,
+            crop_payload.get("output_root", "dataset/classification_cropped"),
+        ),
+        score_threshold=float(crop_payload.get("score_threshold", 0.25)),
+        max_crops_per_image=int(crop_payload.get("max_crops_per_image", 1)),
+    )
+
+    candidates: list[ModelCandidate] = []
+    for item in payload.get("candidates", []):
+        framework = FrameworkKind(item["framework"])
+        model_name = item["model_name"]
+        candidates.append(
+            ModelCandidate(
+                candidate_id=item["candidate_id"],
+                framework=framework,
+                model_name=model_name,
+                tier=ModelTier(item["tier"]),
+                task=TaskType(item["task"]),
+                train_params=_normalize_candidate_train_params(
+                    base_dir=base_dir,
+                    framework=framework,
+                    model_name=model_name,
+                    raw_params=item.get("train_params", {}),
+                ),
+                export_formats=_normalize_export_formats(
+                    item.get("export_formats", ["onnx"])
+                ),
+            )
         )
-        for item in payload.get("candidates", [])
-    ]
 
     return PipelineConfig(
-        project_name=payload["project_name"],
-        experiment_name=payload["experiment_name"],
-        output_root=Path(payload.get("output_root", "output_models")),
-        logs_root=Path(payload.get("logs_root", "logs")),
+        output_root=_resolve_path(base_dir, payload.get("output_root", "output_models")),
+        logs_root=_resolve_path(base_dir, payload.get("logs_root", "logs")),
         training=training,
-        deployment=deployment,
-        dataset=dataset,
+        detection_dataset=detection_dataset,
+        classification_dataset=classification_dataset,
+        crop_generation=crop_generation,
         candidates=candidates,
     )
 
 
 def load_pipeline_from_settings_toml(path: Path) -> PipelineConfig:
+    base_dir = path.parent.resolve()
     data = tomllib.loads(path.read_text(encoding="utf-8"))
 
     pipeline_tbl = data.get("pipeline", {})
     training_tbl = data.get("training", {})
-    deployment_tbl = data.get("deployment", {})
-    dataset_tbl = data.get("dataset", {})
+    detection_dataset_tbl = data.get("detection_dataset", {})
+    classification_dataset_tbl = data.get("classification_dataset", {})
+    crop_tbl = data.get("crop_generation", {})
     candidates_tbl = data.get("candidates", [])
 
     training = TrainingCommonConfig(
@@ -264,72 +320,124 @@ def load_pipeline_from_settings_toml(path: Path) -> PipelineConfig:
         early_stop_patience=int(training_tbl.get("early_stop_patience", 20)),
     )
 
-    deployment = DeploymentPathConfig(
-        edge_detection_model_path=(
-            Path(str(deployment_tbl["edge_detection_model_path"]))
-            if deployment_tbl.get("edge_detection_model_path")
-            else None
+    detection_dataset = None
+    if detection_dataset_tbl:
+        detection_dataset = DatasetContract(
+            dataset_id=str(detection_dataset_tbl.get("dataset_id", "det_dataset")),
+            root=_resolve_path(
+                base_dir,
+                str(detection_dataset_tbl.get("root", "dataset/detection_source")),
+            ),
+            task=TaskType.DETECTION,
+            label_policy=LabelPolicy(
+                str(
+                    detection_dataset_tbl.get(
+                        "label_policy", LabelPolicy.SINGLE_CLASS_BIRD.value
+                    )
+                )
+            ),
+            metadata_path=_resolve_optional_path(
+                base_dir,
+                str(detection_dataset_tbl["metadata_path"])
+                if detection_dataset_tbl.get("metadata_path")
+                else None,
+            ),
+            notes=str(detection_dataset_tbl.get("notes", "")),
+        )
+
+    classification_dataset = None
+    if classification_dataset_tbl:
+        classification_dataset = DatasetContract(
+            dataset_id=str(
+                classification_dataset_tbl.get("dataset_id", "cls_dataset_cropped")
+            ),
+            root=_resolve_path(
+                base_dir,
+                str(
+                    classification_dataset_tbl.get(
+                        "root", "dataset/classification_cropped"
+                    )
+                )
+            ),
+            task=TaskType.CLASSIFICATION,
+            label_policy=LabelPolicy(
+                str(
+                    classification_dataset_tbl.get(
+                        "label_policy", LabelPolicy.SPECIES_CLASSIFICATION.value
+                    )
+                )
+            ),
+            metadata_path=_resolve_optional_path(
+                base_dir,
+                str(classification_dataset_tbl["metadata_path"])
+                if classification_dataset_tbl.get("metadata_path")
+                else None,
+            ),
+            notes=str(classification_dataset_tbl.get("notes", "")),
+        )
+
+    crop_generation = CropGenerationConfig(
+        enabled=bool(crop_tbl.get("enabled", False)),
+        framework=FrameworkKind(
+            str(crop_tbl.get("framework", FrameworkKind.YOLO.value))
         ),
-        edge_classification_model_path=(
-            Path(str(deployment_tbl["edge_classification_model_path"]))
-            if deployment_tbl.get("edge_classification_model_path")
-            else None
+        detector_model_path=_resolve_path(
+            base_dir,
+            str(
+                crop_tbl.get(
+                    "detector_model_path",
+                    "output_models/detection_lite/latest_detection_lightweight_edge_yolo_n.onnx",
+                )
+            ),
         ),
-        server_detection_model_path=(
-            Path(str(deployment_tbl["server_detection_model_path"]))
-            if deployment_tbl.get("server_detection_model_path")
-            else None
+        source_root=_resolve_path(
+            base_dir,
+            str(crop_tbl.get("source_root", "dataset/classification_source")),
         ),
-        server_classification_model_path=(
-            Path(str(deployment_tbl["server_classification_model_path"]))
-            if deployment_tbl.get("server_classification_model_path")
-            else None
+        output_root=_resolve_path(
+            base_dir,
+            str(crop_tbl.get("output_root", "dataset/classification_cropped")),
         ),
+        score_threshold=float(crop_tbl.get("score_threshold", 0.25)),
+        max_crops_per_image=int(crop_tbl.get("max_crops_per_image", 1)),
     )
 
-    dataset = None
-    if dataset_tbl:
-        dataset = DatasetContract(
-            dataset_id=str(dataset_tbl.get("dataset_id", "placeholder_dataset")),
-            root=Path(str(dataset_tbl.get("root", "dataset"))),
-            task=TaskType(str(dataset_tbl.get("task", TaskType.DETECTION.value))),
-            metadata_path=(
-                Path(str(dataset_tbl["metadata_path"]))
-                if dataset_tbl.get("metadata_path")
-                else None
-            ),
-            notes=str(dataset_tbl.get("notes", "")),
+    candidates: list[ModelCandidate] = []
+    for item in candidates_tbl:
+        framework = FrameworkKind(str(item["framework"]))
+        model_name = str(item["model_name"])
+        candidates.append(
+            ModelCandidate(
+                candidate_id=str(item["candidate_id"]),
+                framework=framework,
+                model_name=model_name,
+                tier=ModelTier(str(item["tier"])),
+                task=TaskType(str(item["task"])),
+                train_params=_normalize_candidate_train_params(
+                    base_dir=base_dir,
+                    framework=framework,
+                    model_name=model_name,
+                    raw_params=dict(item.get("train_params", {})),
+                ),
+                export_formats=_normalize_export_formats(
+                    list(item.get("export_formats", ["onnx"]))
+                ),
+            )
         )
-
-    candidates = [
-        ModelCandidate(
-            candidate_id=str(item["candidate_id"]),
-            framework=FrameworkKind(str(item["framework"])),
-            model_name=str(item["model_name"]),
-            tier=ModelTier(str(item["tier"])),
-            task=TaskType(str(item["task"])),
-            train_params=dict(item.get("train_params", {})),
-            export_formats=list(item.get("export_formats", ["onnx"])),
-        )
-        for item in candidates_tbl
-    ]
 
     return PipelineConfig(
-        project_name=str(pipeline_tbl.get("project_name", "bird_monitoring_station")),
-        experiment_name=str(pipeline_tbl.get("experiment_name", "baseline_dual_tier")),
-        output_root=Path(str(pipeline_tbl.get("output_root", "output_models"))),
-        logs_root=Path(str(pipeline_tbl.get("logs_root", "logs"))),
+        output_root=_resolve_path(base_dir, str(pipeline_tbl.get("output_root", "output_models"))),
+        logs_root=_resolve_path(base_dir, str(pipeline_tbl.get("logs_root", "logs"))),
         training=training,
-        deployment=deployment,
-        dataset=dataset,
+        detection_dataset=detection_dataset,
+        classification_dataset=classification_dataset,
+        crop_generation=crop_generation,
         candidates=candidates,
     )
 
 
 def build_default_pipeline_config() -> PipelineConfig:
     return PipelineConfig(
-        project_name="bird_model_delivery_tool",
-        experiment_name="baseline_dual_tier",
         training=TrainingCommonConfig(
             seed=42,
             epochs=50,
@@ -341,17 +449,30 @@ def build_default_pipeline_config() -> PipelineConfig:
             amp=True,
             early_stop_patience=20,
         ),
-        deployment=DeploymentPathConfig(
-            edge_detection_model_path=None,
-            edge_classification_model_path=None,
-            server_detection_model_path=None,
-            server_classification_model_path=None,
-        ),
-        dataset=DatasetContract(
-            dataset_id="placeholder_dataset",
-            root=Path("dataset"),
+        detection_dataset=DatasetContract(
+            dataset_id="detection_source",
+            root=Path("CUB_200_2011/det_bird"),
             task=TaskType.DETECTION,
-            notes="PIR trigger + IR camera scenario, pending unified dataset schema",
+            label_policy=LabelPolicy.SINGLE_CLASS_BIRD,
+            notes="Use converted CUB unified detection layout (det_bird), collapse classes to 'bird'",
+        ),
+        classification_dataset=DatasetContract(
+            dataset_id="classification_cropped",
+            root=Path("dataset/classification_cropped"),
+            task=TaskType.CLASSIFICATION,
+            label_policy=LabelPolicy.SPECIES_CLASSIFICATION,
+            notes="Use detector-cropped images with species labels",
+        ),
+        crop_generation=CropGenerationConfig(
+            enabled=True,
+            framework=FrameworkKind.YOLO,
+            detector_model_path=Path(
+                "output_models/detection_lite/latest_detection_lightweight_edge_yolo_n.onnx"
+            ),
+            source_root=Path("dataset/classification_source"),
+            output_root=Path("dataset/classification_cropped"),
+            score_threshold=0.25,
+            max_crops_per_image=1,
         ),
         candidates=[
             ModelCandidate(
@@ -360,8 +481,12 @@ def build_default_pipeline_config() -> PipelineConfig:
                 model_name="yolo11n",
                 tier=ModelTier.LIGHTWEIGHT,
                 task=TaskType.DETECTION,
-                train_params={"epochs": 50, "imgsz": 640},
-                export_formats=["onnx", "tflite"],
+                train_params={
+                    "epochs": 50,
+                    "imgsz": 640,
+                    "pretrained": "weights/yolo11n.pt",
+                },
+                export_formats=["onnx"],
             ),
             ModelCandidate(
                 candidate_id="server_yolo_m",
@@ -369,7 +494,11 @@ def build_default_pipeline_config() -> PipelineConfig:
                 model_name="yolo11m",
                 tier=ModelTier.STANDARD,
                 task=TaskType.DETECTION,
-                train_params={"epochs": 80, "imgsz": 640},
+                train_params={
+                    "epochs": 80,
+                    "imgsz": 640,
+                    "pretrained": "weights/yolo11m.pt",
+                },
                 export_formats=["onnx"],
             ),
             ModelCandidate(

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import io
 import time
+
+from PIL import Image
 
 from src.interface import IInferenceModule, IModelBundleLoader
 from src.models.models import (
@@ -119,6 +122,41 @@ class TwoStageInferenceModule(IInferenceModule):
             latency_ms=int((time.time() - start) * 1000),
         )
 
+    def _crop_for_classification(
+        self,
+        image: ImagePayload,
+        box: DetectionBox,
+    ) -> tuple[ImagePayload, dict[str, float]]:
+        with Image.open(io.BytesIO(image.bytes_data)) as raw:
+            raw = raw.convert("RGB")
+            width, height = raw.size
+
+            left = int(max(0, min(width - 1, box.x1 * width)))
+            top = int(max(0, min(height - 1, box.y1 * height)))
+            right = int(max(left + 1, min(width, box.x2 * width)))
+            bottom = int(max(top + 1, min(height, box.y2 * height)))
+
+            cropped = raw.crop((left, top, right, bottom))
+            output = io.BytesIO()
+            save_format = "JPEG" if image.format.lower() in {"jpg", "jpeg"} else "PNG"
+            cropped.save(output, format=save_format)
+
+            cropped_payload = ImagePayload(
+                image_id=f"{image.image_id}_crop",
+                bytes_data=output.getvalue(),
+                format=image.format,
+                width=cropped.width,
+                height=cropped.height,
+                checksum_sha256=image.checksum_sha256,
+            )
+            crop_box = {
+                "x1": box.x1,
+                "y1": box.y1,
+                "x2": box.x2,
+                "y2": box.y2,
+            }
+            return cropped_payload, crop_box
+
     def infer_two_stage(
         self,
         image: ImagePayload,
@@ -131,6 +169,7 @@ class TwoStageInferenceModule(IInferenceModule):
                 stage="detector_failed",
                 detection=detection,
                 classification=None,
+                crop_applied=False,
                 detector_model_version=models.contract.detection.model_version,
                 classifier_model_version=models.contract.classification.model_version,
                 reason=detection.reason or "detector_failed",
@@ -142,18 +181,43 @@ class TwoStageInferenceModule(IInferenceModule):
                 stage="detected_only",
                 detection=detection,
                 classification=None,
+                crop_applied=False,
                 detector_model_version=models.contract.detection.model_version,
                 classifier_model_version=models.contract.classification.model_version,
                 reason=detection.reason or "no_target_detected",
             )
 
-        classification = self.classify(image=image, detection=detection, models=models)
+        best_box = max(detection.boxes, key=lambda item: item.confidence)
+        try:
+            cropped_image, crop_box = self._crop_for_classification(
+                image=image,
+                box=best_box,
+            )
+        except Exception as exc:
+            return TwoStageInferenceResult(
+                success=False,
+                stage="classifier_failed",
+                detection=detection,
+                classification=None,
+                crop_applied=False,
+                detector_model_version=models.contract.detection.model_version,
+                classifier_model_version=models.contract.classification.model_version,
+                reason=f"crop_failed:{exc}",
+            )
+
+        classification = self.classify(
+            image=cropped_image,
+            detection=detection,
+            models=models,
+        )
         if not classification.success:
             return TwoStageInferenceResult(
                 success=False,
                 stage="classifier_failed",
                 detection=detection,
                 classification=classification,
+                crop_applied=True,
+                crop_box=crop_box,
                 detector_model_version=models.contract.detection.model_version,
                 classifier_model_version=models.contract.classification.model_version,
                 reason=classification.reason or "classifier_failed",
@@ -164,6 +228,8 @@ class TwoStageInferenceModule(IInferenceModule):
             stage="classified",
             detection=detection,
             classification=classification,
+            crop_applied=True,
+            crop_box=crop_box,
             detector_model_version=models.contract.detection.model_version,
             classifier_model_version=models.contract.classification.model_version,
         )

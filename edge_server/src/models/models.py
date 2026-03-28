@@ -127,6 +127,8 @@ class TwoStageInferenceResult:
     ]
     detection: DetectionResult
     classification: ClassificationResult | None = None
+    crop_applied: bool = False
+    crop_box: dict[str, float] | None = None
     detector_model_version: str | None = None
     classifier_model_version: str | None = None
     reason: str | None = None
