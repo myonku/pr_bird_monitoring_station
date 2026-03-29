@@ -18,7 +18,7 @@ early_stop_patience = 20
 [detection_dataset]
 # 检测训练数据集的具体配置
 dataset_id = "det_source_public"
-root = "E:/det_bird"
+root = "E:/bird_detection_dataset"
 task = "detection"
 label_policy = "single_class_bird"
 notes = "Converted CUB unified detection layout (images/labels/annotations/yolo.yaml), all boxes mapped to bird"
@@ -29,6 +29,7 @@ dataset_id = "cls_cropped_species"
 root = "E:/classification_cropped"
 task = "classification"
 label_policy = "species_classification"
+label_file_name = "labels.txt"
 notes = "Detector-cropped images with species labels"
 
 [crop_generation]
@@ -36,10 +37,23 @@ notes = "Detector-cropped images with species labels"
 enabled = true
 framework = "yolo"
 detector_model_path = "output_models/detection_lite/latest_detection_lightweight_edge_yolo_n.onnx"
+label_file_name = "labels.txt"
 source_root = "E:/photos"
 output_root = "E:/classification_cropped"
 score_threshold = 0.25
 max_crops_per_image = 1
+# 在自动选模时仅考虑按评分排序后的前 N 个候选
+max_selection_candidates = 20
+# 候选框面积比例过滤，过小/过大框将被视为不可靠并丢弃
+min_box_area_ratio = 0.20
+max_box_area_ratio = 0.90
+# 候选框到图像边缘的最小留白比例（0 表示不启用该约束）
+min_box_edge_margin_ratio = 0.0
+# 每个类别最终最多保留多少张成品图（0 表示不限制）
+max_images_per_class = 50
+# 进度显示开关与输出间隔
+show_progress = true
+progress_interval = 100
 
 # 模型候选项的配置，定义了不同模型候选项的框架、模型名称、所属层级、任务类型、导出格式以及训练参数等信息
 # 配置可超过四个候选，但必须覆盖四类组合：

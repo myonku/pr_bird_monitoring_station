@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 import csv
+import os
+import random
 import shutil
 import time
 from pathlib import Path
 from typing import Any
 
 from src.config import FrameworkKind, ModelCandidate
-from src.factory.func import deterministic_score, make_export_artifacts
+from src.factory.func import deterministic_score
+from src.models.common import IMAGE_EXTENSIONS
 from src.models.common import TaskType
 from src.models.dataset_model import DatasetBundle
 from src.models.training import TrainingOutput
 
 
 class YoloBackend:
-    """YOLO 训练后端。检测任务走真实训练路径，其他任务保留占位输出。"""
+    """YOLO 训练后端。检测与分类任务都走真实训练路径。"""
 
     framework = FrameworkKind.YOLO
 
@@ -75,6 +78,99 @@ class YoloBackend:
 
         images_val = yolo_paths.get("images_val")
         return Path(str(yaml_path)), Path(str(images_val)) if images_val else None
+
+    @staticmethod
+    def _resolve_classification_root(dataset: DatasetBundle) -> Path:
+        root = dataset.metadata.get("root")
+        if not root:
+            raise ValueError("classification dataset metadata missing root path")
+        root_path = Path(str(root))
+        if not root_path.exists() or not root_path.is_dir():
+            raise FileNotFoundError(f"classification dataset root not found: {root_path}")
+        return root_path
+
+    @staticmethod
+    def _collect_classification_images(dataset: DatasetBundle) -> dict[str, list[Path]]:
+        root = YoloBackend._resolve_classification_root(dataset)
+        class_dirs = dataset.metadata.get("paths", {}).get("class_dirs", {})
+        grouped: dict[str, list[Path]] = {}
+
+        if isinstance(class_dirs, dict) and class_dirs:
+            for class_id, class_dir in class_dirs.items():
+                directory = Path(str(class_dir))
+                if not directory.exists() or not directory.is_dir():
+                    continue
+                images = sorted(
+                    item
+                    for item in directory.rglob("*")
+                    if item.suffix.lower() in IMAGE_EXTENSIONS
+                )
+                if images:
+                    grouped[str(class_id)] = images
+        else:
+            for item in sorted(root.iterdir()):
+                if not item.is_dir():
+                    continue
+                images = sorted(
+                    child
+                    for child in item.rglob("*")
+                    if child.suffix.lower() in IMAGE_EXTENSIONS
+                )
+                if images:
+                    grouped[item.name] = images
+
+        if not grouped:
+            raise ValueError("no classification images found for YOLO training")
+        return grouped
+
+    @staticmethod
+    def _materialize_split_file(source: Path, target: Path) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if target.exists():
+                target.unlink()
+            os.link(source, target)
+        except Exception:
+            shutil.copy2(source, target)
+
+    @staticmethod
+    def _prepare_classification_split(
+        dataset: DatasetBundle,
+        output_dir: Path,
+        *,
+        val_ratio: float,
+        seed: int,
+    ) -> tuple[Path, Path]:
+        grouped_images = YoloBackend._collect_classification_images(dataset)
+        split_root = output_dir / "_yolo_cls_data"
+        if split_root.exists() and split_root.is_dir():
+            shutil.rmtree(split_root, ignore_errors=True)
+
+        train_root = split_root / "train"
+        val_root = split_root / "val"
+        rng = random.Random(seed)
+
+        for class_name, images in grouped_images.items():
+            items = list(images)
+            rng.shuffle(items)
+            if len(items) <= 1:
+                train_items = items
+                val_items = items
+            else:
+                val_count = int(round(len(items) * val_ratio))
+                val_count = max(1, min(len(items) - 1, val_count))
+                val_items = items[:val_count]
+                train_items = items[val_count:]
+
+            for index, image_path in enumerate(train_items):
+                target = train_root / class_name / f"{index:08d}{image_path.suffix.lower()}"
+                YoloBackend._materialize_split_file(image_path, target)
+
+            for index, image_path in enumerate(val_items):
+                target = val_root / class_name / f"{index:08d}{image_path.suffix.lower()}"
+                YoloBackend._materialize_split_file(image_path, target)
+
+        return split_root, val_root
 
     @staticmethod
     def _read_metric_from_csv(csv_path: Path, metric_keys: list[str]) -> float:
@@ -256,14 +352,16 @@ class YoloBackend:
         dataset: DatasetBundle,
         output_dir: Path,
     ) -> TrainingOutput:
-        if candidate.task != TaskType.DETECTION:
-            return self._train_placeholder(
+        if candidate.task == TaskType.DETECTION:
+            return self._train_detection(
+                candidate=candidate, dataset=dataset, output_dir=output_dir
+            )
+        if candidate.task == TaskType.CLASSIFICATION:
+            return self._train_classification(
                 candidate=candidate, dataset=dataset, output_dir=output_dir
             )
 
-        return self._train_detection(
-            candidate=candidate, dataset=dataset, output_dir=output_dir
-        )
+        raise ValueError(f"unsupported task for yolo backend: {candidate.task.value}")
 
     def _train_detection(
         self,
@@ -377,37 +475,123 @@ class YoloBackend:
             exported_paths=exported,
         )
 
-    def _train_placeholder(
+    def _train_classification(
         self,
         candidate: ModelCandidate,
         dataset: DatasetBundle,
         output_dir: Path,
     ) -> TrainingOutput:
+        try:
+            from ultralytics import YOLO
+        except ImportError as exc:
+            raise ModuleNotFoundError(
+                "ultralytics is required for YOLO classification training. "
+                "Install it with: uv add ultralytics"
+            ) from exc
+
         output_dir.mkdir(parents=True, exist_ok=True)
         prefix = f"{candidate.task.value}_{candidate.tier.value}_{candidate.candidate_id}"
-        checkpoint = output_dir / f"{prefix}.pt"
-        checkpoint.write_text(
-            "placeholder yolo checkpoint\n"
-            f"dataset={dataset.dataset_id}\n"
-            f"model={candidate.model_name}\n",
-            encoding="utf-8",
+
+        train_params = candidate.train_params
+        epochs = int(train_params.get("epochs", 50))
+        imgsz = int(train_params.get("imgsz", train_params.get("image_size", 224)))
+        batch = int(train_params.get("batch", train_params.get("batch_size", 64)))
+        workers = int(train_params.get("workers", train_params.get("num_workers", 4)))
+        patience = int(train_params.get("patience", 20))
+        device = self._resolve_device(train_params)
+        val_ratio = float(train_params.get("val_ratio", train_params.get("validation_split", 0.1)))
+        val_ratio = min(max(val_ratio, 0.01), 0.49)
+        seed = int(train_params.get("seed", 42))
+
+        model_ref = self._resolve_model_ref(
+            train_params=train_params,
+            model_name=candidate.model_name,
+            output_dir=output_dir,
+        )
+        model = YOLO(model_ref)
+
+        split_root, val_images_dir = self._prepare_classification_split(
+            dataset=dataset,
+            output_dir=output_dir,
+            val_ratio=val_ratio,
+            seed=seed,
+        )
+        temp_run_name = "_yolo_cls_train_tmp"
+        train_started_at = time.time()
+        train_output = model.train(
+            data=str(split_root),
+            epochs=epochs,
+            imgsz=imgsz,
+            batch=batch,
+            workers=workers,
+            patience=patience,
+            device=device,
+            project=str(output_dir),
+            name=temp_run_name,
+            exist_ok=True,
+            verbose=False,
         )
 
-        base = f"{candidate.candidate_id}:{candidate.model_name}:{dataset.dataset_id}"
-        exported = make_export_artifacts(
-            output_dir, candidate, candidate.export_formats
+        run_dir = self._resolve_train_run_dir(
+            train_output=train_output,
+            model=model,
+            output_dir=output_dir,
+            temp_run_name=temp_run_name,
         )
+        best_checkpoint = self._resolve_best_checkpoint(
+            run_dir=run_dir,
+            output_dir=output_dir,
+            train_started_at=train_started_at,
+        )
+
+        final_checkpoint = output_dir / f"{prefix}.pt"
+        shutil.copy2(best_checkpoint, final_checkpoint)
+
+        base = f"{candidate.candidate_id}:{candidate.model_name}:{dataset.dataset_id}"
+        results_csv = run_dir / "results.csv"
+        top1 = self._resolve_metric(
+            train_output,
+            results_csv,
+            [
+                "metrics/accuracy_top1",
+                "metrics/accuracy_top1(C)",
+                "metrics/top1_acc",
+                "top1",
+            ],
+        )
+
+        exported = self._export_with_fallback(
+            candidate=candidate,
+            checkpoint=final_checkpoint,
+            output_dir=output_dir,
+            imgsz=imgsz,
+            device=device,
+        )
+        size_mb = round(final_checkpoint.stat().st_size / (1024 * 1024), 4)
+        latency_ms = self._benchmark_latency_ms(
+            checkpoint=final_checkpoint,
+            val_images_dir=val_images_dir,
+            imgsz=imgsz,
+            device=device,
+            fallback_seed=base,
+        )
+
+        if run_dir.exists() and run_dir.is_relative_to(output_dir):
+            shutil.rmtree(run_dir, ignore_errors=True)
+        if split_root.exists() and split_root.is_relative_to(output_dir):
+            shutil.rmtree(split_root, ignore_errors=True)
+
         return TrainingOutput(
             candidate_id=candidate.candidate_id,
             framework=candidate.framework.value,
             model_name=candidate.model_name,
             tier=candidate.tier.value,
             task=candidate.task.value,
-            map50=deterministic_score(base + ":map50", 0.45, 0.86),
-            map50_95=deterministic_score(base + ":map50_95", 0.25, 0.67),
-            top1=0.0,
-            latency_ms=deterministic_score(base + ":latency", 8.0, 70.0),
-            size_mb=deterministic_score(base + ":size", 5.0, 120.0),
-            checkpoint_path=str(checkpoint),
+            map50=0.0,
+            map50_95=0.0,
+            top1=round(float(top1), 6),
+            latency_ms=latency_ms,
+            size_mb=size_mb,
+            checkpoint_path=str(final_checkpoint),
             exported_paths=exported,
         )

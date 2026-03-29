@@ -123,26 +123,62 @@ class CropGenerationConfig:
     detector_model_path: Path = Path(
         "output_models/detection_lite/latest_detection_lightweight_edge_yolo_n.onnx"
     )
+    label_file_name: str = "class.txt"
     source_root: Path = Path("dataset/classification_source")
     output_root: Path = Path("dataset/classification_cropped")
     score_threshold: float = 0.25
     max_crops_per_image: int = 1
+    max_selection_candidates: int = 20
+    min_box_area_ratio: float = 0.02
+    max_box_area_ratio: float = 0.90
+    min_box_edge_margin_ratio: float = 0.0
+    max_images_per_class: int = 0
+    show_progress: bool = True
+    progress_interval: int = 1000
 
     def __post_init__(self) -> None:
         if not (0.0 <= self.score_threshold <= 1.0):
             raise ValueError("score_threshold must be within [0.0, 1.0]")
         if self.max_crops_per_image < 1:
             raise ValueError("max_crops_per_image must be >= 1")
+        if self.max_selection_candidates < 1:
+            raise ValueError("max_selection_candidates must be >= 1")
+        if not (0.0 <= self.min_box_area_ratio <= 1.0):
+            raise ValueError("min_box_area_ratio must be within [0.0, 1.0]")
+        if not (0.0 <= self.max_box_area_ratio <= 1.0):
+            raise ValueError("max_box_area_ratio must be within [0.0, 1.0]")
+        if self.max_box_area_ratio < self.min_box_area_ratio:
+            raise ValueError(
+                "max_box_area_ratio must be >= min_box_area_ratio"
+            )
+        if not (0.0 <= self.min_box_edge_margin_ratio < 0.5):
+            raise ValueError(
+                "min_box_edge_margin_ratio must be within [0.0, 0.5)"
+            )
+        if self.max_images_per_class < 0:
+            raise ValueError("max_images_per_class must be >= 0")
+        if self.progress_interval < 1:
+            raise ValueError("progress_interval must be >= 1")
+        if not self.label_file_name.strip():
+            raise ValueError("label_file_name must not be empty")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled,
             "framework": self.framework.value,
             "detector_model_path": str(self.detector_model_path),
+            "label_file_name": self.label_file_name,
             "source_root": str(self.source_root),
             "output_root": str(self.output_root),
             "score_threshold": self.score_threshold,
             "max_crops_per_image": self.max_crops_per_image,
+            "max_selection_candidates": self.max_selection_candidates,
+            "min_box_area_ratio": self.min_box_area_ratio,
+            "max_box_area_ratio": self.max_box_area_ratio,
+            "min_box_edge_margin_ratio": self.min_box_edge_margin_ratio,
+            "max_images_per_class": self.max_images_per_class,
+            "show_progress": self.show_progress,
+            "progress_interval": self.progress_interval,
         }
 
 
@@ -202,6 +238,7 @@ def _parse_dataset_contract(payload: dict[str, Any], base_dir: Path) -> DatasetC
         root=_resolve_path(base_dir, payload["root"]),
         task=TaskType(payload["task"]),
         label_policy=LabelPolicy(payload.get("label_policy", LabelPolicy.AS_IS.value)),
+        label_file_name=str(payload.get("label_file_name", "class.txt")),
         metadata_path=_resolve_optional_path(base_dir, payload.get("metadata_path")),
         notes=payload.get("notes", ""),
     )
@@ -251,6 +288,7 @@ def load_pipeline_config(path: Path) -> PipelineConfig:
                 "output_models/detection_lite/latest_detection_lightweight_edge_yolo_n.onnx",
             ),
         ),
+        label_file_name=str(crop_payload.get("label_file_name", "class.txt")),
         source_root=_resolve_path(
             base_dir,
             crop_payload.get("source_root", "dataset/classification_source"),
@@ -261,6 +299,15 @@ def load_pipeline_config(path: Path) -> PipelineConfig:
         ),
         score_threshold=float(crop_payload.get("score_threshold", 0.25)),
         max_crops_per_image=int(crop_payload.get("max_crops_per_image", 1)),
+        max_selection_candidates=int(crop_payload.get("max_selection_candidates", 20)),
+        min_box_area_ratio=float(crop_payload.get("min_box_area_ratio", 0.02)),
+        max_box_area_ratio=float(crop_payload.get("max_box_area_ratio", 0.90)),
+        min_box_edge_margin_ratio=float(
+            crop_payload.get("min_box_edge_margin_ratio", 0.0)
+        ),
+        max_images_per_class=int(crop_payload.get("max_images_per_class", 0)),
+        show_progress=bool(crop_payload.get("show_progress", True)),
+        progress_interval=int(crop_payload.get("progress_interval", 1000)),
     )
 
     candidates: list[ModelCandidate] = []
@@ -336,6 +383,7 @@ def load_pipeline_from_settings_toml(path: Path) -> PipelineConfig:
                     )
                 )
             ),
+            label_file_name=str(detection_dataset_tbl.get("label_file_name", "class.txt")),
             metadata_path=_resolve_optional_path(
                 base_dir,
                 str(detection_dataset_tbl["metadata_path"])
@@ -367,6 +415,9 @@ def load_pipeline_from_settings_toml(path: Path) -> PipelineConfig:
                     )
                 )
             ),
+            label_file_name=str(
+                classification_dataset_tbl.get("label_file_name", "class.txt")
+            ),
             metadata_path=_resolve_optional_path(
                 base_dir,
                 str(classification_dataset_tbl["metadata_path"])
@@ -390,6 +441,7 @@ def load_pipeline_from_settings_toml(path: Path) -> PipelineConfig:
                 )
             ),
         ),
+        label_file_name=str(crop_tbl.get("label_file_name", "class.txt")),
         source_root=_resolve_path(
             base_dir,
             str(crop_tbl.get("source_root", "dataset/classification_source")),
@@ -400,6 +452,13 @@ def load_pipeline_from_settings_toml(path: Path) -> PipelineConfig:
         ),
         score_threshold=float(crop_tbl.get("score_threshold", 0.25)),
         max_crops_per_image=int(crop_tbl.get("max_crops_per_image", 1)),
+        max_selection_candidates=int(crop_tbl.get("max_selection_candidates", 20)),
+        min_box_area_ratio=float(crop_tbl.get("min_box_area_ratio", 0.02)),
+        max_box_area_ratio=float(crop_tbl.get("max_box_area_ratio", 0.90)),
+        min_box_edge_margin_ratio=float(crop_tbl.get("min_box_edge_margin_ratio", 0.0)),
+        max_images_per_class=int(crop_tbl.get("max_images_per_class", 0)),
+        show_progress=bool(crop_tbl.get("show_progress", True)),
+        progress_interval=int(crop_tbl.get("progress_interval", 1000)),
     )
 
     candidates: list[ModelCandidate] = []
@@ -461,6 +520,7 @@ def build_default_pipeline_config() -> PipelineConfig:
             root=Path("dataset/classification_cropped"),
             task=TaskType.CLASSIFICATION,
             label_policy=LabelPolicy.SPECIES_CLASSIFICATION,
+            label_file_name="class.txt",
             notes="Use detector-cropped images with species labels",
         ),
         crop_generation=CropGenerationConfig(
@@ -469,10 +529,18 @@ def build_default_pipeline_config() -> PipelineConfig:
             detector_model_path=Path(
                 "output_models/detection_lite/latest_detection_lightweight_edge_yolo_n.onnx"
             ),
+            label_file_name="class.txt",
             source_root=Path("dataset/classification_source"),
             output_root=Path("dataset/classification_cropped"),
             score_threshold=0.25,
             max_crops_per_image=1,
+            max_selection_candidates=20,
+            min_box_area_ratio=0.02,
+            max_box_area_ratio=0.90,
+            min_box_edge_margin_ratio=0.0,
+            max_images_per_class=0,
+            show_progress=True,
+            progress_interval=1000,
         ),
         candidates=[
             ModelCandidate(

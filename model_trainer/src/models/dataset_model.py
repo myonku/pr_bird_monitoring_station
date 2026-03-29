@@ -24,6 +24,7 @@ class DatasetContract:
     root: Path
     task: TaskType
     label_policy: LabelPolicy = LabelPolicy.AS_IS
+    label_file_name: str = "class.txt"
     metadata_path: Path | None = None
     notes: str = ""
 
@@ -35,3 +36,25 @@ class DatasetContract:
         if self.metadata_path is not None:
             payload["metadata_path"] = str(self.metadata_path)
         return payload
+
+
+@dataclass(slots=True)
+class ClassificationImageItem:
+    """分类数据集中的单张图片项，包含所属类别和路径信息。"""
+
+    class_id: str
+    class_name: str
+    image_path: Path
+    relative_path: Path
+
+
+@dataclass(slots=True)
+class ClassificationLayout:
+    """描述分类数据集的目录结构和文件分布情况。"""
+
+    root: Path
+    class_file: Path
+    classes: dict[str, str]
+    images: list[ClassificationImageItem]
+    class_image_counts: dict[str, int]
+    extra_top_level_dirs: list[str]

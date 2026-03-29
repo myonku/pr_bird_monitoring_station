@@ -22,5 +22,10 @@ class CropRunSummary:
     output_root: str
     total_images: int
     cropped_images: int
+    copied_images: int
     skipped_images: int
+    dropped_no_valid_box_images: int
+    dropped_class_limit_images: int
+    failed_images: int
+    class_count: int
     manifest_path: str

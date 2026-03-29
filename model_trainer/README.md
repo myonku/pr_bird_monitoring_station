@@ -4,7 +4,7 @@
 
 - 多训练框架并行演进（如 YOLO、PyTorch）
 - 按 `task+tier` 手动选择单次训练模型
-- 检测任务使用真实检测数据适配（分类任务可暂时保留占位）
+- 检测任务与分类任务都使用真实数据适配与真实训练流程
 - 自动记录本次摘要，并和上一次同 lane 训练做对比
 
 当前代码重点是“稳定可追溯的单次训练流程”，不是最终训练精度。
@@ -47,13 +47,13 @@
 ```text
 main.py
 src/
-	cli.py                 # 命令行入口（plan/run/crop-dataset）
+	cli.py                 # 命令行入口（plan/run/crop-dataset/export-model）
 	config.py              # 统一配置与默认候选模型定义
 	logger.py              # 结构化运行日志落盘
 	datasets/
-		datasets.py              # 数据集服务路由（placeholder / unified / auto）
+		datasets.py              # 数据集服务路由（unified / bird-classification / auto）
 		detection_dataset.py     # CUB det_bird 检测数据适配
-		classification_dataset.py# 分类占位适配
+		classification_dataset.py# 分类数据适配（真实目录解析）
 	factory/
 		model_factory.py           # 训练后端注册（YOLO/PyTorch）
 		torch_backend.py
@@ -77,12 +77,12 @@ src/
 
 - `DatasetService.load(contract) -> DatasetBundle`
 - 检测任务固定走真实检测适配器（`UnifiedBirdDetectionDatasetAdapter`），不再支持占位数据集。
-- 分类任务可继续使用占位适配器（用于裁切数据链路尚未完全落地时）。
+- 分类任务在 `auto` 模式下走真实分类适配器（`BirdClassificationDatasetAdapter`），不再支持占位数据集。
 
 2. 训练后端
 
 - 检测任务：`YoloBackend` 与 `PytorchBackend` 均已接入真实训练流程。
-- 分类任务：当前仍保留占位训练输出（后续可按需要接入真实分类训练）。
+- 分类任务：`YoloBackend` 与 `PytorchBackend` 均已接入真实训练流程。
 
 3. 结果比较
 
@@ -94,7 +94,18 @@ src/
 
 4. 裁切生成
 
-- `crop-dataset` 命令会使用检测模型对分类源图做裁切并输出 `crop_manifest.json`。
+- `crop-dataset` 命令要求 `--tier`，先在 `logs/<lane>` 中按 `map50_95` 排序选择检测模型（仅搜索前 `max_selection_candidates` 个候选）。
+- 若自动选模失败，会回退到 `[crop_generation]` 的 `framework + detector_model_path`；回退路径也无效时命令退出。
+- 裁切阶段不会再复制原图兜底：低置信度或未通过框质量约束的图片会直接丢弃。
+- 支持按类别限制成品数量：`max_images_per_class` 可限制每个 class_id 最终输出上限（例如每类最多 5000 张）。
+- 裁切输出保持分类目录结构不变，并生成 `crop_manifest.json`（状态包含 `cropped`、`dropped_no_valid_box`、`dropped_class_limit_reached`、`failed`）。
+- 支持简单进度显示（stderr）：通过 `show_progress` 和 `progress_interval` 配置。
+
+5. 模型导出
+
+- `export-model` 命令按 `task + tier` 从 `logs/<lane>` 读取历史 `summary.json`，按任务指标排序后仅在前 `max_selection_candidates` 个候选中选模。
+- 排序指标与裁切选模一致：检测按 `map50_95`，分类按 `top1`。
+- 导出时会将选中的模型文件复制到 `--output` 指定目录，并输出选中来源与元信息（`source=logs_topk`）。
 
 ## 默认候选模型（示例）
 
@@ -113,10 +124,10 @@ src/
 
 - [pipeline]：输出目录根路径
 - [training]：训练通用项（含基础范围校验）
-- [dataset]：数据集契约占位信息
+- [dataset]：数据集契约基础信息（如需扩展）
 - [detection_dataset]：检测训练数据集（位置标注，标签可归并）
 - [classification_dataset]：分类训练数据集（裁切后，仅类别标签）
-- [crop_generation]：裁切任务配置（模型路径、输入输出路径、阈值）
+- [crop_generation]：裁切任务配置（回退模型、标签文件名、输入输出路径、阈值、自动选模候选上限、框质量过滤、每类数量上限、进度显示）
 - [[candidates]]：候选模型与每个候选的 train_params
 
 说明：
@@ -132,17 +143,44 @@ src/
 uv run python main.py plan --settings settings.toml
 ```
 
-2. 执行单次训练（统一命令模板）
+2. 执行单次训练（四类组合，直接可复制）
 
 ```bash
-uv run python main.py run --settings settings.toml --task <detection|classification> --tier <lightweight|standard> --dataset-adapter auto
+uv run python main.py run --settings settings.toml --task detection --tier lightweight --dataset-adapter auto
+```
+
+```bash
+uv run python main.py run --settings settings.toml --task detection --tier standard --dataset-adapter auto
+```
+
+```bash
+uv run python main.py run --settings settings.toml --task classification --tier lightweight --dataset-adapter auto
+```
+
+```bash
+uv run python main.py run --settings settings.toml --task classification --tier standard --dataset-adapter auto
 ```
 
 3. 生成分类裁切数据集
 
 ```bash
-uv run python main.py crop-dataset --settings settings.toml
+uv run python main.py crop-dataset --settings settings.toml --tier <lightweight|standard>
 ```
+
+4. 导出指定训练类型的模型产物
+
+```bash
+uv run python main.py export-model --settings settings.toml --task <detection|classification> --tier <lightweight|standard> --max-selection-candidates <N> --output <target_dir>
+```
+
+说明：
+
+- `--max-selection-candidates`（或 `--max_selection_candidates`）用于限制仅在日志排序前 N 个候选中寻找可用模型文件。
+
+命令输出中的 `selected_model.source` 含义：
+
+- `logs_topk`：来自日志自动选模（按评分排序并受 top-N 限制）。
+- `crop_generation_fallback`：日志选模失败后使用配置回退模型。
 
 ## 输出内容
 
@@ -165,15 +203,11 @@ uv run python main.py crop-dataset --settings settings.toml
 
 ## 下一步接入建议
 
-1. 数据集
+1. 数据集与训练质量
 
-- 在 `src/core/datasets/classification_dataset.py` 接入真实分类数据读取（当前仍为占位实现）。
+- 分类数据与训练流程已真实化；后续可补充更严格的数据质量校验（如坏图检测、类间样本不均衡告警）。
 
-2. 真实训练
-
-- 检测任务已接入真实训练路径；分类任务后续可继续替换占位训练逻辑。
-
-3. 推理侧接入
+2. 推理侧接入
 
 - 按 lane 选择对应的最新 run 目录产物（如 `detection_lite` 或 `classification_std`）。
 - 线上切换建议通过外部发布清单管理，不依赖训练端自动挑选最佳模型。

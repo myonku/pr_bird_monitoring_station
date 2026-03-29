@@ -2,13 +2,19 @@ from pathlib import Path
 from typing import Literal
 
 from src.datasets.detection_dataset import UnifiedBirdDetectionDatasetAdapter
-from src.datasets.classification_dataset import PlaceholderDatasetAdapter
+from src.datasets.classification_dataset import (
+    BirdClassificationDatasetAdapter,
+)
 from src.config import DatasetContract, PipelineConfig, TaskType
 
 from src.models.dataset_model import DatasetBundle
 
 
-AdapterMode = Literal["placeholder", "unified-bird-detection", "auto"]
+AdapterMode = Literal[
+    "unified-bird-detection",
+    "bird-classification",
+    "auto",
+]
 
 
 class DatasetService:
@@ -17,37 +23,32 @@ class DatasetService:
     def __init__(self, mode: AdapterMode) -> None:
         self.mode = mode
         self._detection = UnifiedBirdDetectionDatasetAdapter()
-        self._placeholder = PlaceholderDatasetAdapter()
+        self._classification = BirdClassificationDatasetAdapter()
 
     def load(self, contract: DatasetContract) -> DatasetBundle:
         if contract.task == TaskType.DETECTION:
-            if self.mode == "placeholder":
-                raise ValueError(
-                    "Detection task does not support placeholder dataset adapter. "
-                    "Use unified-bird-detection or auto."
-                )
             return self._detection.load(contract)
 
-        if self.mode == "placeholder":
-            return self._placeholder.load(contract)
+        if self.mode in {"unified-bird-detection", "bird-classification", "auto"}:
+            return self._classification.load(contract)
 
-        if self.mode in {"unified-bird-detection", "auto"}:
-            return self._placeholder.load(contract)
-
-        return self._placeholder.load(contract)
+        raise ValueError(f"unsupported dataset adapter mode: {self.mode}")
 
 
 def build_dataset_adapter(name: str) -> DatasetService:
     adapter_key = name.strip().lower()
-    if adapter_key in {"placeholder", "default", "none"}:
-        return DatasetService("placeholder")
+    if adapter_key in {"default", "none"}:
+        return DatasetService("auto")
     if adapter_key in {"unified-bird-detection", "cub-bird-detection", "det-bird"}:
         return DatasetService("unified-bird-detection")
+    if adapter_key in {"bird-classification", "cls-bird", "classification"}:
+        return DatasetService("bird-classification")
     if adapter_key in {"auto", "smart"}:
         return DatasetService("auto")
     raise ValueError(
         f"Unsupported dataset adapter: {name}. "
-        "Current available adapters: placeholder, unified-bird-detection, auto"
+        "Current available adapters: unified-bird-detection, "
+        "bird-classification, auto"
     )
 
 

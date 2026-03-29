@@ -1,20 +1,25 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 import shutil
 from pathlib import Path
-from typing import Any
 
 from src.config import (
-    FrameworkKind,
     ModelTier,
-    PipelineConfig,
     TaskType,
-    build_default_pipeline_config,
-    load_pipeline_from_settings_toml,
-    load_pipeline_config,
 )
+from src.cli_tools.model_selector import (
+    select_detection_model_for_tier,
+    select_model_for_task_tier,
+)
+from src.cli_tools.pipeline import (
+    filter_pipeline_candidates_by_task_tier,
+    load_or_default_config,
+    rewrite_paths,
+)
+from src.cli_tools.timeline import build_compare_timeline_entry
 from src.cropper.dataset_cropper import DatasetCropper, build_cropper_backend
 from src.datasets.datasets import build_dataset_adapter, resolve_dataset_root
 from src.evaluator.comparator import compare_summary_files, save_comparison
@@ -23,142 +28,8 @@ from src.models.common import lane_key
 from src.logger import RunLogger
 
 
-def _load_or_default_config(path: str | None, settings_path: str) -> PipelineConfig:
-    if path:
-        return load_pipeline_config(Path(path))
-
-    settings_file = Path(settings_path)
-    if settings_file.exists() and settings_file.stat().st_size > 0:
-        return load_pipeline_from_settings_toml(settings_file)
-
-    return build_default_pipeline_config()
-
-
-def _filter_pipeline_candidates_by_task_tier(
-    pipeline: PipelineConfig,
-    task: TaskType,
-    tier: ModelTier,
-) -> None:
-    expected_pairs = {
-        (TaskType.DETECTION, ModelTier.LIGHTWEIGHT),
-        (TaskType.DETECTION, ModelTier.STANDARD),
-        (TaskType.CLASSIFICATION, ModelTier.LIGHTWEIGHT),
-        (TaskType.CLASSIFICATION, ModelTier.STANDARD),
-    }
-
-    grouped: dict[tuple[TaskType, ModelTier], list[Any]] = {
-        key: [] for key in expected_pairs
-    }
-    for candidate in pipeline.candidates:
-        key = (candidate.task, candidate.tier)
-        if key not in grouped:
-            raise ValueError(
-                "Candidate task/tier must be within 4 combinations: "
-                "(detection|classification) x (lightweight|standard)."
-            )
-        grouped[key].append(candidate)
-
-    for pair in expected_pairs:
-        items = grouped[pair]
-        if len(items) < 1:
-            raise ValueError(
-                f"Expected at least one candidate for task={pair[0].value}, "
-                f"tier={pair[1].value}, got {len(items)}"
-            )
-
-    # 同一 task+tier 允许配置多个候选，按配置顺序选择第一个。
-    pipeline.candidates = [grouped[(task, tier)][0]]
-
-
-def _load_summary(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _score_key_for_task(task: TaskType) -> str:
-    return "map50_95" if task == TaskType.DETECTION else "top1"
-
-
-def _winner_score(winner: dict[str, Any] | None, task: TaskType) -> float | None:
-    if not winner:
-        return None
-    score_key = _score_key_for_task(task)
-    try:
-        return float(winner.get(score_key, 0.0) or 0.0)
-    except (TypeError, ValueError):
-        return None
-
-
-def _build_compare_timeline_entry(
-    *,
-    task: TaskType,
-    tier: ModelTier,
-    run_id: str,
-    previous_summary_path: Path | None,
-    current_summary_path: Path,
-    comparison_json_path: Path | None,
-) -> dict[str, Any]:
-    current_summary = _load_summary(current_summary_path)
-    current_winner = current_summary.get("comparison", {}).get("overall_winner")
-
-    if previous_summary_path is None:
-        return {
-            "run_id": run_id,
-            "lane": lane_key(task, tier),
-            "task": task.value,
-            "tier": tier.value,
-            "status": "first_run_no_compare",
-            "previous_summary": None,
-            "current_summary": str(current_summary_path),
-            "current_winner": current_winner,
-            "current_winner_score": _winner_score(current_winner, task),
-            "comparison_summary": None,
-        }
-
-    previous_summary = _load_summary(previous_summary_path)
-    previous_winner = previous_summary.get("comparison", {}).get("overall_winner")
-
-    previous_score = _winner_score(previous_winner, task)
-    current_score = _winner_score(current_winner, task)
-    delta = None
-    if previous_score is not None and current_score is not None:
-        delta = round(current_score - previous_score, 6)
-
-    return {
-        "run_id": run_id,
-        "lane": lane_key(task, tier),
-        "task": task.value,
-        "tier": tier.value,
-        "status": "compared_with_previous",
-        "previous_summary": str(previous_summary_path),
-        "current_summary": str(current_summary_path),
-        "comparison_summary": str(comparison_json_path) if comparison_json_path else None,
-        "previous_winner": previous_winner,
-        "current_winner": current_winner,
-        "previous_winner_score": previous_score,
-        "current_winner_score": current_score,
-        "winner_changed": (
-            (previous_winner or {}).get("candidate_id")
-            != (current_winner or {}).get("candidate_id")
-        ),
-        "score_delta": delta,
-    }
-
-
-def _rewrite_paths(payload: Any, src_root: Path, dst_root: Path) -> Any:
-    src = str(src_root)
-    dst = str(dst_root)
-
-    if isinstance(payload, dict):
-        return {key: _rewrite_paths(value, src_root, dst_root) for key, value in payload.items()}
-    if isinstance(payload, list):
-        return [_rewrite_paths(item, src_root, dst_root) for item in payload]
-    if isinstance(payload, str) and payload.startswith(src):
-        return dst + payload[len(src) :]
-    return payload
-
-
 def command_plan(args: argparse.Namespace) -> None:
-    pipeline = _load_or_default_config(args.config, args.settings)
+    pipeline = load_or_default_config(args.config, args.settings)
     if args.dataset_root is not None:
         if pipeline.detection_dataset:
             pipeline.detection_dataset.root = resolve_dataset_root(args.dataset_root)
@@ -169,10 +40,10 @@ def command_plan(args: argparse.Namespace) -> None:
 
 
 def command_run(args: argparse.Namespace) -> None:
-    pipeline = _load_or_default_config(args.config, args.settings)
+    pipeline = load_or_default_config(args.config, args.settings)
     task = TaskType(str(args.task))
     tier = ModelTier(str(args.tier))
-    _filter_pipeline_candidates_by_task_tier(pipeline, task, tier)
+    filter_pipeline_candidates_by_task_tier(pipeline, task, tier)
     lane = lane_key(task, tier)
 
     logs_base = pipeline.logs_root if args.logs_root is None else Path(args.logs_root)
@@ -204,7 +75,7 @@ def command_run(args: argparse.Namespace) -> None:
     if staging_output_root.exists():
         shutil.move(str(staging_output_root), str(final_output_root))
 
-    result = _rewrite_paths(result, staging_output_root, final_output_root)
+    result = rewrite_paths(result, staging_output_root, final_output_root)
     pipeline.output_root = final_output_root
 
     logger.save("pipeline.json", pipeline.to_dict())
@@ -231,7 +102,7 @@ def command_run(args: argparse.Namespace) -> None:
             output_json=comparison_prev_json,
         )
 
-    timeline_entry = _build_compare_timeline_entry(
+    timeline_entry = build_compare_timeline_entry(
         task=task,
         tier=tier,
         run_id=logger.run_id,
@@ -264,19 +135,52 @@ def command_run(args: argparse.Namespace) -> None:
 
 
 def command_crop_dataset(args: argparse.Namespace) -> None:
-    pipeline = _load_or_default_config(args.config, args.settings)
+    pipeline = load_or_default_config(args.config, args.settings)
     crop_cfg = pipeline.crop_generation
+    tier = ModelTier(str(args.tier))
+    lane = lane_key(TaskType.DETECTION, tier)
 
-    framework = (
-        crop_cfg.framework
-        if args.framework is None
-        else FrameworkKind(str(args.framework))
-    )
-    detector_model_path = (
-        crop_cfg.detector_model_path
-        if args.detector_model is None
-        else Path(args.detector_model)
-    )
+    logs_base = pipeline.logs_root if args.logs_root is None else Path(args.logs_root)
+    logs_lane_root = logs_base / lane
+    selected_model_payload: dict[str, object]
+    try:
+        selected = select_detection_model_for_tier(
+            logs_lane_root=logs_lane_root,
+            tier=tier,
+            selection_limit=crop_cfg.max_selection_candidates,
+        )
+        framework = selected.framework
+        detector_model_path = selected.model_path
+        selected_model_payload = {
+            "source": "logs_topk",
+            "candidate_id": selected.candidate_id,
+            "model_name": selected.model_name,
+            "framework": selected.framework.value,
+            "score": selected.score,
+            "model_path": str(selected.model_path),
+            "run_id": selected.run_id,
+            "summary_path": str(selected.summary_path),
+        }
+    except FileNotFoundError as exc:
+        fallback_path = crop_cfg.detector_model_path.expanduser().resolve()
+        if not (fallback_path.exists() and fallback_path.is_file()):
+            raise SystemExit(
+                "auto model selection failed and fallback model path is invalid. "
+                f"selection_error={exc}; fallback_path={fallback_path}"
+            ) from exc
+
+        framework = crop_cfg.framework
+        detector_model_path = fallback_path
+        selected_model_payload = {
+            "source": "crop_generation_fallback",
+            "candidate_id": None,
+            "model_name": None,
+            "framework": framework.value,
+            "score": None,
+            "model_path": str(fallback_path),
+            "run_id": None,
+            "summary_path": None,
+        }
     source_root = crop_cfg.source_root if args.source_root is None else Path(args.source_root)
     output_root = crop_cfg.output_root if args.output_root is None else Path(args.output_root)
     score_threshold = (
@@ -296,9 +200,71 @@ def command_crop_dataset(args: argparse.Namespace) -> None:
         detector_model_path=detector_model_path,
         score_threshold=score_threshold,
         max_crops_per_image=max_crops_per_image,
+        label_file_name=crop_cfg.label_file_name,
+        min_box_area_ratio=crop_cfg.min_box_area_ratio,
+        max_box_area_ratio=crop_cfg.max_box_area_ratio,
+        min_box_edge_margin_ratio=crop_cfg.min_box_edge_margin_ratio,
+        max_images_per_class=crop_cfg.max_images_per_class,
+        show_progress=crop_cfg.show_progress,
+        progress_interval=crop_cfg.progress_interval,
     )
     summary = cropper.run(source_root=source_root, output_root=output_root)
-    print(json.dumps(summary.__dict__, ensure_ascii=False, indent=2))
+    payload = asdict(summary)
+    payload.update(
+        {
+            "task": TaskType.DETECTION.value,
+            "tier": tier.value,
+            "lane": lane,
+            "selection_limit": crop_cfg.max_selection_candidates,
+            "selected_model": selected_model_payload,
+        }
+    )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def command_export_model(args: argparse.Namespace) -> None:
+    pipeline = load_or_default_config(args.config, args.settings)
+    task = TaskType(str(args.task))
+    tier = ModelTier(str(args.tier))
+    selection_limit = int(args.max_selection_candidates)
+    if selection_limit < 1:
+        raise SystemExit("max_selection_candidates must be >= 1")
+
+    lane = lane_key(task, tier)
+    logs_base = pipeline.logs_root if args.logs_root is None else Path(args.logs_root)
+    logs_lane_root = logs_base / lane
+
+    selected = select_model_for_task_tier(
+        logs_lane_root=logs_lane_root,
+        task=task,
+        tier=tier,
+        selection_limit=selection_limit,
+    )
+
+    output_dir = Path(str(args.output)).expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target_path = output_dir / selected.model_path.name
+    shutil.copy2(selected.model_path, target_path)
+
+    payload = {
+        "task": task.value,
+        "tier": tier.value,
+        "lane": lane,
+        "selection_limit": selection_limit,
+        "source": "logs_topk",
+        "output": str(output_dir),
+        "exported_model_path": str(target_path),
+        "selected_model": {
+            "candidate_id": selected.candidate_id,
+            "model_name": selected.model_name,
+            "framework": selected.framework.value,
+            "score": selected.score,
+            "model_path": str(selected.model_path),
+            "run_id": selected.run_id,
+            "summary_path": str(selected.summary_path),
+        },
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -336,7 +302,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--dataset-adapter",
         default="auto",
-        help="placeholder | unified-bird-detection | auto",
+        help="unified-bird-detection | bird-classification | auto",
     )
     run_parser.add_argument("--output-root", default=None)
     run_parser.add_argument("--logs-root", default=None)
@@ -344,25 +310,77 @@ def build_parser() -> argparse.ArgumentParser:
 
     crop_parser = subparsers.add_parser(
         "crop-dataset",
-        help="generate classification crops using detector model",
+        help="generate classification crops using detector model (logs auto-select with config fallback)",
     )
     crop_parser.add_argument("--config", default=None, help="pipeline config json path")
     crop_parser.add_argument(
         "--settings", default="settings.toml", help="global settings toml path"
     )
     crop_parser.add_argument(
-        "--framework",
-        type=str,
-        default=None,
-        choices=["yolo", "pytorch"],
-        help="override framework defined in crop_generation",
+        "--tier",
+        required=True,
+        choices=[ModelTier.LIGHTWEIGHT.value, ModelTier.STANDARD.value],
+        help="required: choose detection tier to auto-select best detector from logs",
     )
-    crop_parser.add_argument("--detector-model", default=None)
+    crop_parser.add_argument(
+        "--logs-root",
+        default=None,
+        help=(
+            "override logs root for model selection; lane subdir is resolved automatically; "
+            "if selection fails, crop_generation detector_model_path is used as fallback"
+        ),
+    )
     crop_parser.add_argument("--source-root", default=None)
     crop_parser.add_argument("--output-root", default=None)
     crop_parser.add_argument("--score-threshold", type=float, default=None)
     crop_parser.add_argument("--max-crops-per-image", type=int, default=None)
     crop_parser.set_defaults(func=command_crop_dataset)
+
+    export_parser = subparsers.add_parser(
+        "export-model",
+        help="export selected model artifact by task+tier from top-k logs",
+    )
+    export_parser.add_argument(
+        "--config",
+        default=None,
+        help="pipeline config json path",
+    )
+    export_parser.add_argument(
+        "--settings",
+        default="settings.toml",
+        help="global settings toml path",
+    )
+    export_parser.add_argument(
+        "--task",
+        required=True,
+        choices=[TaskType.DETECTION.value, TaskType.CLASSIFICATION.value],
+        help="required: choose task type for model export",
+    )
+    export_parser.add_argument(
+        "--tier",
+        required=True,
+        choices=[ModelTier.LIGHTWEIGHT.value, ModelTier.STANDARD.value],
+        help="required: choose model tier for model export",
+    )
+    export_parser.add_argument(
+        "--max-selection-candidates",
+        "--max_selection_candidates",
+        dest="max_selection_candidates",
+        required=True,
+        type=int,
+        help="required: only search top-N ranked candidates in logs",
+    )
+    export_parser.add_argument(
+        "--output",
+        required=True,
+        help="required: target directory to export selected model artifact",
+    )
+    export_parser.add_argument(
+        "--logs-root",
+        default=None,
+        help="override logs root for model selection; lane subdir is resolved automatically",
+    )
+    export_parser.set_defaults(func=command_export_model)
 
     return parser
 

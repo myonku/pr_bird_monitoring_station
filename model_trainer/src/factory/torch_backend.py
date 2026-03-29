@@ -8,7 +8,15 @@ from typing import Any, cast
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
+from torchvision import datasets as tv_datasets
+from torchvision import transforms as tv_transforms
+from torchvision.models import (
+    ConvNeXt_Base_Weights,
+    MobileNet_V3_Large_Weights,
+    convnext_base,
+    mobilenet_v3_large,
+)
 from torchvision.models.detection import (
     fasterrcnn_mobilenet_v3_large_320_fpn,
     fasterrcnn_resnet50_fpn,
@@ -16,7 +24,6 @@ from torchvision.models.detection import (
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 from src.config import FrameworkKind, ModelCandidate
-from src.factory.func import deterministic_score, make_export_artifacts
 from src.models.common import TaskType
 from src.models.dataset_model import DatasetBundle
 from src.models.training import TrainingOutput
@@ -39,7 +46,7 @@ class _DetectionExportWrapper(nn.Module):
 
 
 class PytorchBackend:
-    """PyTorch 训练后端。检测任务走真实训练路径，分类任务保留占位实现。"""
+    """PyTorch 训练后端。检测与分类任务都走真实训练路径。"""
 
     framework = FrameworkKind.PYTORCH
 
@@ -53,9 +60,217 @@ class PytorchBackend:
             return self._train_detection(
                 candidate=candidate, dataset=dataset, output_dir=output_dir
             )
-        return self._train_placeholder(
-            candidate=candidate, dataset=dataset, output_dir=output_dir
+        if candidate.task == TaskType.CLASSIFICATION:
+            return self._train_classification(
+                candidate=candidate, dataset=dataset, output_dir=output_dir
+            )
+        raise ValueError(f"unsupported task for pytorch backend: {candidate.task.value}")
+
+    @staticmethod
+    def _resolve_classification_root(dataset: DatasetBundle) -> Path:
+        root = dataset.metadata.get("root")
+        if not root:
+            raise ValueError("Classification dataset metadata missing root path")
+        root_path = Path(str(root))
+        if not root_path.exists() or not root_path.is_dir():
+            raise FileNotFoundError(f"classification dataset root not found: {root_path}")
+        return root_path
+
+    @staticmethod
+    def _build_classifier(
+        model_name: str,
+        *,
+        num_classes: int,
+        pretrained: bool,
+    ) -> nn.Module:
+        lower = model_name.lower()
+        if "mobilenet" in lower:
+            weights = MobileNet_V3_Large_Weights.DEFAULT if pretrained else None
+            model = mobilenet_v3_large(weights=weights)
+            model_any = cast(Any, model)
+            in_features = int(model_any.classifier[-1].in_features)
+            model_any.classifier[-1] = nn.Linear(in_features, num_classes)
+            return model
+
+        if "convnext" in lower:
+            weights = ConvNeXt_Base_Weights.DEFAULT if pretrained else None
+            model = convnext_base(weights=weights)
+            model_any = cast(Any, model)
+            in_features = int(model_any.classifier[-1].in_features)
+            model_any.classifier[-1] = nn.Linear(in_features, num_classes)
+            return model
+
+        raise ValueError(
+            "unsupported pytorch classification model_name: "
+            f"{model_name}. currently supported: mobilenet_v3_large, convnext_base"
         )
+
+    @staticmethod
+    def _classification_transforms(
+        *,
+        image_size: int,
+        is_train: bool,
+    ) -> tv_transforms.Compose:
+        normalize = tv_transforms.Normalize(
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225),
+        )
+        if is_train:
+            return tv_transforms.Compose(
+                [
+                    tv_transforms.Resize((image_size, image_size)),
+                    tv_transforms.RandomHorizontalFlip(p=0.5),
+                    tv_transforms.ToTensor(),
+                    normalize,
+                ]
+            )
+        return tv_transforms.Compose(
+            [
+                tv_transforms.Resize((image_size, image_size)),
+                tv_transforms.ToTensor(),
+                normalize,
+            ]
+        )
+
+    class _TransformedSubset(Dataset[tuple[torch.Tensor, int]]):
+        def __init__(
+            self,
+            base: tv_datasets.ImageFolder,
+            indices: list[int],
+            transform: tv_transforms.Compose,
+        ) -> None:
+            self.base = base
+            self.indices = indices
+            self.transform = transform
+
+        def __len__(self) -> int:
+            return len(self.indices)
+
+        def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:
+            sample_index = self.indices[index]
+            path, target = self.base.samples[sample_index]
+            image = self.base.loader(path)
+            image = self.base.transform(image) if self.base.transform else image
+            tensor = self.transform(image)
+            return tensor, int(target)
+
+    @staticmethod
+    def _split_train_val_indices(
+        *,
+        total_items: int,
+        val_ratio: float,
+        seed: int,
+    ) -> tuple[list[int], list[int]]:
+        if total_items <= 0:
+            raise ValueError("classification dataset is empty")
+
+        generator = torch.Generator().manual_seed(seed)
+        indices = torch.randperm(total_items, generator=generator).tolist()
+        if total_items == 1:
+            return indices, indices
+
+        val_count = int(round(total_items * val_ratio))
+        val_count = max(1, min(total_items - 1, val_count))
+        val_indices = indices[:val_count]
+        train_indices = indices[val_count:]
+        return train_indices, val_indices
+
+    @staticmethod
+    def _evaluate_classification_top1(
+        model: nn.Module,
+        data_loader: DataLoader,
+        device: torch.device,
+    ) -> float:
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for images, labels in data_loader:
+                images = images.to(device)
+                labels = labels.to(device)
+                logits = model(images)
+                predictions = torch.argmax(logits, dim=1)
+                correct += int((predictions == labels).sum().item())
+                total += int(labels.numel())
+        if total <= 0:
+            return 0.0
+        return float(correct) / float(total)
+
+    @staticmethod
+    def _benchmark_classification_latency_ms(
+        model: nn.Module,
+        image_size: int,
+        device: torch.device,
+    ) -> float:
+        model.eval()
+        sample = torch.zeros(
+            (1, 3, image_size, image_size),
+            dtype=torch.float32,
+            device=device,
+        )
+        with torch.no_grad():
+            _ = model(sample)
+            start = time.perf_counter()
+            _ = model(sample)
+        return round((time.perf_counter() - start) * 1000.0, 4)
+
+    @staticmethod
+    def _export_classification_with_fallback(
+        *,
+        model: nn.Module,
+        checkpoint: Path,
+        candidate: ModelCandidate,
+        output_dir: Path,
+        image_size: int,
+    ) -> list[str]:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{candidate.task.value}_{candidate.tier.value}_{candidate.candidate_id}"
+        paths: list[str] = []
+        model_cpu = model.to("cpu").eval()
+        dummy = torch.zeros((1, 3, image_size, image_size), dtype=torch.float32)
+
+        for fmt in candidate.export_formats:
+            normalized = fmt.strip().lower()
+
+            if normalized in {"torchscript", "ts"}:
+                target = output_dir / f"{prefix}.torchscript"
+                try:
+                    traced = cast(Any, torch.jit.trace(model_cpu, (dummy,)))
+                    traced.save(str(target))
+                    paths.append(str(target))
+                    continue
+                except Exception:
+                    shutil.copy2(checkpoint, target)
+                    paths.append(str(target))
+                    continue
+
+            if normalized == "onnx":
+                target = output_dir / f"{prefix}.onnx"
+                try:
+                    torch.onnx.export(
+                        model_cpu,
+                        (dummy,),
+                        str(target),
+                        input_names=["images"],
+                        output_names=["logits"],
+                        dynamic_axes={
+                            "images": {0: "batch"},
+                            "logits": {0: "batch"},
+                        },
+                        opset_version=17,
+                    )
+                    paths.append(str(target))
+                    continue
+                except Exception:
+                    shutil.copy2(checkpoint, target)
+                    paths.append(str(target))
+                    continue
+
+            target = output_dir / f"{prefix}.{normalized}"
+            shutil.copy2(checkpoint, target)
+            paths.append(str(target))
+
+        return paths
 
     @staticmethod
     def _resolve_detection_paths(
@@ -496,26 +711,156 @@ class PytorchBackend:
             exported_paths=exported,
         )
 
-    def _train_placeholder(
+    def _train_classification(
         self,
         candidate: ModelCandidate,
         dataset: DatasetBundle,
         output_dir: Path,
     ) -> TrainingOutput:
         output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = f"{candidate.task.value}_{candidate.tier.value}_{candidate.candidate_id}"
-        checkpoint = output_dir / f"{prefix}.ckpt"
-        checkpoint.write_text(
-            "placeholder pytorch checkpoint\n"
-            f"dataset={dataset.dataset_id}\n"
-            f"model={candidate.model_name}\n",
-            encoding="utf-8",
+        root = self._resolve_classification_root(dataset)
+        train_params = candidate.train_params
+        image_size = int(train_params.get("imgsz", train_params.get("image_size", 224)))
+        batch_size = max(
+            1,
+            int(train_params.get("batch_size", train_params.get("batch", 64))),
+        )
+        num_workers = int(train_params.get("num_workers", train_params.get("workers", 4)))
+        epochs = max(1, int(train_params.get("epochs", 10)))
+        learning_rate = float(train_params.get("learning_rate", 1e-3))
+        weight_decay = float(train_params.get("weight_decay", 1e-4))
+        val_ratio_raw = float(train_params.get("val_ratio", train_params.get("validation_split", 0.1)))
+        seed = int(train_params.get("seed", 42))
+        show_progress = bool(train_params.get("show_progress", True))
+
+        base_dataset = tv_datasets.ImageFolder(root=str(root))
+        total_items = len(base_dataset)
+        if total_items <= 0:
+            raise ValueError("classification train dataset is empty")
+
+        if total_items > 1:
+            val_ratio = min(max(val_ratio_raw, 0.01), 0.49)
+        else:
+            val_ratio = 1.0
+
+        train_indices, val_indices = self._split_train_val_indices(
+            total_items=total_items,
+            val_ratio=val_ratio,
+            seed=seed,
         )
 
-        base = f"{candidate.candidate_id}:{candidate.model_name}:{dataset.dataset_id}"
-        exported = make_export_artifacts(
-            output_dir, candidate, candidate.export_formats
+        train_transform = self._classification_transforms(
+            image_size=image_size,
+            is_train=True,
         )
+        val_transform = self._classification_transforms(
+            image_size=image_size,
+            is_train=False,
+        )
+        train_dataset = self._TransformedSubset(base_dataset, train_indices, train_transform)
+        val_dataset = self._TransformedSubset(base_dataset, val_indices, val_transform)
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+        )
+
+        num_classes = max(1, len(base_dataset.classes))
+        device = self._resolve_device(train_params)
+        pretrained = bool(train_params.get("pretrained", True))
+        model = self._build_classifier(
+            candidate.model_name,
+            num_classes=num_classes,
+            pretrained=pretrained,
+        ).to(device)
+
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.AdamW(
+            [param for param in model.parameters() if param.requires_grad],
+            lr=learning_rate,
+            weight_decay=weight_decay,
+        )
+
+        model.train()
+        total_steps = len(train_loader)
+        for epoch_index in range(epochs):
+            epoch_loss = 0.0
+            for step_index, (images, labels) in enumerate(train_loader, start=1):
+                images = images.to(device)
+                labels = labels.to(device)
+
+                logits = model(images)
+                loss = criterion(logits, labels)
+
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                optimizer.step()
+
+                loss_value = float(loss.detach().cpu().item())
+                epoch_loss += loss_value
+                if show_progress:
+                    progress = (step_index / max(total_steps, 1)) * 100.0
+                    print(
+                        (
+                            f"\r[PyTorch][cls] epoch {epoch_index + 1}/{epochs} "
+                            f"step {step_index}/{total_steps} ({progress:5.1f}%) "
+                            f"loss={loss_value:.4f}"
+                        ),
+                        end="",
+                        flush=True,
+                    )
+
+            if show_progress:
+                avg_loss = epoch_loss / max(total_steps, 1)
+                print(
+                    f"\r[PyTorch][cls] epoch {epoch_index + 1}/{epochs} done, avg_loss={avg_loss:.4f}".ljust(120),
+                    flush=True,
+                )
+
+        top1 = self._evaluate_classification_top1(
+            model=model,
+            data_loader=val_loader,
+            device=device,
+        )
+        if show_progress:
+            print(f"[PyTorch][cls][eval] top1={top1:.6f}", flush=True)
+
+        prefix = f"{candidate.task.value}_{candidate.tier.value}_{candidate.candidate_id}"
+        checkpoint = output_dir / f"{prefix}.pth"
+        torch.save(
+            {
+                "candidate_id": candidate.candidate_id,
+                "model_name": candidate.model_name,
+                "task": candidate.task.value,
+                "num_classes": num_classes,
+                "class_names": list(base_dataset.classes),
+                "state_dict": model.state_dict(),
+            },
+            checkpoint,
+        )
+
+        latency_ms = self._benchmark_classification_latency_ms(
+            model=model,
+            image_size=image_size,
+            device=device,
+        )
+        exported = self._export_classification_with_fallback(
+            model=model,
+            checkpoint=checkpoint,
+            candidate=candidate,
+            output_dir=output_dir,
+            image_size=image_size,
+        )
+        size_mb = round(checkpoint.stat().st_size / (1024 * 1024), 4)
+
         return TrainingOutput(
             candidate_id=candidate.candidate_id,
             framework=candidate.framework.value,
@@ -524,9 +869,9 @@ class PytorchBackend:
             task=candidate.task.value,
             map50=0.0,
             map50_95=0.0,
-            top1=deterministic_score(base + ":top1", 0.55, 0.92),
-            latency_ms=deterministic_score(base + ":latency", 6.0, 65.0),
-            size_mb=deterministic_score(base + ":size", 4.0, 180.0),
+            top1=round(float(top1), 6),
+            latency_ms=latency_ms,
+            size_mb=size_mb,
             checkpoint_path=str(checkpoint),
             exported_paths=exported,
         )
