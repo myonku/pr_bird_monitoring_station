@@ -15,41 +15,62 @@ enable_local_inference = true
 confidence_threshold = 0.60
 high_load_skip_inference = false
 
-[model_contract]
-contract_version = "1.0.0"
-package_version = "20260326_edge_dual_models"
-exported_at_ms = 0
-exported_by = "model_trainer"
-notes = "edge package with detector and classifier"
+[model_pack]
+# 边缘端本地模型目录；每个 task 子目录内必须且仅保留一个模型文件。
+root_dir = "model_pack"
+detection_dir = "model_pack/detection"
+classification_dir = "model_pack/classification"
+# 标签文件路径与名称（用于构建 id-name 字典）
+label_dir = "model_pack"
+detection_label_file_name = ""
+classification_label_file_name = "labels.txt"
 
-[model_contract_detection]
-artifact_id = "edge_detector_v1"
+# lightweight 候选模型映射（按文件名命中）
+
+[[model_pack_lightweight_candidates]]
+candidate_id = "edge_frcnn_mbv3_det"
+file_name = "detection_lightweight_edge_frcnn_mbv3_det.pth"
 task = "detection"
-tier = "lightweight"
-framework = "yolo"
-model_name = "yolo11n"
-format = "onnx"
-model_version = "1.0.0"
-artifact_path = "models/edge_detector_v1.onnx"
-labels = ["bird"]
+framework = "pytorch"
+model_name = "fasterrcnn_mobilenet_v3_large_320_fpn"
+format = "custom"
 input_size = [640, 640]
 score_threshold = 0.25
 nms_iou_threshold = 0.45
 topk = 1
-checksum_sha256 = ""
 
-[model_contract_classification]
-artifact_id = "edge_classifier_v1"
+[[model_pack_lightweight_candidates]]
+candidate_id = "edge_yolo_n"
+file_name = "detection_lightweight_edge_yolo_n.onnx"
+task = "detection"
+framework = "yolo"
+model_name = "yolo11n"
+format = "onnx"
+input_size = [640, 640]
+score_threshold = 0.25
+nms_iou_threshold = 0.45
+topk = 1
+
+[[model_pack_lightweight_candidates]]
+candidate_id = "edge_mobilenet_cls"
+file_name = "classification_lightweight_edge_mobilenet_cls.pth"
 task = "classification"
-tier = "lightweight"
 framework = "pytorch"
 model_name = "mobilenet_v3_large"
-format = "onnx"
-model_version = "1.0.0"
-artifact_path = "models/edge_classifier_v1.onnx"
-labels = ["sparrow", "crow", "egret"]
+format = "custom"
 input_size = [224, 224]
 score_threshold = 0.0
 nms_iou_threshold = 0.0
 topk = 5
-checksum_sha256 = ""
+
+[[model_pack_lightweight_candidates]]
+candidate_id = "edge_yolo11n_cls"
+file_name = "classification_lightweight_edge_yolo11n_cls.onnx"
+task = "classification"
+framework = "yolo"
+model_name = "yolo11n-cls"
+format = "onnx"
+input_size = [224, 224]
+score_threshold = 0.0
+nms_iou_threshold = 0.0
+topk = 5

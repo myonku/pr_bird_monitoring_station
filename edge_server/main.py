@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import argparse
 import time
 from collections.abc import Iterable
@@ -9,7 +7,8 @@ from src.models.config import load_edge_config
 from src.models.models import CaptureContext, EdgeEvent, ImagePayload
 from src.orchestration.decision_engine import DecisionEngine
 from src.orchestration.pipeline import EdgePipeline
-from src.reasoner.infrencer import LocalModelBundleLoader, TwoStageInferenceModule
+from src.reasoner.infrencer import TwoStageInferenceModule
+from src.reasoner.model_loader import LocalModelBundleLoader
 from src.uploader.transport_client import HttpTransportClient
 from src.uploader.unified_uploader import UnifiedUploader
 
@@ -77,7 +76,7 @@ def main() -> None:
     spool = InMemorySpoolStorage()
 
     model_loader = LocalModelBundleLoader()
-    model_loader.load(cfg.model_contract)
+    model_loader.load(cfg.model_pack)
     infer = TwoStageInferenceModule()
 
     transport = HttpTransportClient(

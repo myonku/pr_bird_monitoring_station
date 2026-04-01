@@ -1,5 +1,8 @@
 # Edge-Server Model Contract Spec
 
+> Deprecated: this document describes the historical model_contract settings design.
+> Current edge runtime uses model_pack directory discovery (see README.md).
+
 Version: 1.0.0
 
 This document defines a shared contract between model_trainer outputs and edge_server runtime consumption.

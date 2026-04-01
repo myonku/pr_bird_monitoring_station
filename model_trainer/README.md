@@ -18,7 +18,7 @@
 - 再用检测模型对自有分类数据做目标裁切。
 - 使用裁切后的分类数据训练分类模型。
 
-检测数据集已支持 CUB 转换后的统一结构（det_bird）：
+检测数据集已支持 CUB 转换后的统一结构（bird_detection_dataset）：
 
 - images/{train,val,test}
 - labels/{train,val,test}

@@ -1,95 +1,98 @@
-from __future__ import annotations
-
 import io
 import time
 
 from PIL import Image
 
-from src.interface import IInferenceModule, IModelBundleLoader
+from src.interface import IInferenceModule
 from src.models.models import (
-    ClassificationHit,
     ClassificationResult,
     DetectionBox,
     DetectionResult,
-    EdgeModelContract,
     ImagePayload,
     LoadedModelBundle,
     TwoStageInferenceResult,
 )
-
-
-class LocalModelBundleLoader(IModelBundleLoader):
-    """一次加载检测和分类模型，向上层暴露统一模型句柄。"""
-
-    def __init__(self) -> None:
-        self._bundle: LoadedModelBundle | None = None
-
-    def load(self, contract: EdgeModelContract) -> LoadedModelBundle:
-        if contract.detection.task != "detection":
-            raise ValueError("contract.detection.task must be detection")
-        if contract.classification.task != "classification":
-            raise ValueError("contract.classification.task must be classification")
-
-        detection_handle = {
-            "artifact_path": contract.detection.artifact_path,
-            "format": contract.detection.format,
-        }
-        classification_handle = {
-            "artifact_path": contract.classification.artifact_path,
-            "format": contract.classification.format,
-        }
-
-        self._bundle = LoadedModelBundle(
-            contract=contract,
-            detection_handle=detection_handle,
-            classification_handle=classification_handle,
-        )
-        return self._bundle
-
-    def current_bundle(self) -> LoadedModelBundle:
-        if self._bundle is None:
-            raise RuntimeError("model bundle not loaded")
-        return self._bundle
-
-    def current_contract(self) -> EdgeModelContract:
-        return self.current_bundle().contract
+from src.reasoner.classification_runtime import ClassificationRuntime
+from src.reasoner.detection_runtime import DetectionRuntime
+from src.reasoner.runtime_common import build_model_signature, load_rgb
 
 
 class TwoStageInferenceModule(IInferenceModule):
     """两阶段推理：检测 -> 分类；检测失败或无目标时提前退出。"""
 
+    def __init__(
+        self,
+        detection_runtime: DetectionRuntime | None = None,
+        classification_runtime: ClassificationRuntime | None = None,
+    ) -> None:
+        self._detection_runtime = detection_runtime or DetectionRuntime()
+        self._classification_runtime = classification_runtime or ClassificationRuntime()
+
+    @staticmethod
+    def _elapsed_ms(start_time: float) -> int:
+        return int((time.time() - start_time) * 1000)
+
+    @staticmethod
+    def _model_signature_for_detection(models: LoadedModelBundle) -> str:
+        handle = (
+            models.detection_handle if isinstance(models.detection_handle, dict) else {}
+        )
+        return build_model_signature(handle, models.contract.detection)
+
+    @staticmethod
+    def _model_signature_for_classification(models: LoadedModelBundle) -> str:
+        handle = (
+            models.classification_handle
+            if isinstance(models.classification_handle, dict)
+            else {}
+        )
+        return build_model_signature(handle, models.contract.classification)
+
     def detect(self, image: ImagePayload, models: LoadedModelBundle) -> DetectionResult:
+        """运行检测模型，返回检测结果；不抛异常，内部捕获并通过结果字段反馈错误信息。"""
         start = time.time()
+        model_signature = self._model_signature_for_detection(models)
 
         if not image.bytes_data:
             return DetectionResult(
                 success=False,
                 boxes=[],
-                latency_ms=int((time.time() - start) * 1000),
+                latency_ms=self._elapsed_ms(start),
                 reason="empty_image",
+                model_signature=model_signature,
             )
 
-        # 这里是占位策略：真实实现应调用检测模型执行推理。
-        if len(image.bytes_data) < 512:
+        try:
+            rgb = load_rgb(image)
+            handle = (
+                models.detection_handle
+                if isinstance(models.detection_handle, dict)
+                else {}
+            )
+            labels = list(models.contract.detection.labels)
+            score_threshold = float(models.contract.detection.score_threshold)
+            boxes = self._detection_runtime.run(
+                image=rgb,
+                handle=handle,
+                labels=labels,
+                score_threshold=score_threshold,
+            )
+        except Exception as exc:
             return DetectionResult(
-                success=True,
+                success=False,
                 boxes=[],
-                latency_ms=int((time.time() - start) * 1000),
-                reason="no_target_detected",
+                latency_ms=self._elapsed_ms(start),
+                reason=f"detector_runtime_error:{exc}",
+                model_signature=model_signature,
             )
 
-        box = DetectionBox(
-            label="bird",
-            confidence=max(models.contract.detection.score_threshold, 0.62),
-            x1=0.1,
-            y1=0.15,
-            x2=0.88,
-            y2=0.9,
-        )
+        reason = "no_target_detected" if not boxes else None
         return DetectionResult(
             success=True,
-            boxes=[box],
-            latency_ms=int((time.time() - start) * 1000),
+            boxes=boxes,
+            latency_ms=self._elapsed_ms(start),
+            reason=reason,
+            model_signature=model_signature,
         )
 
     def classify(
@@ -98,28 +101,57 @@ class TwoStageInferenceModule(IInferenceModule):
         detection: DetectionResult,
         models: LoadedModelBundle,
     ) -> ClassificationResult:
-        _ = image
+        """运行分类模型，返回分类结果；不抛异常，内部捕获并通过结果字段反馈错误信息。"""
+
         start = time.time()
+        model_signature = self._model_signature_for_classification(models)
 
         if not detection.success or not detection.boxes:
             return ClassificationResult(
                 success=False,
-                latency_ms=int((time.time() - start) * 1000),
+                latency_ms=self._elapsed_ms(start),
                 reason="classification_skipped_no_detection",
+                model_signature=model_signature,
             )
 
-        labels = models.contract.classification.labels or ["unknown_bird"]
-        top_label = labels[0]
-        top_conf = 0.71
-        topk = [
-            ClassificationHit(label=top_label, confidence=top_conf),
-        ]
+        try:
+            rgb = load_rgb(image)
+            handle = (
+                models.classification_handle
+                if isinstance(models.classification_handle, dict)
+                else {}
+            )
+            labels = list(models.contract.classification.labels)
+            topk_limit = max(1, int(models.contract.classification.topk))
+            topk = self._classification_runtime.run(
+                image=rgb,
+                handle=handle,
+                labels=labels,
+                topk=topk_limit,
+            )
+        except Exception as exc:
+            return ClassificationResult(
+                success=False,
+                latency_ms=self._elapsed_ms(start),
+                reason=f"classifier_runtime_error:{exc}",
+                model_signature=model_signature,
+            )
+
+        if not topk:
+            return ClassificationResult(
+                success=False,
+                latency_ms=self._elapsed_ms(start),
+                reason="classifier_empty_output",
+                model_signature=model_signature,
+            )
+
         return ClassificationResult(
             success=True,
-            top1_label=top_label,
-            top1_confidence=top_conf,
+            top1_label=topk[0].label,
+            top1_confidence=topk[0].confidence,
             topk=topk,
-            latency_ms=int((time.time() - start) * 1000),
+            latency_ms=self._elapsed_ms(start),
+            model_signature=model_signature,
         )
 
     def _crop_for_classification(
@@ -162,6 +194,11 @@ class TwoStageInferenceModule(IInferenceModule):
         image: ImagePayload,
         models: LoadedModelBundle,
     ) -> TwoStageInferenceResult:
+        """先检测后分类，检测失败或无目标时提前返回；不抛异常，内部捕获并通过结果字段反馈错误信息。"""
+
+        detector_signature = self._model_signature_for_detection(models)
+        classifier_signature = self._model_signature_for_classification(models)
+
         detection = self.detect(image=image, models=models)
         if not detection.success:
             return TwoStageInferenceResult(
@@ -172,6 +209,9 @@ class TwoStageInferenceModule(IInferenceModule):
                 crop_applied=False,
                 detector_model_version=models.contract.detection.model_version,
                 classifier_model_version=models.contract.classification.model_version,
+                detector_model_signature=detection.model_signature
+                or detector_signature,
+                classifier_model_signature=classifier_signature,
                 reason=detection.reason or "detector_failed",
             )
 
@@ -184,6 +224,9 @@ class TwoStageInferenceModule(IInferenceModule):
                 crop_applied=False,
                 detector_model_version=models.contract.detection.model_version,
                 classifier_model_version=models.contract.classification.model_version,
+                detector_model_signature=detection.model_signature
+                or detector_signature,
+                classifier_model_signature=classifier_signature,
                 reason=detection.reason or "no_target_detected",
             )
 
@@ -202,6 +245,9 @@ class TwoStageInferenceModule(IInferenceModule):
                 crop_applied=False,
                 detector_model_version=models.contract.detection.model_version,
                 classifier_model_version=models.contract.classification.model_version,
+                detector_model_signature=detection.model_signature
+                or detector_signature,
+                classifier_model_signature=classifier_signature,
                 reason=f"crop_failed:{exc}",
             )
 
@@ -220,6 +266,10 @@ class TwoStageInferenceModule(IInferenceModule):
                 crop_box=crop_box,
                 detector_model_version=models.contract.detection.model_version,
                 classifier_model_version=models.contract.classification.model_version,
+                detector_model_signature=detection.model_signature
+                or detector_signature,
+                classifier_model_signature=classification.model_signature
+                or classifier_signature,
                 reason=classification.reason or "classifier_failed",
             )
 
@@ -232,4 +282,7 @@ class TwoStageInferenceModule(IInferenceModule):
             crop_box=crop_box,
             detector_model_version=models.contract.detection.model_version,
             classifier_model_version=models.contract.classification.model_version,
+            detector_model_signature=detection.model_signature or detector_signature,
+            classifier_model_signature=classification.model_signature
+            or classifier_signature,
         )

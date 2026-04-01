@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -37,10 +35,44 @@ class ImagePayload:
 
 
 @dataclass(slots=True)
+class LightweightModelCandidateSpec:
+    """边缘端 lightweight 候选模型配置（通过文件名映射）。"""
+
+    candidate_id: str
+    file_name: str
+    task: Literal["detection", "classification"]
+    framework: str
+    model_name: str
+    format: Literal["onnx", "tflite", "torchscript", "openvino", "custom"] = (
+        "custom"
+    )
+    input_size: tuple[int, int] = (640, 640)
+    score_threshold: float = 0.25
+    nms_iou_threshold: float = 0.45
+    topk: int = 1
+
+
+@dataclass(slots=True)
+class ModelPackLocator:
+    """边缘端本地模型包目录配置（每个 task 目录仅保留一个模型文件）。"""
+
+    root_dir: str
+    detection_dir: str
+    classification_dir: str
+    label_dir: str
+    detection_label_file_name: str = ""
+    classification_label_file_name: str = "labels.txt"
+    lightweight_candidates: list[LightweightModelCandidateSpec] = field(
+        default_factory=list
+    )
+
+
+@dataclass(slots=True)
 class ModelArtifactContract:
-    """训练侧与边缘侧共享的单模型协定。"""
+    """边缘端运行时的单模型元信息（由文件名与文件本身推导）。"""
 
     artifact_id: str
+    candidate_id: str
     task: Literal["detection", "classification"]
     tier: Literal["lightweight", "standard"]
     framework: str
@@ -58,7 +90,7 @@ class ModelArtifactContract:
 
 @dataclass(slots=True)
 class EdgeModelContract:
-    """边缘端推理需要同时提供检测和分类两个模型。"""
+    """边缘端运行时模型快照（由 model_pack 扫描后生成）。"""
 
     contract_version: str
     package_version: str
@@ -95,6 +127,7 @@ class DetectionResult:
     boxes: list[DetectionBox] = field(default_factory=list)
     latency_ms: int | None = None
     reason: str | None = None
+    model_signature: str | None = None
 
 
 @dataclass(slots=True)
@@ -111,6 +144,7 @@ class ClassificationResult:
     topk: list[ClassificationHit] = field(default_factory=list)
     latency_ms: int | None = None
     reason: str | None = None
+    model_signature: str | None = None
 
 
 @dataclass(slots=True)
@@ -131,6 +165,8 @@ class TwoStageInferenceResult:
     crop_box: dict[str, float] | None = None
     detector_model_version: str | None = None
     classifier_model_version: str | None = None
+    detector_model_signature: str | None = None
+    classifier_model_signature: str | None = None
     reason: str | None = None
 
 

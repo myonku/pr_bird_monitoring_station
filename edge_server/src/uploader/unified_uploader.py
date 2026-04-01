@@ -22,10 +22,13 @@ class UnifiedUploader(IUploader):
                     "crop_box": event.local_inference.crop_box,
                     "detector_model_version": event.local_inference.detector_model_version,
                     "classifier_model_version": event.local_inference.classifier_model_version,
+                    "detector_model_signature": event.local_inference.detector_model_signature,
+                    "classifier_model_signature": event.local_inference.classifier_model_signature,
                     "detection": {
                         "success": event.local_inference.detection.success,
                         "reason": event.local_inference.detection.reason,
                         "latency_ms": event.local_inference.detection.latency_ms,
+                        "model_signature": event.local_inference.detection.model_signature,
                         "boxes": [
                             {
                                 "label": box.label,
@@ -45,6 +48,7 @@ class UnifiedUploader(IUploader):
                             "top1_confidence": event.local_inference.classification.top1_confidence,
                             "latency_ms": event.local_inference.classification.latency_ms,
                             "reason": event.local_inference.classification.reason,
+                            "model_signature": event.local_inference.classification.model_signature,
                             "topk": [
                                 {"label": hit.label, "confidence": hit.confidence}
                                 for hit in event.local_inference.classification.topk

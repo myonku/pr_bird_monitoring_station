@@ -9,6 +9,7 @@ from src.models.models import (
     EdgeModelContract,
     ImagePayload,
     LoadedModelBundle,
+    ModelPackLocator,
     TwoStageInferenceResult,
 )
 
@@ -51,10 +52,10 @@ class IInferenceModule(ABC):
 
 
 class IModelBundleLoader(ABC):
-    """模型加载模块接口；一次加载检测和分类模型，并暴露统一句柄。"""
+    """模型加载模块接口；从 model_pack 目录加载检测和分类模型，并暴露统一句柄。"""
 
     @abstractmethod
-    def load(self, contract: EdgeModelContract) -> LoadedModelBundle:
+    def load(self, locator: ModelPackLocator) -> LoadedModelBundle:
         raise NotImplementedError
 
     @abstractmethod

@@ -1,6 +1,7 @@
-# yolo model trainer related files to ignore
+# yolo/pytorh models and logs
 weights/
 runs/
+model_pack/
 
 # Some segments of this file are generated from templates, and may be overwritten.
 logs/
