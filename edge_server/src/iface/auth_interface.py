@@ -1,19 +1,18 @@
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from src.models.auth_models import (
-    BootstrapChallenge,
-    EdgeAuthHeaders,
-    EdgeAuthState,
+from src.models.auth.auth import (
     EdgeTokenBundle,
     LocalTrustMaterial,
-    RefreshTokenRequest,
-    SignedBootstrapProof,
     TokenType,
+)
+from src.models.auth.auth_contract import (
+    EdgeAuthHeaders,
+    EdgeAuthState,
+    RefreshTokenRequest,
     TokenVerificationResult,
 )
+from src.models.auth.bootstrap import BootstrapChallenge, SignedBootstrapProof
 
 
 class ISecretKeyProvider(ABC):
@@ -99,7 +98,7 @@ class IEdgeAuthStateStore(ABC):
         raise NotImplementedError
 
 
-class IEdgeAuthCoordinator(ABC):
+class IEdgeAuthTransportCoordinator(ABC):
     """高层认证协调器接口，定义了边缘认证的核心流程和策略。
     认证协调器负责管理认证状态、处理认证事件，并与网关进行交互以完成认证和授权流程。"""
 

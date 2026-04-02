@@ -3,8 +3,8 @@ import time
 
 from PIL import Image
 
-from src.interface import IInferenceModule
-from src.models.models import (
+from src.iface.workflow_interface import IInferenceModule
+from src.models.workflow.workflow import (
     ClassificationResult,
     DetectionBox,
     DetectionResult,
@@ -12,9 +12,9 @@ from src.models.models import (
     LoadedModelBundle,
     TwoStageInferenceResult,
 )
-from src.reasoner.classification_runtime import ClassificationRuntime
-from src.reasoner.detection_runtime import DetectionRuntime
-from src.reasoner.runtime_common import build_model_signature, load_rgb
+from src.reasoner.runtime.classification_runtime import ClassificationRuntime
+from src.reasoner.runtime.detection_runtime import DetectionRuntime
+from src.reasoner.runtime.runtime_common import build_model_signature, load_rgb
 
 
 class TwoStageInferenceModule(IInferenceModule):

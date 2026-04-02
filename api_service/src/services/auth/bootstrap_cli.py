@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from time import time
 from typing import cast
 from uuid import UUID, uuid4
@@ -30,7 +28,11 @@ NIL_UUID = UUID(int=0)
 class BootstrapClient:
     """冷启动认证流程服务（内存模拟）。"""
 
-    def __init__(self, issuer: str = "certification_server", redis_manager: RedisManager | None = None):
+    def __init__(
+        self,
+        issuer: str = "certification_server",
+        redis_manager: RedisManager | None = None,
+    ):
         self.issuer = issuer
         self._redis_manager = redis_manager
         self._challenges: dict[UUID, ChallengePayload] = {}
@@ -47,7 +49,9 @@ class BootstrapClient:
             return
         redis = self._redis_manager.get_client()
         ttl = max(int(payload.expires_at - time()), 5)
-        await redis.set(self._challenge_key(payload.challenge_id), msgjson.encode(payload), ex=ttl)
+        await redis.set(
+            self._challenge_key(payload.challenge_id), msgjson.encode(payload), ex=ttl
+        )
 
     async def _load_challenge(self, challenge_id: UUID) -> ChallengePayload | None:
         if self._redis_manager is None:
@@ -66,7 +70,9 @@ class BootstrapClient:
         redis = self._redis_manager.get_client()
         await redis.set(self._stage_key(principal_id), stage, ex=24 * 3600)
         await redis.set("auth:bootstrap:stage:last", stage, ex=24 * 3600)
-        await redis.set("auth:bootstrap:stage:last_principal", principal_id, ex=24 * 3600)
+        await redis.set(
+            "auth:bootstrap:stage:last_principal", principal_id, ex=24 * 3600
+        )
 
     async def _load_stage(self, principal_id: str) -> BootstrapStage | None:
         if self._redis_manager is None:

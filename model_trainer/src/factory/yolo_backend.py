@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import csv
 import os
 import random
@@ -86,7 +84,9 @@ class YoloBackend:
             raise ValueError("classification dataset metadata missing root path")
         root_path = Path(str(root))
         if not root_path.exists() or not root_path.is_dir():
-            raise FileNotFoundError(f"classification dataset root not found: {root_path}")
+            raise FileNotFoundError(
+                f"classification dataset root not found: {root_path}"
+            )
         return root_path
 
     @staticmethod
@@ -163,11 +163,15 @@ class YoloBackend:
                 train_items = items[val_count:]
 
             for index, image_path in enumerate(train_items):
-                target = train_root / class_name / f"{index:08d}{image_path.suffix.lower()}"
+                target = (
+                    train_root / class_name / f"{index:08d}{image_path.suffix.lower()}"
+                )
                 YoloBackend._materialize_split_file(image_path, target)
 
             for index, image_path in enumerate(val_items):
-                target = val_root / class_name / f"{index:08d}{image_path.suffix.lower()}"
+                target = (
+                    val_root / class_name / f"{index:08d}{image_path.suffix.lower()}"
+                )
                 YoloBackend._materialize_split_file(image_path, target)
 
         return split_root, val_root
@@ -275,7 +279,9 @@ class YoloBackend:
         device: str,
     ) -> list[str]:
         output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = f"{candidate.task.value}_{candidate.tier.value}_{candidate.candidate_id}"
+        prefix = (
+            f"{candidate.task.value}_{candidate.tier.value}_{candidate.candidate_id}"
+        )
 
         try:
             from ultralytics import YOLO
@@ -380,7 +386,9 @@ class YoloBackend:
         output_dir.mkdir(parents=True, exist_ok=True)
         yolo_yaml, val_images_dir = self._extract_detection_paths(dataset)
 
-        prefix = f"{candidate.task.value}_{candidate.tier.value}_{candidate.candidate_id}"
+        prefix = (
+            f"{candidate.task.value}_{candidate.tier.value}_{candidate.candidate_id}"
+        )
 
         train_params = candidate.train_params
         epochs = int(train_params.get("epochs", 50))
@@ -490,7 +498,9 @@ class YoloBackend:
             ) from exc
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = f"{candidate.task.value}_{candidate.tier.value}_{candidate.candidate_id}"
+        prefix = (
+            f"{candidate.task.value}_{candidate.tier.value}_{candidate.candidate_id}"
+        )
 
         train_params = candidate.train_params
         epochs = int(train_params.get("epochs", 50))
@@ -499,7 +509,9 @@ class YoloBackend:
         workers = int(train_params.get("workers", train_params.get("num_workers", 4)))
         patience = int(train_params.get("patience", 20))
         device = self._resolve_device(train_params)
-        val_ratio = float(train_params.get("val_ratio", train_params.get("validation_split", 0.1)))
+        val_ratio = float(
+            train_params.get("val_ratio", train_params.get("validation_split", 0.1))
+        )
         val_ratio = min(max(val_ratio, 0.01), 0.49)
         seed = int(train_params.get("seed", 42))
 

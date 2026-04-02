@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import contextlib
 from time import time
 from uuid import UUID
@@ -51,9 +49,13 @@ class RegistryService:
         if self._etcd_client is None:
             return
 
-        key = build_service_key(self._etcd_client.namespace, normalized.name, str(normalized.id))
+        key = build_service_key(
+            self._etcd_client.namespace, normalized.name, str(normalized.id)
+        )
         ttl = ttl_sec if ttl_sec > 0 else 30
-        await self._etcd_client.put_with_lease(key, encode_instance(normalized), ttl=ttl)
+        await self._etcd_client.put_with_lease(
+            key, encode_instance(normalized), ttl=ttl
+        )
 
     async def unregister(self, instance: ServiceInstance) -> None:
         service_bucket = self._services.get(instance.name)
@@ -66,13 +68,13 @@ class RegistryService:
 
         if self._etcd_client is None:
             return
-        key = build_service_key(self._etcd_client.namespace, instance.name, str(instance.id))
+        key = build_service_key(
+            self._etcd_client.namespace, instance.name, str(instance.id)
+        )
         with contextlib.suppress(Exception):
             await self._etcd_client.delete(key)
 
-    async def get_service_instances(
-        self, service_name: str
-    ) -> list[ServiceInstance]:
+    async def get_service_instances(self, service_name: str) -> list[ServiceInstance]:
         if self._etcd_client is not None:
             prefix = build_prefix(self._etcd_client.namespace, service_name)
             with contextlib.suppress(Exception):
@@ -90,9 +92,7 @@ class RegistryService:
         service_bucket = self._services.get(service_name, {})
         return list(service_bucket.values())
 
-    async def get_service_snapshot(
-        self, service_name: str
-    ) -> ServiceSnapshot | None:
+    async def get_service_snapshot(self, service_name: str) -> ServiceSnapshot | None:
         instances = await self.get_service_instances(service_name)
         return ServiceSnapshot(
             name=service_name,
@@ -112,7 +112,9 @@ class RegistryService:
 
         now = time()
         live_instances = [
-            inst for inst in instances if inst.heartbeat_at <= 0 or now - inst.heartbeat_at <= 30
+            inst
+            for inst in instances
+            if inst.heartbeat_at <= 0 or now - inst.heartbeat_at <= 30
         ]
         candidates = filter_by_tags(live_instances, require_tags or [])
         if not candidates:

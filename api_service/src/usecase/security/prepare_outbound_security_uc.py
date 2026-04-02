@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from src.models.auth.auth import DownstreamAccessGrant
@@ -30,6 +28,7 @@ class PrepareOutboundSecurityRequest:
     handshake_init: ECDHEHandshakeInitRequest | None = None
     encrypt_plaintext: str | None = None
     encrypt_additional_data: dict[str, str] | None = None
+
 
 class PrepareOutboundSecurityUsecase:
     """出站安全上下文编排：grant + channel + optional encrypt。"""

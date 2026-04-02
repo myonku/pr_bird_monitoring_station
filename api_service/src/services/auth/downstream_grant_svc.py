@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from time import time
 
 from src.models.auth.auth import DownstreamAccessGrant

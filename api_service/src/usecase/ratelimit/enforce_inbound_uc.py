@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from time import time
 
 from src.models.auth.ratelimit import RateLimitDecision, RateLimitDescriptor
@@ -46,7 +44,9 @@ class RateLimiterService:
 class DescriptorFactory:
     """协议上下文到 RateLimitDescriptor 的转换骨架。"""
 
-    def build(self, transport: str, route: str, method: str, headers: dict[str, str]) -> RateLimitDescriptor:
+    def build(
+        self, transport: str, route: str, method: str, headers: dict[str, str]
+    ) -> RateLimitDescriptor:
         return RateLimitDescriptor(
             scope="internal_grpc",
             transport=transport,
@@ -54,7 +54,9 @@ class DescriptorFactory:
             action=headers.get("x-action", method),
             route=route,
             method=method,
-            authenticated=bool(headers.get("authorization") or headers.get("x-downstream-principal")),
+            authenticated=bool(
+                headers.get("authorization") or headers.get("x-downstream-principal")
+            ),
             source_ip=headers.get("x-forwarded-for", ""),
             gateway_id=headers.get("x-gateway-id", ""),
             client_id=headers.get("x-client-id", ""),
@@ -78,6 +80,8 @@ class EnforceInboundUsecase:
         self.factory = factory
         self.limiter = limiter
 
-    async def execute(self, transport: str, route: str, method: str, headers: dict[str, str]) -> RateLimitDecision:
+    async def execute(
+        self, transport: str, route: str, method: str, headers: dict[str, str]
+    ) -> RateLimitDecision:
         descriptor = self.factory.build(transport, route, method, headers)
         return await self.limiter.decide(descriptor)

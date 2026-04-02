@@ -2,8 +2,8 @@ from typing import Any
 
 from PIL import Image
 
-from src.models.models import DetectionBox
-from src.reasoner.runtime_common import normalize_input_size, safe_label
+from src.models.workflow.workflow import DetectionBox
+from src.reasoner.runtime.runtime_common import normalize_input_size, safe_label
 
 
 class DetectionRuntime:

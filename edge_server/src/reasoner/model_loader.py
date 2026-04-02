@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Any
 
 
-from src.interface import IModelBundleLoader
-from src.models.models import (
+from src.iface.workflow_interface import IModelBundleLoader
+from src.models.workflow.workflow import (
     EdgeModelContract,
     LightweightModelCandidateSpec,
     LoadedModelBundle,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass(slots=True)
@@ -19,22 +18,26 @@ class InMemoryGrpcResponse:
     headers: dict[str, str]
 
 
-_INMEMORY_SERVERS_BY_ENDPOINT: dict[str, "GrpcServerAdapter"] = {}
+_INMEMORY_SERVERS_BY_ENDPOINT: dict[str, GrpcServerAdapter] = {}
 
 
-def resolve_inmemory_server(endpoint: str) -> "GrpcServerAdapter" | None:
+def resolve_inmemory_server(endpoint: str) -> GrpcServerAdapter | None:
     return _INMEMORY_SERVERS_BY_ENDPOINT.get(endpoint)
 
 
 class GrpcServerAdapter:
     """普通服务模块 gRPC 入站适配器骨架（仅负责启动/停止与服务注册）。"""
 
-    def __init__(self, address: str = "0.0.0.0:50052", service_name: str = "api_service"):
+    def __init__(
+        self, address: str = "0.0.0.0:50052", service_name: str = "api_service"
+    ):
         self.address = address
         self.service_name = service_name
         self._register_hooks: list[Callable[[], None]] = []
         self._started = False
-        self._handlers: dict[str, Callable[[InMemoryGrpcRequest], Awaitable[InMemoryGrpcResponse]]] = {}
+        self._handlers: dict[
+            str, Callable[[InMemoryGrpcRequest], Awaitable[InMemoryGrpcResponse]]
+        ] = {}
         self._interceptors = UnaryInterceptorChain()
 
     def add_service_registration(self, register_hook: Callable[[], None]) -> None:
@@ -47,7 +50,9 @@ class GrpcServerAdapter:
     ) -> None:
         self._handlers[method] = handler
 
-    def add_unary_interceptor(self, interceptor: Callable[..., Awaitable[object]]) -> None:
+    def add_unary_interceptor(
+        self, interceptor: Callable[..., Awaitable[object]]
+    ) -> None:
         self._interceptors.add(interceptor)
 
     async def start(self) -> None:
@@ -84,21 +89,22 @@ class GrpcServerAdapter:
             return await handler(req)
 
         chained = _final_handler
-        for interceptor in reversed(self._interceptors.interceptors):
-            previous = chained
 
-            async def _wrapped(
-                it=interceptor,
-                nxt=previous,
-                request=req,
-                meth=method,
-            ) -> InMemoryGrpcResponse:
+        def make_wrapper(
+            it: Callable[..., Awaitable[object]],
+            nxt: Callable[[], Awaitable[InMemoryGrpcResponse]],
+            request: InMemoryGrpcRequest,
+            meth: str,
+        ) -> Callable[[], Awaitable[InMemoryGrpcResponse]]:
+            async def _wrapped() -> InMemoryGrpcResponse:
                 result = await it(request, meth, nxt)
                 if isinstance(result, InMemoryGrpcResponse):
                     return result
                 return await nxt()
+            return _wrapped
 
-            chained = _wrapped
+        for interceptor in reversed(self._interceptors.interceptors):
+            chained = make_wrapper(interceptor, chained, req, method)
 
         return await chained()
 

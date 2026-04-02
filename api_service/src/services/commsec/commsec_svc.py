@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import base64
 import json
 from time import time
@@ -50,14 +48,19 @@ def _default_binding() -> SecureChannelBinding:
     )
 
 
-def _match_binding(expected: SecureChannelBinding, actual: SecureChannelBinding) -> bool:
+def _match_binding(
+    expected: SecureChannelBinding, actual: SecureChannelBinding
+) -> bool:
     if expected.binding_type and expected.binding_type != actual.binding_type:
         return False
     if expected.session_id != NIL_UUID and expected.session_id != actual.session_id:
         return False
     if expected.token_id != NIL_UUID and expected.token_id != actual.token_id:
         return False
-    if expected.token_family_id != NIL_UUID and expected.token_family_id != actual.token_family_id:
+    if (
+        expected.token_family_id != NIL_UUID
+        and expected.token_family_id != actual.token_family_id
+    ):
         return False
     return True
 
@@ -81,7 +84,9 @@ class CommSecurityService:
             return
         redis = self._redis_manager.get_client()
         ttl = max(int(handshake.expires_at - time()), 30)
-        await redis.set(self._handshake_key(handshake.id), msgjson.encode(handshake), ex=ttl)
+        await redis.set(
+            self._handshake_key(handshake.id), msgjson.encode(handshake), ex=ttl
+        )
 
     async def _cache_channel(self, channel: SecureChannelSession) -> None:
         if self._redis_manager is None:
@@ -114,9 +119,7 @@ class CommSecurityService:
             else "ecdhe_x25519"
         )
         signature_algo = (
-            req.supported_signatures[0]
-            if req.supported_signatures
-            else "ed25519"
+            req.supported_signatures[0] if req.supported_signatures else "ed25519"
         )
         cipher_suite = (
             req.supported_cipher_suites[0]
@@ -133,7 +136,9 @@ class CommSecurityService:
             key_exchange_algorithm=key_exchange,
             signature_algorithm=signature_algo,
             cipher_suite=cipher_suite,
-            initiator_ephemeral_public_key=str(CryptoUtils.derive_random_symmetric_key(16)),
+            initiator_ephemeral_public_key=str(
+                CryptoUtils.derive_random_symmetric_key(16)
+            ),
             responder_ephemeral_public_key="",
             initiator_nonce=str(CryptoUtils.derive_random_symmetric_key(16)),
             responder_nonce="",
@@ -216,7 +221,9 @@ class CommSecurityService:
         )
         self._channels[channel.id] = channel
         await self._cache_channel(channel)
-        return ECDHEHandshakeCompleteResult(handshake=updated_handshake, channel=channel)
+        return ECDHEHandshakeCompleteResult(
+            handshake=updated_handshake, channel=channel
+        )
 
     async def upsert_channel(
         self, req: SecureChannelUpsertRequest
@@ -246,9 +253,7 @@ class CommSecurityService:
         await self._cache_channel(channel)
         return channel
 
-    async def get_channel(
-        self, req: SecureChannelQuery
-    ) -> SecureChannelSession | None:
+    async def get_channel(self, req: SecureChannelQuery) -> SecureChannelSession | None:
         if req is None:
             return None
         if req.channel_id != NIL_UUID:
@@ -262,9 +267,15 @@ class CommSecurityService:
             return None
 
         for channel in self._channels.values():
-            if req.source_service_id and channel.source.service_id != req.source_service_id:
+            if (
+                req.source_service_id
+                and channel.source.service_id != req.source_service_id
+            ):
                 continue
-            if req.target_service_id and channel.target.service_id != req.target_service_id:
+            if (
+                req.target_service_id
+                and channel.target.service_id != req.target_service_id
+            ):
                 continue
             if not _match_binding(req.binding, channel.binding):
                 continue

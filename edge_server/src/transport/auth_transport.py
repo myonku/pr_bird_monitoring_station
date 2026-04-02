@@ -1,0 +1,1 @@
+from src.iface.auth_interface import IEdgeAuthTransportCoordinator

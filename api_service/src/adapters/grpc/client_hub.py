@@ -1,8 +1,9 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 
-from src.adapters.grpc.server_adapter import InMemoryGrpcResponse, resolve_inmemory_server
+from src.adapters.grpc.server_adapter import (
+    InMemoryGrpcResponse,
+    resolve_inmemory_server,
+)
 
 
 @dataclass(slots=True)

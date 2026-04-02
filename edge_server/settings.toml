@@ -1,8 +1,18 @@
 [runtime]
 device_id = "edge_device_001"
-spool_dir = "data/spool"
+spool_db_path = "data/edge_spool.sqlite3"
 sync_interval_sec = 3.0
 sync_batch_size = 20
+
+[capture]
+# mock: 本地联调；pir: 树莓派 PIR 触发 + 相机抓拍
+mode = "mock"
+pir_gpio_pin = 17
+pir_wait_timeout_sec = 10.0
+capture_cooldown_sec = 0.1
+image_format = "jpg"
+image_width = 1920
+image_height = 1080
 
 [upload_http]
 upload_url = "http://127.0.0.1:8080/v1/edge/events"
@@ -14,6 +24,8 @@ auth_token = ""
 enable_local_inference = true
 confidence_threshold = 0.60
 high_load_skip_inference = false
+cpu_high_watermark = 0.85
+memory_high_watermark = 0.90
 
 [model_pack]
 # 边缘端本地模型目录；每个 task 子目录内必须且仅保留一个模型文件。

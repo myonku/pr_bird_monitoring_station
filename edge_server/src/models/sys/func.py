@@ -1,15 +1,21 @@
-from __future__ import annotations
-
-import tomllib
-from dataclasses import dataclass
 from pathlib import Path
+import tomllib
 from typing import Any, Literal, cast
 
-from src.models.models import LightweightModelCandidateSpec, ModelPackLocator
 
-
-ArtifactTask = Literal["detection", "classification"]
-ArtifactFormat = Literal["onnx", "tflite", "torchscript", "openvino", "custom"]
+from src.models.workflow.workflow import (
+    LightweightModelCandidateSpec,
+    ModelPackLocator,
+)
+from src.models.sys.config import (
+    ArtifactFormat,
+    ArtifactTask,
+    CaptureConfig,
+    DecisionPolicyConfig,
+    EdgeServerConfig,
+    RuntimeConfig,
+    UploadHttpConfig,
+)
 
 
 def _parse_task(value: str) -> ArtifactTask:
@@ -83,37 +89,6 @@ def _default_lightweight_candidates() -> list[dict[str, Any]]:
     ]
 
 
-@dataclass(slots=True)
-class UploadHttpConfig:
-    upload_url: str
-    healthcheck_url: str
-    timeout_sec: float = 3.0
-    auth_token: str | None = None
-
-
-@dataclass(slots=True)
-class DecisionPolicyConfig:
-    enable_local_inference: bool = True
-    confidence_threshold: float = 0.6
-    high_load_skip_inference: bool = False
-
-
-@dataclass(slots=True)
-class RuntimeConfig:
-    device_id: str
-    spool_dir: str = "data/spool"
-    sync_interval_sec: float = 3.0
-    sync_batch_size: int = 20
-
-
-@dataclass(slots=True)
-class EdgeServerConfig:
-    runtime: RuntimeConfig
-    upload_http: UploadHttpConfig
-    decision_policy: DecisionPolicyConfig
-    model_pack: ModelPackLocator
-
-
 def _resolve_path(base_dir: Path, value: str) -> str:
     path = Path(value)
     if not path.is_absolute():
@@ -127,29 +102,70 @@ def load_edge_config(settings_path: str | Path) -> EdgeServerConfig:
     base_dir = path.parent.resolve()
 
     runtime_tbl = data.get("runtime", {})
+    capture_tbl = data.get("capture", {})
     upload_tbl = data.get("upload_http", {})
     decision_tbl = data.get("decision_policy", {})
     model_pack_tbl = data.get("model_pack", {})
     candidate_tbls = data.get("model_pack_lightweight_candidates", [])
 
+    legacy_spool_dir = str(runtime_tbl.get("spool_dir", "data"))
+    default_spool_db_path = str(Path(legacy_spool_dir) / "edge_spool.sqlite3")
+
     runtime = RuntimeConfig(
         device_id=str(runtime_tbl.get("device_id", "edge_device_001")),
-        spool_dir=str(runtime_tbl.get("spool_dir", "data/spool")),
+        spool_db_path=_resolve_path(
+            base_dir,
+            str(runtime_tbl.get("spool_db_path", default_spool_db_path)),
+        ),
         sync_interval_sec=float(runtime_tbl.get("sync_interval_sec", 3.0)),
         sync_batch_size=int(runtime_tbl.get("sync_batch_size", 20)),
     )
 
+    capture_mode = str(capture_tbl.get("mode", "mock")).strip().lower()
+    if capture_mode not in {"mock", "pir"}:
+        raise ValueError(f"unsupported capture mode: {capture_mode}")
+
+    pir_wait_timeout_raw = capture_tbl.get("pir_wait_timeout_sec")
+    capture = CaptureConfig(
+        mode=cast(Literal["mock", "pir"], capture_mode),
+        pir_gpio_pin=int(capture_tbl.get("pir_gpio_pin", 17)),
+        pir_wait_timeout_sec=(
+            float(pir_wait_timeout_raw) if pir_wait_timeout_raw is not None else None
+        ),
+        capture_cooldown_sec=float(capture_tbl.get("capture_cooldown_sec", 0.1)),
+        image_format=str(capture_tbl.get("image_format", "jpg")).strip().lower(),
+        image_width=int(capture_tbl.get("image_width", 1920)),
+        image_height=int(capture_tbl.get("image_height", 1080)),
+    )
+
+    cpu_high_watermark = float(decision_tbl.get("cpu_high_watermark", 0.85))
+    memory_high_watermark = float(decision_tbl.get("memory_high_watermark", 0.90))
+    if not (0.0 < cpu_high_watermark <= 1.0):
+        raise ValueError("cpu_high_watermark must be in (0, 1]")
+    if not (0.0 < memory_high_watermark <= 1.0):
+        raise ValueError("memory_high_watermark must be in (0, 1]")
+
     upload = UploadHttpConfig(
-        upload_url=str(upload_tbl.get("upload_url", "http://127.0.0.1:8000/v1/edge/events")),
-        healthcheck_url=str(upload_tbl.get("healthcheck_url", "http://127.0.0.1:8000/health")),
+        upload_url=str(
+            upload_tbl.get("upload_url", "http://127.0.0.1:8000/v1/edge/events")
+        ),
+        healthcheck_url=str(
+            upload_tbl.get("healthcheck_url", "http://127.0.0.1:8000/health")
+        ),
         timeout_sec=float(upload_tbl.get("timeout_sec", 3.0)),
-        auth_token=str(upload_tbl["auth_token"]) if upload_tbl.get("auth_token") else None,
+        auth_token=(
+            str(upload_tbl["auth_token"]) if upload_tbl.get("auth_token") else None
+        ),
     )
 
     decision = DecisionPolicyConfig(
         enable_local_inference=bool(decision_tbl.get("enable_local_inference", True)),
         confidence_threshold=float(decision_tbl.get("confidence_threshold", 0.6)),
-        high_load_skip_inference=bool(decision_tbl.get("high_load_skip_inference", False)),
+        high_load_skip_inference=bool(
+            decision_tbl.get("high_load_skip_inference", False)
+        ),
+        cpu_high_watermark=cpu_high_watermark,
+        memory_high_watermark=memory_high_watermark,
     )
 
     root_dir = _resolve_path(
@@ -231,6 +247,7 @@ def load_edge_config(settings_path: str | Path) -> EdgeServerConfig:
 
     return EdgeServerConfig(
         runtime=runtime,
+        capture=capture,
         upload_http=upload,
         decision_policy=decision,
         model_pack=model_pack,

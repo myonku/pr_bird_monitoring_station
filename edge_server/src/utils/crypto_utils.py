@@ -5,10 +5,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
 
-from src.models.auth_models import (
-    BootstrapChallenge,
-    SignatureAlgorithm,
-)
+from src.models.auth.auth import SignatureAlgorithm
+from src.models.auth.bootstrap import BootstrapChallenge
 
 
 class CryptoUtils:

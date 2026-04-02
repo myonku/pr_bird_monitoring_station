@@ -1,14 +1,9 @@
-from __future__ import annotations
-
 import base64
 from pathlib import Path
 from time import time
 
-from src.models.auth_models import (
-    BootstrapChallenge,
-    LocalTrustMaterial,
-    SignedBootstrapProof,
-)
+from src.models.auth.auth import LocalTrustMaterial
+from src.models.auth.bootstrap import BootstrapChallenge, SignedBootstrapProof
 from src.utils.crypto_utils import CryptoUtils
 
 

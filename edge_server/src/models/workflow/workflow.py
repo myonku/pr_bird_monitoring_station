@@ -43,9 +43,7 @@ class LightweightModelCandidateSpec:
     task: Literal["detection", "classification"]
     framework: str
     model_name: str
-    format: Literal["onnx", "tflite", "torchscript", "openvino", "custom"] = (
-        "custom"
-    )
+    format: Literal["onnx", "tflite", "torchscript", "openvino", "custom"] = "custom"
     input_size: tuple[int, int] = (640, 640)
     score_threshold: float = 0.25
     nms_iou_threshold: float = 0.45
@@ -113,6 +111,9 @@ class LoadedModelBundle:
 
 @dataclass(slots=True)
 class DetectionBox:
+    """单个检测框结果。坐标为相对值（0-1），相对于输入模型的预处理尺寸。
+    推理模块负责根据 contract 的 input_size 进行坐标转换。"""
+
     label: str
     confidence: float
     x1: float
@@ -123,6 +124,8 @@ class DetectionBox:
 
 @dataclass(slots=True)
 class DetectionResult:
+    """检测结果。附带使用的模型版本和 signature 以便后续分析和追踪。"""
+
     success: bool
     boxes: list[DetectionBox] = field(default_factory=list)
     latency_ms: int | None = None
@@ -132,12 +135,17 @@ class DetectionResult:
 
 @dataclass(slots=True)
 class ClassificationHit:
+    """单个分类结果。"""
+
     label: str
     confidence: float
 
 
 @dataclass(slots=True)
 class ClassificationResult:
+    """分类结果。附带使用的模型版本和 signature 以便后续分析和追踪。
+    top1 和 topk 可选输出，视模型输出和推理模块实现而定。"""
+
     success: bool
     top1_label: str | None = None
     top1_confidence: float | None = None
@@ -172,6 +180,9 @@ class TwoStageInferenceResult:
 
 @dataclass(slots=True)
 class EdgeEvent:
+    """边缘事件：一次完整的捕获 + 推理流程中的数据载荷和上下文信息。
+    每个事件对应一次捕获触发，包含捕获上下文、图像数据、推理结果等。"""
+
     event_id: str
     trace_id: str
     context: CaptureContext

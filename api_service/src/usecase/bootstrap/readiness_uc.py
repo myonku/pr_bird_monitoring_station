@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from time import time
 
 from src.models.auth.bootstrap import (
@@ -17,9 +15,13 @@ class ReadinessUsecase:
     def __init__(self, bootstrap_client: BootstrapClient):
         self.bootstrap_client = bootstrap_client
 
-    async def execute(self, challenge_req: ChallengeRequest) -> BootstrapAuthResult | None:
+    async def execute(
+        self, challenge_req: ChallengeRequest
+    ) -> BootstrapAuthResult | None:
         principal_id = f"{challenge_req.entity_type}:{challenge_req.entity_id}"
-        stage = await self.bootstrap_client.get_bootstrap_stage({"principal_id": principal_id})
+        stage = await self.bootstrap_client.get_bootstrap_stage(
+            {"principal_id": principal_id}
+        )
         if stage == "ready":
             now = time()
             return BootstrapAuthResult(

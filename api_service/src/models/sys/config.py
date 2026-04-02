@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import Literal
 from urllib.parse import quote_plus, urlencode
 from msgspec import Struct

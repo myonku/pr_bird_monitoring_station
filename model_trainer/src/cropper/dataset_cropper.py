@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import shutil
 from pathlib import Path
@@ -157,7 +155,10 @@ class DatasetCropper:
                 image_path = item.image_path
 
                 class_count = class_output_counts.get(item.class_id, 0)
-                if self.max_images_per_class > 0 and class_count >= self.max_images_per_class:
+                if (
+                    self.max_images_per_class > 0
+                    and class_count >= self.max_images_per_class
+                ):
                     skipped_images += 1
                     dropped_class_limit_images += 1
                     write_manifest(
@@ -193,9 +194,12 @@ class DatasetCropper:
                         accepted = [
                             box
                             for box in boxes
-                            if box.score >= self.score_threshold and self._is_box_qualified(box)
+                            if box.score >= self.score_threshold
+                            and self._is_box_qualified(box)
                         ]
-                        accepted = sorted(accepted, key=lambda box: box.score, reverse=True)
+                        accepted = sorted(
+                            accepted, key=lambda box: box.score, reverse=True
+                        )
                         accepted = accepted[: self.max_crops_per_image]
                         selected = accepted[:1]
 
@@ -245,7 +249,9 @@ class DatasetCropper:
                                 "status": "cropped",
                                 "raw_box_count": len(boxes),
                                 "accepted_box_count": len(accepted),
-                                "class_output_count": class_output_counts[item.class_id],
+                                "class_output_count": class_output_counts[
+                                    item.class_id
+                                ],
                                 "selected_box": {
                                     "x1": box.x1,
                                     "y1": box.y1,

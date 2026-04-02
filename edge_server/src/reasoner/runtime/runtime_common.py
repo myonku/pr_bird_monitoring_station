@@ -3,7 +3,7 @@ from typing import Any
 
 from PIL import Image
 
-from src.models.models import ImagePayload, ModelArtifactContract
+from src.models.workflow.workflow import ImagePayload, ModelArtifactContract
 
 
 def safe_label(labels: list[str], index: int, prefix: str) -> str:

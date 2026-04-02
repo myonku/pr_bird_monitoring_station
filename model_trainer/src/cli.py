@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import argparse
 from dataclasses import asdict
 import json
@@ -34,7 +32,9 @@ def command_plan(args: argparse.Namespace) -> None:
         if pipeline.detection_dataset:
             pipeline.detection_dataset.root = resolve_dataset_root(args.dataset_root)
         if pipeline.classification_dataset:
-            pipeline.classification_dataset.root = resolve_dataset_root(args.dataset_root)
+            pipeline.classification_dataset.root = resolve_dataset_root(
+                args.dataset_root
+            )
     payload = pipeline.to_dict()
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
@@ -61,7 +61,9 @@ def command_run(args: argparse.Namespace) -> None:
         if pipeline.detection_dataset:
             pipeline.detection_dataset.root = resolve_dataset_root(args.dataset_root)
         if pipeline.classification_dataset:
-            pipeline.classification_dataset.root = resolve_dataset_root(args.dataset_root)
+            pipeline.classification_dataset.root = resolve_dataset_root(
+                args.dataset_root
+            )
 
     dataset_adapter = build_dataset_adapter(args.dataset_adapter)
 
@@ -110,7 +112,9 @@ def command_run(args: argparse.Namespace) -> None:
         current_summary_path=summary_path,
         comparison_json_path=comparison_prev_json,
     )
-    timeline_path = logger.append_timeline("summary_compare_timeline.jsonl", timeline_entry)
+    timeline_path = logger.append_timeline(
+        "summary_compare_timeline.jsonl", timeline_entry
+    )
 
     output = {
         "lane": lane,
@@ -181,8 +185,12 @@ def command_crop_dataset(args: argparse.Namespace) -> None:
             "run_id": None,
             "summary_path": None,
         }
-    source_root = crop_cfg.source_root if args.source_root is None else Path(args.source_root)
-    output_root = crop_cfg.output_root if args.output_root is None else Path(args.output_root)
+    source_root = (
+        crop_cfg.source_root if args.source_root is None else Path(args.source_root)
+    )
+    output_root = (
+        crop_cfg.output_root if args.output_root is None else Path(args.output_root)
+    )
     score_threshold = (
         crop_cfg.score_threshold
         if args.score_threshold is None

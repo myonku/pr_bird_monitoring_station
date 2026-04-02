@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -128,7 +126,9 @@ class HandleInboundGrpcUsecase:
             security_ctx,
         )
         if outbound_resp is None:
-            return BusinessResponse(status_code=502, payload=b"outbound invoke failed", headers={})
+            return BusinessResponse(
+                status_code=502, payload=b"outbound invoke failed", headers={}
+            )
 
         return BusinessResponse(
             status_code=outbound_resp.status_code,

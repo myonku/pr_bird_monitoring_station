@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from src.models.models import (
+from src.models.workflow.workflow import (
     CaptureContext,
     ClassificationResult,
     DetectionResult,
@@ -87,33 +87,6 @@ class ISpoolStorage(ABC):
 
     @abstractmethod
     def mark_retry(self, record_id: str, reason: str) -> None:
-        raise NotImplementedError
-
-
-class IUploader(ABC):
-    """上行接口；边缘端统一使用 HTTP 上传。"""
-
-    @abstractmethod
-    def upload(self, event: EdgeEvent) -> bool:
-        """上传事件；成功 True，失败 False。"""
-        raise NotImplementedError
-
-    @abstractmethod
-    def is_connection_ready(self) -> bool:
-        raise NotImplementedError
-
-
-class IHttpTransportClient(ABC):
-    """HTTP 传输客户端接口。"""
-
-    @abstractmethod
-    def send(self, payload: dict, image_bytes: bytes) -> bool:
-        """通过 HTTP POST 发送数据；成功 True，失败 False。"""
-        raise NotImplementedError
-
-    @abstractmethod
-    def healthcheck(self) -> bool:
-        """通过 HTTP 健康检查确认连接可用。"""
         raise NotImplementedError
 
 
