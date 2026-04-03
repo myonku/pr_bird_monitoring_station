@@ -1,4 +1,4 @@
-from src.iface.interface import ICaptureModule
+from src.iface.workflow_interface import ICaptureModule
 from src.models.sys.config import CaptureConfig
 from src.ignitor.capture_module import MockCaptureModule, PIRCameraCaptureModule
 from src.iface.workflow_interface import ICaptureModule

@@ -34,7 +34,7 @@
 - 模型加载：`src/reasoner/model_loader.py`
 - 上传通道：
   - `src/iface/upload_interface.py`
-  - `src/transport/workflow_transport.py`
+  - `src/transport/event_uploader.py`
 
 ## 模型布局（model_pack）
 
@@ -50,9 +50,18 @@
 - 缓存介质：SQLite
 - 默认路径：`data/edge_spool.sqlite3`
 - 缓存内容：事件元数据 + 推理结果 + 图像二进制
-- 续传策略：按创建时间顺序批量续传，失败记录重试原因
+- 续传策略：
+  - 仅拉取达到重试时间的记录
+  - 失败按指数退避重试（上限封顶）
+  - 连续失败达到阈值后直接淘汰（暂不进入死信队列）
+- 存储上限策略：
+  - 根据磁盘空闲空间动态计算缓存预算
+  - 达到容量上限时优先淘汰最旧记录
+  - 磁盘空间过低时拒绝新缓存，优先保护系统可用空间
 
 ## 配置说明（settings.toml）
+
+配置文件读取策略：仅在入口 `main.py` 读取一次；其他模块仅接收参数或配置对象，不直接读文件。
 
 关键配置段如下：
 
@@ -61,6 +70,10 @@
   - `spool_db_path`
   - `sync_interval_sec`
   - `sync_batch_size`
+- `[auth]`
+  - `secret_key_dir`（本地 PEM 密钥目录）
+  - `active_key_id`（当前生效 key id）
+  - `auth_state_db_path`（认证状态 SQLite 路径）
 - `[capture]`
   - `mode`: `mock` / `pir`
   - `pir_gpio_pin`, `pir_wait_timeout_sec`

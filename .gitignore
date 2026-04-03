@@ -3,6 +3,9 @@ weights/
 runs/
 model_pack/
 
+# Local Secret Keys
+secret_keys/
+
 # Some segments of this file are generated from templates, and may be overwritten.
 logs/
 data/

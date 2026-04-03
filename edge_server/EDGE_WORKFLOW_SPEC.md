@@ -43,10 +43,14 @@ Out of scope:
 5. Offline buffering stage:
 - If upload is skipped by policy or upload request fails, event is written to SQLite spool.
 - Spool database path defaults to `data/edge_spool.sqlite3`.
+- Spool write path enforces dynamic capacity limit derived from free disk space.
+- If capacity is exceeded, oldest records are evicted first.
 
 6. Resume stage:
 - Sync worker checks connectivity and drains pending spool events in batches.
 - Successful uploads are ACKed; failures are marked for retry.
+- Retry follows exponential backoff with capped delay.
+- Records that exceed max retry count are directly evicted (no dead-letter queue for now).
 
 ## 3. Module Responsibilities
 

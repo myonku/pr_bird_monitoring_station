@@ -1,4 +1,5 @@
 import json
+import shutil
 import time
 from collections.abc import Iterable
 from dataclasses import asdict
@@ -20,6 +21,17 @@ from src.models.workflow.workflow import (
 
 class SQLiteSpoolStorage(ISpoolStorage):
     """SQLite 本地缓存实现：网络不稳定时缓存，网络恢复后续传。"""
+
+    _MAX_RETRY_COUNT = 8
+    _RETRY_BASE_DELAY_MS = 2_000
+    _RETRY_MAX_DELAY_MS = 5 * 60 * 1_000
+
+    _MAX_SPOOL_RECORDS = 10_000
+    _SPOOL_LIMIT_FRACTION = 0.12
+    _SPOOL_MIN_LIMIT_BYTES = 64 * 1024 * 1024
+    _SPOOL_MAX_LIMIT_BYTES = 1 * 1024 * 1024 * 1024
+    _RESERVED_FREE_BYTES = 512 * 1024 * 1024
+    _CRITICAL_FREE_BYTES = 128 * 1024 * 1024
 
     def __init__(
         self,
@@ -48,6 +60,7 @@ class SQLiteSpoolStorage(ISpoolStorage):
                     image_blob BLOB NOT NULL,
                     created_at_ms INTEGER NOT NULL,
                     retry_count INTEGER NOT NULL DEFAULT 0,
+                    next_retry_ms INTEGER NOT NULL DEFAULT 0,
                     last_retry_reason TEXT,
                     last_retry_ms INTEGER
                 )
@@ -59,7 +72,121 @@ class SQLiteSpoolStorage(ISpoolStorage):
                 ON edge_spool_events (created_at_ms)
                 """
             )
+            self._ensure_column(
+                conn,
+                column_name="next_retry_ms",
+                column_ddl="INTEGER NOT NULL DEFAULT 0",
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_edge_spool_events_retry
+                ON edge_spool_events (next_retry_ms, created_at_ms)
+                """
+            )
             conn.commit()
+
+    @staticmethod
+    def _ensure_column(
+        conn,
+        *,
+        column_name: str,
+        column_ddl: str,
+    ) -> None:
+        rows = conn.execute("PRAGMA table_info(edge_spool_events)").fetchall()
+        columns = {str(row["name"]) for row in rows}
+        if column_name in columns:
+            return
+        conn.execute(
+            f"ALTER TABLE edge_spool_events ADD COLUMN {column_name} {column_ddl}"
+        )
+
+    @staticmethod
+    def _estimate_event_bytes(payload_json: str, image_blob: bytes) -> int:
+        return len(payload_json.encode("utf-8")) + len(image_blob) + 2048
+
+    def _compute_dynamic_spool_limit_bytes(self) -> int:
+        try:
+            free_bytes = int(shutil.disk_usage(self._sqlite.db_path.parent).free)
+        except OSError:
+            return self._SPOOL_MIN_LIMIT_BYTES
+
+        if free_bytes <= self._CRITICAL_FREE_BYTES:
+            return 0
+
+        ratio_limit = int(free_bytes * self._SPOOL_LIMIT_FRACTION)
+        ratio_limit = min(self._SPOOL_MAX_LIMIT_BYTES, max(0, ratio_limit))
+        reserve_budget = max(0, free_bytes - self._RESERVED_FREE_BYTES)
+
+        if reserve_budget <= 0:
+            return min(ratio_limit, self._SPOOL_MIN_LIMIT_BYTES)
+
+        if reserve_budget < self._SPOOL_MIN_LIMIT_BYTES:
+            return reserve_budget
+
+        return max(
+            self._SPOOL_MIN_LIMIT_BYTES,
+            min(ratio_limit, reserve_budget),
+        )
+
+    @staticmethod
+    def _current_payload_bytes(conn) -> int:
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(LENGTH(payload_json) + LENGTH(image_blob)), 0) AS used_bytes
+            FROM edge_spool_events
+            """
+        ).fetchone()
+        return int(row["used_bytes"] or 0)
+
+    @staticmethod
+    def _current_record_count(conn) -> int:
+        row = conn.execute("SELECT COUNT(1) AS total FROM edge_spool_events").fetchone()
+        return int(row["total"] or 0)
+
+    @staticmethod
+    def _evict_oldest(conn) -> bool:
+        row = conn.execute(
+            """
+            SELECT record_id
+            FROM edge_spool_events
+            ORDER BY created_at_ms ASC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row is None:
+            return False
+
+        conn.execute(
+            "DELETE FROM edge_spool_events WHERE record_id = ?",
+            (str(row["record_id"]),),
+        )
+        return True
+
+    def _ensure_capacity_for_insert(self, conn, incoming_bytes: int) -> bool:
+        limit_bytes = self._compute_dynamic_spool_limit_bytes()
+        if limit_bytes <= 0:
+            # 磁盘空间过低时放弃新缓存，优先保护系统可用空间。
+            return False
+
+        while True:
+            current_records = self._current_record_count(conn)
+            current_bytes = self._current_payload_bytes(conn)
+
+            exceeds_record_limit = current_records >= self._MAX_SPOOL_RECORDS
+            exceeds_byte_limit = (current_bytes + incoming_bytes) > limit_bytes
+
+            if not exceeds_record_limit and not exceeds_byte_limit:
+                return True
+
+            evicted = self._evict_oldest(conn)
+            if not evicted:
+                return False
+
+    @classmethod
+    def _compute_retry_delay_ms(cls, retry_count: int) -> int:
+        power = max(0, retry_count - 1)
+        delay = cls._RETRY_BASE_DELAY_MS * (2**power)
+        return int(min(cls._RETRY_MAX_DELAY_MS, delay))
 
     @staticmethod
     def _serialize_event_payload(event: EdgeEvent) -> str:
@@ -286,9 +413,16 @@ class SQLiteSpoolStorage(ISpoolStorage):
     def put(self, event: EdgeEvent) -> str:
         record_id = event.event_id
         payload_json = self._serialize_event_payload(event)
+        image_blob = event.image.bytes_data
+        incoming_bytes = self._estimate_event_bytes(payload_json, image_blob)
         now_ms = int(time.time() * 1000)
 
         with self._connect() as conn:
+            can_store = self._ensure_capacity_for_insert(conn, incoming_bytes)
+            if not can_store:
+                conn.commit()
+                return record_id
+
             conn.execute(
                 """
                 INSERT INTO edge_spool_events (
@@ -299,21 +433,23 @@ class SQLiteSpoolStorage(ISpoolStorage):
                     image_blob,
                     created_at_ms,
                     retry_count,
+                    next_retry_ms,
                     last_retry_reason,
                     last_retry_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, NULL)
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL)
                 ON CONFLICT(record_id) DO UPDATE SET
                     payload_json = excluded.payload_json,
                     image_blob = excluded.image_blob,
                     trace_id = excluded.trace_id,
-                    event_id = excluded.event_id
+                    event_id = excluded.event_id,
+                    next_retry_ms = 0
                 """,
                 (
                     record_id,
                     event.event_id,
                     event.trace_id,
                     payload_json,
-                    event.image.bytes_data,
+                    image_blob,
                     now_ms,
                 ),
             )
@@ -322,15 +458,17 @@ class SQLiteSpoolStorage(ISpoolStorage):
         return record_id
 
     def peek_batch(self, limit: int) -> Iterable[tuple[str, EdgeEvent]]:
+        now_ms = int(time.time() * 1000)
         with self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT record_id, payload_json, image_blob
                 FROM edge_spool_events
-                ORDER BY created_at_ms ASC
+                WHERE COALESCE(next_retry_ms, 0) <= ?
+                ORDER BY next_retry_ms ASC, created_at_ms ASC
                 LIMIT ?
                 """,
-                (max(1, limit),),
+                (now_ms, max(1, limit)),
             ).fetchall()
 
         for row in rows:
@@ -348,14 +486,34 @@ class SQLiteSpoolStorage(ISpoolStorage):
 
     def mark_retry(self, record_id: str, reason: str) -> None:
         with self._connect() as conn:
+            row = conn.execute(
+                "SELECT retry_count FROM edge_spool_events WHERE record_id = ?",
+                (record_id,),
+            ).fetchone()
+            if row is None:
+                return
+
+            retry_count = int(row["retry_count"] or 0) + 1
+            if retry_count >= self._MAX_RETRY_COUNT:
+                conn.execute(
+                    "DELETE FROM edge_spool_events WHERE record_id = ?",
+                    (record_id,),
+                )
+                conn.commit()
+                return
+
+            now_ms = int(time.time() * 1000)
+            next_retry_ms = now_ms + self._compute_retry_delay_ms(retry_count)
+
             conn.execute(
                 """
                 UPDATE edge_spool_events
-                SET retry_count = retry_count + 1,
+                SET retry_count = ?,
+                    next_retry_ms = ?,
                     last_retry_reason = ?,
                     last_retry_ms = ?
                 WHERE record_id = ?
                 """,
-                (reason, int(time.time() * 1000), record_id),
+                (retry_count, next_retry_ms, reason, now_ms, record_id),
             )
             conn.commit()

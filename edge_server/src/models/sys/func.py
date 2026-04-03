@@ -1,5 +1,4 @@
 from pathlib import Path
-import tomllib
 from typing import Any, Literal, cast
 
 
@@ -10,6 +9,7 @@ from src.models.workflow.workflow import (
 from src.models.sys.config import (
     ArtifactFormat,
     ArtifactTask,
+    AuthConfig,
     CaptureConfig,
     DecisionPolicyConfig,
     EdgeServerConfig,
@@ -96,12 +96,19 @@ def _resolve_path(base_dir: Path, value: str) -> str:
     return str(path.resolve())
 
 
-def load_edge_config(settings_path: str | Path) -> EdgeServerConfig:
-    path = Path(settings_path)
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
-    base_dir = path.parent.resolve()
+def load_edge_config(
+    config_data: dict[str, Any],
+    *,
+    base_dir: str | Path = ".",
+) -> EdgeServerConfig:
+    if not isinstance(config_data, dict):
+        raise ValueError("config_data must be a dict loaded from settings")
+
+    data = config_data
+    base_dir = Path(base_dir).resolve()
 
     runtime_tbl = data.get("runtime", {})
+    auth_tbl = data.get("auth", {})
     capture_tbl = data.get("capture", {})
     upload_tbl = data.get("upload_http", {})
     decision_tbl = data.get("decision_policy", {})
@@ -119,6 +126,18 @@ def load_edge_config(settings_path: str | Path) -> EdgeServerConfig:
         ),
         sync_interval_sec=float(runtime_tbl.get("sync_interval_sec", 3.0)),
         sync_batch_size=int(runtime_tbl.get("sync_batch_size", 20)),
+    )
+
+    auth = AuthConfig(
+        secret_key_dir=_resolve_path(
+            base_dir,
+            str(auth_tbl.get("secret_key_dir", "secret_keys")),
+        ),
+        active_key_id=str(auth_tbl.get("active_key_id", "")).strip(),
+        auth_state_db_path=_resolve_path(
+            base_dir,
+            str(auth_tbl.get("auth_state_db_path", "data/edge_auth.sqlite3")),
+        ),
     )
 
     capture_mode = str(capture_tbl.get("mode", "mock")).strip().lower()
@@ -247,6 +266,7 @@ def load_edge_config(settings_path: str | Path) -> EdgeServerConfig:
 
     return EdgeServerConfig(
         runtime=runtime,
+        auth=auth,
         capture=capture,
         upload_http=upload,
         decision_policy=decision,

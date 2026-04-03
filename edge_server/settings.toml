@@ -4,6 +4,11 @@ spool_db_path = "data/edge_spool.sqlite3"
 sync_interval_sec = 3.0
 sync_batch_size = 20
 
+[auth]
+secret_key_dir = "secret_keys"
+active_key_id = ""
+auth_state_db_path = "data/edge_auth.sqlite3"
+
 [capture]
 # mock: 本地联调；pir: 树莓派 PIR 触发 + 相机抓拍
 mode = "mock"

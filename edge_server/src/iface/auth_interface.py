@@ -15,35 +15,19 @@ from src.models.auth.auth_contract import (
 from src.models.auth.bootstrap import BootstrapChallenge, SignedBootstrapProof
 
 
-class ISecretKeyProvider(ABC):
-    """本地密钥能力接口，供认证流程统一使用。"""
+class ISecretKeyManager(ABC):
+    """本地密钥能力接口，提供密钥管理功能。"""
 
     @abstractmethod
     def get_local_trust_material(self) -> LocalTrustMaterial:
         raise NotImplementedError
 
     @abstractmethod
-    def get_active_key_id(self) -> str:
+    def get_public_key_pem(self) -> bytes:
         raise NotImplementedError
 
     @abstractmethod
-    def get_public_key_by_key_id(self, key_id: str) -> LocalTrustMaterial | None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_public_keys_by_device(self, device_id: str) -> list[LocalTrustMaterial]:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_private_key_pem(self, key_id: str | None = None) -> bytes:
-        raise NotImplementedError
-
-    @abstractmethod
-    def sign_bootstrap_challenge(
-        self,
-        challenge: BootstrapChallenge,
-        signed_at: float | None = None,
-    ) -> SignedBootstrapProof:
+    def get_private_key_pem(self) -> bytes:
         raise NotImplementedError
 
 

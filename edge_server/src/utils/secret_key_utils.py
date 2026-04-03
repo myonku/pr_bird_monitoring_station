@@ -1,80 +1,101 @@
 import base64
+import hashlib
 from pathlib import Path
-from time import time
 
-from src.models.auth.auth import LocalTrustMaterial
-from src.models.auth.bootstrap import BootstrapChallenge, SignedBootstrapProof
-from src.utils.crypto_utils import CryptoUtils
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
+
+from src.iface.auth_interface import ISecretKeyManager
+from src.models.auth.auth import LocalTrustMaterial, SignatureAlgorithm
 
 
-class SecretKeyUtils:
-    """本地密钥管理工具，提供本地密钥查询能力。"""
+class SecretKeyUtils(ISecretKeyManager):
+    """本地密钥管理工具。
+
+    默认约定密钥放在模块根目录的 secret_keys 下：
+    - {key_id}.private.pem: 私钥（PKCS#8 PEM）
+    - {key_id}.public.pem: 公钥（SPKI PEM）
+    """
 
     def __init__(
         self,
         local_trust_material: LocalTrustMaterial,
-        catalog: list[LocalTrustMaterial] | None = None,
+        base_dir: str | Path | None = None,
     ):
         self._local = local_trust_material
-        self._catalog_by_key_id: dict[str, LocalTrustMaterial] = {
-            local_trust_material.key_id: local_trust_material,
-        }
-        for item in catalog or []:
-            self._catalog_by_key_id[item.key_id] = item
+        self._base_dir = Path(base_dir).resolve() if base_dir is not None else None
+        self._validate_material(local_trust_material)
+
+    @classmethod
+    def from_secret_dir(
+        cls,
+        *,
+        device_id: str,
+        active_key_id: str,
+        signature_algorithm: SignatureAlgorithm | None = None,
+        secret_dir: str | Path = "secret_keys",
+        module_root: str | Path | None = None,
+    ) -> "SecretKeyUtils":
+        """从模块根目录的 secret_keys 中构建本地密钥管理器。"""
+        secret_root = cls.resolve_secret_dir(secret_dir=secret_dir, module_root=module_root)
+        if not secret_root.exists() or not secret_root.is_dir():
+            raise ValueError(f"secret dir does not exist: {secret_root}")
+
+        public_path = secret_root / f"{active_key_id}.public.pem"
+        private_path = secret_root / f"{active_key_id}.private.pem"
+        if not public_path.exists():
+            raise ValueError(f"public key does not exist: {public_path}")
+        if not private_path.exists():
+            raise ValueError(f"private key does not exist: {private_path}")
+
+        public_pem = public_path.read_bytes()
+        cls._ensure_spki_public_key_pem(public_pem)
+        detected_algorithm = cls._detect_signature_algorithm(public_pem)
+        algorithm = signature_algorithm or detected_algorithm
+
+        material = LocalTrustMaterial(
+            device_id=device_id,
+            key_id=active_key_id,
+            signature_algorithm=algorithm,
+            private_key_ref=str(private_path),
+            public_key_pem=str(public_path),
+            fingerprint=cls._sha256_hex(public_pem),
+        )
+        return cls(local_trust_material=material, base_dir=secret_root)
+
+    @staticmethod
+    def resolve_module_root() -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    @classmethod
+    def resolve_secret_dir(
+        cls,
+        *,
+        secret_dir: str | Path = "secret_keys",
+        module_root: str | Path | None = None,
+    ) -> Path:
+        root = Path(module_root).resolve() if module_root is not None else cls.resolve_module_root()
+        candidate = Path(secret_dir)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        return candidate.resolve()
 
     def get_local_trust_material(self) -> LocalTrustMaterial:
         return self._local
 
-    def get_active_key_id(self) -> str:
-        return self._local.key_id
+    def get_private_key_pem(self) -> bytes:
+        if not self._local.private_key_ref:
+            raise ValueError("private key ref is empty")
+        return self.load_pem_bytes_from_ref(self._local.private_key_ref, base_dir=self._base_dir)
 
-    def get_public_key_by_key_id(self, key_id: str) -> LocalTrustMaterial | None:
-        return self._catalog_by_key_id.get(key_id)
-
-    def get_public_keys_by_device(self, device_id: str) -> list[LocalTrustMaterial]:
-        return [v for v in self._catalog_by_key_id.values() if v.device_id == device_id]
-
-    def get_private_key_pem(self, key_id: str | None = None) -> bytes:
-        material = self._resolve_signing_material(key_id)
-        return self.load_pem_bytes_from_ref(material.private_key_ref)
-
-    def get_public_key_pem(self, key_id: str | None = None) -> bytes:
-        material = self._resolve_signing_material(key_id)
-        return self.load_pem_bytes_from_ref(material.public_key_pem)
-
-    def sign_bootstrap_challenge(
-        self,
-        challenge: BootstrapChallenge,
-        *,
-        signed_at: float | None = None,
-    ) -> SignedBootstrapProof:
-        key_id = challenge.key_id or self._local.key_id
-        material = self._resolve_signing_material(key_id)
-        entity_type = challenge.entity_type or "device"
-        entity_id = challenge.entity_id or material.device_id
-
-        payload = CryptoUtils.build_bootstrap_signature_payload(
-            challenge,
-            key_id=material.key_id,
-            entity_type=entity_type,
-            entity_id=entity_id,
-        )
-        signature = CryptoUtils.sign_by_algorithm(
-            material.signature_algorithm,
-            payload,
-            self.get_private_key_pem(material.key_id),
-        )
-        return SignedBootstrapProof(
-            challenge_id=challenge.challenge_id,
-            device_id=material.device_id,
-            key_id=material.key_id,
-            signature=signature,
-            signature_algorithm=material.signature_algorithm,
-            signed_at=signed_at if signed_at is not None else time(),
-        )
+    def get_public_key_pem(self) -> bytes:
+        return self.load_pem_bytes_from_ref(self._local.public_key_pem, base_dir=self._base_dir)
 
     @staticmethod
-    def load_pem_bytes_from_ref(material_ref: str | bytes) -> bytes:
+    def load_pem_bytes_from_ref(
+        material_ref: str | bytes,
+        base_dir: str | Path | None = None,
+    ) -> bytes:
         """从内联文本、base64 内容或本地文件路径加载 PEM 字节。"""
         if isinstance(material_ref, bytes):
             return material_ref
@@ -94,14 +115,84 @@ class SecretKeyUtils:
 
         file_path = value[len("file://") :] if value.startswith("file://") else value
         path = Path(file_path)
+        if base_dir is not None and not path.is_absolute():
+            path = Path(base_dir) / path
         if not path.exists():
-            raise ValueError(f"key material path does not exist: {file_path}")
+            raise ValueError(f"key material path does not exist: {path}")
         return path.read_bytes()
 
-    def _resolve_signing_material(self, key_id: str | None) -> LocalTrustMaterial:
-        if not key_id:
-            return self._local
-        found = self._catalog_by_key_id.get(key_id)
-        if found is None:
-            raise ValueError(f"key id not found: {key_id}")
-        return found
+    @staticmethod
+    def _sha256_hex(content: bytes) -> str:
+        return hashlib.sha256(content).hexdigest()
+
+    @staticmethod
+    def _detect_signature_algorithm(public_key_pem: bytes) -> SignatureAlgorithm:
+        parsed = serialization.load_pem_public_key(public_key_pem)
+        if isinstance(parsed, ed25519.Ed25519PublicKey):
+            return "ed25519"
+        if isinstance(parsed, ec.EllipticCurvePublicKey):
+            if not isinstance(parsed.curve, ec.SECP256R1):
+                raise ValueError("unsupported ecdsa curve, only p256 is allowed")
+            return "ecdsa_p256_sha256"
+        if isinstance(parsed, rsa.RSAPublicKey):
+            return "rsa_pss_sha256"
+        raise ValueError("unsupported public key type")
+
+    @staticmethod
+    def _ensure_pkcs8_private_key_pem(private_key_pem: bytes) -> None:
+        text = private_key_pem.decode("utf-8", errors="ignore")
+        if "-----BEGIN PRIVATE KEY-----" not in text:
+            raise ValueError("private key must be unencrypted PKCS#8 PEM")
+        serialization.load_pem_private_key(private_key_pem, password=None)
+
+    @staticmethod
+    def _ensure_spki_public_key_pem(public_key_pem: bytes) -> None:
+        text = public_key_pem.decode("utf-8", errors="ignore")
+        if "-----BEGIN PUBLIC KEY-----" not in text:
+            raise ValueError("public key must be SPKI PEM")
+        serialization.load_pem_public_key(public_key_pem)
+
+    @staticmethod
+    def _ensure_private_key_matches_algorithm(
+        private_key_pem: bytes,
+        algorithm: SignatureAlgorithm,
+    ) -> None:
+        parsed = serialization.load_pem_private_key(private_key_pem, password=None)
+        if algorithm == "ed25519":
+            if not isinstance(parsed, ed25519.Ed25519PrivateKey):
+                raise ValueError("private key type does not match ed25519")
+            return
+
+        if algorithm == "ecdsa_p256_sha256":
+            if not isinstance(parsed, ec.EllipticCurvePrivateKey):
+                raise ValueError("private key type does not match ecdsa")
+            if not isinstance(parsed.curve, ec.SECP256R1):
+                raise ValueError("ecdsa private key must use p256 curve")
+            return
+
+        if algorithm == "rsa_pss_sha256":
+            if not isinstance(parsed, rsa.RSAPrivateKey):
+                raise ValueError("private key type does not match rsa")
+            return
+
+        raise ValueError(f"unsupported signature algorithm: {algorithm}")
+
+    def _validate_material(self, material: LocalTrustMaterial) -> None:
+        public_key_pem = self.load_pem_bytes_from_ref(material.public_key_pem, base_dir=self._base_dir)
+        self._ensure_spki_public_key_pem(public_key_pem)
+        detected_algorithm = self._detect_signature_algorithm(public_key_pem)
+        if detected_algorithm != material.signature_algorithm:
+            raise ValueError(
+                f"signature algorithm mismatch for key_id={material.key_id}: "
+                f"expected={material.signature_algorithm} detected={detected_algorithm}"
+            )
+
+        if not material.private_key_ref:
+            raise ValueError(f"private key ref is required for key_id={material.key_id}")
+
+        private_key_pem = self.load_pem_bytes_from_ref(
+            material.private_key_ref,
+            base_dir=self._base_dir,
+        )
+        self._ensure_pkcs8_private_key_pem(private_key_pem)
+        self._ensure_private_key_matches_algorithm(private_key_pem, material.signature_algorithm)

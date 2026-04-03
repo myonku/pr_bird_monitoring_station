@@ -1,5 +1,7 @@
 import argparse
 import time
+import tomllib
+from pathlib import Path
 
 from src.ignitor.func import build_capture_module
 from src.models.sys.func import load_edge_config
@@ -24,7 +26,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _build_parser().parse_args()
-    cfg = load_edge_config(args.settings)
+    settings_path = Path(args.settings).resolve()
+    with settings_path.open("rb") as file:
+        raw_settings = tomllib.load(file)
+    cfg = load_edge_config(raw_settings, base_dir=settings_path.parent)
 
     capture = build_capture_module(cfg.capture, cfg.runtime.device_id)
     spool = SQLiteSpoolStorage(cfg.runtime.spool_db_path)

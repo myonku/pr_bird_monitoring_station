@@ -34,6 +34,13 @@ class RuntimeConfig:
 
 
 @dataclass(slots=True)
+class AuthConfig:
+    secret_key_dir: str = "secret_keys"
+    active_key_id: str = ""
+    auth_state_db_path: str = "data/edge_auth.sqlite3"
+
+
+@dataclass(slots=True)
 class CaptureConfig:
     mode: Literal["mock", "pir"] = "mock"
     pir_gpio_pin: int = 17
@@ -47,6 +54,7 @@ class CaptureConfig:
 @dataclass(slots=True)
 class EdgeServerConfig:
     runtime: RuntimeConfig
+    auth: AuthConfig
     capture: CaptureConfig
     upload_http: UploadHttpConfig
     decision_policy: DecisionPolicyConfig
