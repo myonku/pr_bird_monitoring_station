@@ -27,6 +27,12 @@
 - 不承担网关式流量转发职责。
 - 不承担下游业务聚合编排职责。
 
+### 2.3 全局规范引用
+
+- 认证链路与启动链路统一见根目录 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
+- 全局统一约定见根目录 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
+- 本文档仅保留认证中心模块的层级、结构与接口职责。
+
 ---
 
 ## 3. 分层架构
@@ -123,6 +129,15 @@
 
 - 文件：src/interfaces/auth/downstream_grant_svc.go
 - 职责：签发下游授权上下文。
+
+### 4.2.5 IUserCredentialAuthService
+
+- 文件：src/interfaces/auth/user_credential_svc.go
+- 方法：
+  - AuthenticateByPassword
+  - RefreshByUserSession（可复用 token/session service）
+  - RevokeUserSession（可复用 session service）
+- 职责：承接客户端用户名/密码认证入口，输出与现有 token/session 模型一致的认证结果。
 
 ---
 
@@ -280,8 +295,6 @@
 3. IRateLimiter.Decide -> RateLimitDecision。
 4. 若拒绝：返回 ResourceExhausted，并附加 retry-after/ratelimit-rule-id。
 
----
-
 ## 6. 约束清单（开发强约束）
 
 1. gRPC Handler 不允许直接调用 repo 客户端。
@@ -294,40 +307,8 @@
 
 ---
 
-## 7. 认证相关系统流程说明（冷启动 -> 稳定运行）
+## 7. 全局流程与约定引用
 
-目标：明确认证中心作为授权与验证核心在全链路中的控制点。
-
-### 7.1 Phase A：认证中心冷启动
-
-1. 初始化 mysql/redis/etcd 客户端与服务实现。
-2. 装配 auth/commsec/orchestration 依赖。
-3. 启动 gRPC server 并挂载限流拦截器。
-4. 进入可服务状态，等待网关与普通服务 bootstrap 请求。
-
-### 7.2 Phase B：模块 bootstrap 阶段
-
-1. 接收网关或普通服务的 challenge 初始化请求。
-2. 接收签名响应并执行公钥目录校验与验签。
-3. 创建 session、签发 token、返回 bootstrap ready 状态。
-4. 在需要时签发 downstream grant。
-
-### 7.3 Phase C：运行期认证与通信安全
-
-1. 处理 token 校验、续期、撤销请求。
-2. 处理 secure channel 握手初始化与完成请求。
-3. 管理通道状态（查询、撤销）与传输加解密能力。
-4. 对高频接口执行 auth/internal_grpc 范围限流。
-
-### 7.4 Phase D：异常恢复
-
-- challenge 过期：拒绝并要求发起新 challenge。
-- token 失效：返回续期或重认证指引。
-- channel 失效：要求发起重新握手。
-- 限流触发：返回 ResourceExhausted 与 retry-after。
-
-### 7.5 协作边界
-
-- 对网关：提供认证与通道能力，不参与网关转发逻辑。
-- 对普通服务：提供校验与续期能力，不参与业务处理。
-- 对自身：所有协议映射留在 gRPC adapter，业务策略集中于 orchestration/service。
+- 认证链路与启动链路见根目录 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
+- ID/密钥/配置等统一约定见根目录 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
+- 边缘端与网关的认证/上传接口契约见 `edge_server/EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。

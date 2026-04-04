@@ -16,7 +16,7 @@ class ChallengeRequest(Struct, kw_only=True):
 
     entity_type: EntityType
     entity_id: str
-    key_id: str
+    key_id: str = ""
 
     audience: str
 
@@ -73,11 +73,15 @@ class BootstrapAuthRequest(Struct, kw_only=True):
 
 
 class PublicKeyLookupRequest(Struct, kw_only=True):
-    """公钥查询请求，包括查询的密钥ID、相关的服务信息和查询上下文等。用于在引导认证过程中查询服务的公钥以验证签名。"""
+    """公钥查询请求。
 
-    service_id: str
-    service_name: str
-    key_id: str
+    支持按 key_id 精确查询，也支持按关联 entity_id 查询当前可用公钥。
+    """
+
+    entity_type: str = ""
+    entity_id: str = ""
+    entity_name: str = ""
+    key_id: str = ""
 
 
 class PublicKeyLookupResult(Struct, kw_only=True):

@@ -20,10 +20,11 @@ image_width = 1920
 image_height = 1080
 
 [upload_http]
-upload_url = "http://127.0.0.1:8080/v1/edge/events"
-healthcheck_url = "http://127.0.0.1:8080/health"
+base_backend_url = "http://127.0.0.1:8080"
+upload_path = "/v1/edge/events"
+auth_path = "/v1/edge/auth"
+healthcheck_path = "/health"
 timeout_sec = 3.0
-auth_token = ""
 
 [decision_policy]
 enable_local_inference = true

@@ -65,20 +65,36 @@ func (s *CommSecurityService) InitHandshake(
 	if req == nil {
 		return nil, &modelsystem.ErrHandshakeInitRequestNil
 	}
-	if req.Initiator.ServiceID == "" || req.Responder.ServiceID == "" {
+	initiatorEntityID := req.Initiator.EffectiveEntityID()
+	responderEntityID := req.Responder.EffectiveEntityID()
+	if initiatorEntityID == "" || responderEntityID == "" {
 		return nil, &modelsystem.ErrInitiatorResponderServiceRequired
 	}
+	req.Initiator = req.Initiator.Normalized()
+	req.Responder = req.Responder.Normalized()
 
 	var initiatorKey *commsecmodel.ServicePublicKeyRecord
 	if s.secretKeySvc != nil {
-		lookup, err := s.secretKeySvc.GetPublicKeyByKeyID(ctx, req.InitiatorKeyID)
-		if err != nil {
-			return nil, err
+		if req.InitiatorKeyID != "" {
+			lookup, err := s.secretKeySvc.GetPublicKeyByKeyID(ctx, req.InitiatorKeyID)
+			if err != nil {
+				return nil, err
+			}
+			if lookup.Found {
+				initiatorKey = &lookup.Key
+			}
 		}
-		if !lookup.Found {
-			return nil, &modelsystem.ErrInitiatorPublicKeyNotFound
+		if initiatorKey == nil {
+			lookup, err := s.secretKeySvc.GetPublicKeyByEntityID(ctx, initiatorEntityID)
+			if err != nil {
+				return nil, err
+			}
+			if !lookup.Found {
+				return nil, &modelsystem.ErrInitiatorPublicKeyNotFound
+			}
+			initiatorKey = &lookup.Key
+			req.InitiatorKeyID = lookup.Key.KeyID
 		}
-		initiatorKey = &lookup.Key
 	}
 
 	selectedKeyExchange := selectKeyExchange(req.SupportedKeyExchanges, initiatorKey)
@@ -734,8 +750,8 @@ func buildHandshakeSignPayload(h *commsecmodel.ECDHEHandshakeRecord) []byte {
 		string(h.KeyExchangeAlgorithm),
 		string(h.SignatureAlgorithm),
 		string(h.CipherSuite),
-		h.Initiator.ServiceID,
-		h.Responder.ServiceID,
+		h.Initiator.EffectiveEntityID(),
+		h.Responder.EffectiveEntityID(),
 		h.InitiatorKeyID,
 		h.ResponderKeyID,
 		h.InitiatorEphemeralPublicKey,

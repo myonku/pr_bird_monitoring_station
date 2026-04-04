@@ -4,7 +4,7 @@ from uuid import UUID
 from msgspec import Struct
 
 
-CommKeyOwnerType = Literal["instance", "service"]
+CommKeyOwnerType = Literal["instance", "service", "device", "gateway"]
 CommKeyStatus = Literal["active", "expired", "revoked"]
 KeyExchangeAlgorithm = Literal["ecdhe_p256", "ecdhe_x25519", "ecdhe_p384"]
 SignatureAlgorithm = Literal["ecdsa_p256_sha256", "ed25519", "rsa_pss_sha256"]
@@ -19,10 +19,37 @@ class ServiceKeyOwner(Struct, kw_only=True):
     用于密钥管理和安全通信中标识密钥的归属。"""
 
     owner_type: CommKeyOwnerType
-    service_id: str
-    service_name: str
-    instance_id: str
-    instance_name: str
+    entity_type: str = ""
+    entity_id: str = ""
+    entity_name: str = ""
+    service_id: str = ""
+    service_name: str = ""
+    instance_id: str = ""
+    instance_name: str = ""
+
+    @property
+    def effective_entity_id(self) -> str:
+        if self.entity_id:
+            return self.entity_id
+        return self.service_id
+
+    @property
+    def effective_entity_name(self) -> str:
+        if self.entity_name:
+            return self.entity_name
+        return self.service_name
+
+    def normalized(self) -> "ServiceKeyOwner":
+        return ServiceKeyOwner(
+            owner_type=self.owner_type,
+            entity_type=self.entity_type,
+            entity_id=self.effective_entity_id,
+            entity_name=self.effective_entity_name,
+            service_id=self.service_id or self.effective_entity_id,
+            service_name=self.service_name or self.effective_entity_name,
+            instance_id=self.instance_id,
+            instance_name=self.instance_name,
+        )
 
 
 class ServicePublicKeyRecord(Struct, kw_only=True):

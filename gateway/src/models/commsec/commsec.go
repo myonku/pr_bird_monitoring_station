@@ -18,6 +18,8 @@ type ChannelBindingType string
 const (
 	CommKeyOwnerService  CommKeyOwnerType = "service"
 	CommKeyOwnerInstance CommKeyOwnerType = "instance"
+	CommKeyOwnerDevice   CommKeyOwnerType = "device"
+	CommKeyOwnerGateway  CommKeyOwnerType = "gateway"
 )
 
 const (
@@ -59,16 +61,53 @@ const (
 	ChannelBindingSession ChannelBindingType = "session"
 )
 
-// ServiceKeyOwner 标识通信密钥属于哪一个服务实体或实例。
+// ServiceKeyOwner 标识通信密钥属于哪一个实体或实例。
+//
+// 说明：
+// - EntityID/EntityName 是统一语义字段，适用于 service/device/gateway 等实体。
+// - ServiceID/ServiceName 为历史兼容别名，读取时会与 EntityID/EntityName 互补。
 type ServiceKeyOwner struct {
 	OwnerType    CommKeyOwnerType
+	EntityType   string
+	EntityID     string
+	EntityName   string
 	ServiceID    string
 	ServiceName  string
 	InstanceID   string
 	InstanceName string
 }
 
-// ServicePublicKeyRecord 表示存储在全局数据库中的服务通信公钥记录。
+func (o ServiceKeyOwner) EffectiveEntityID() string {
+	if o.EntityID != "" {
+		return o.EntityID
+	}
+	return o.ServiceID
+}
+
+func (o ServiceKeyOwner) EffectiveEntityName() string {
+	if o.EntityName != "" {
+		return o.EntityName
+	}
+	return o.ServiceName
+}
+
+func (o ServiceKeyOwner) Normalized() ServiceKeyOwner {
+	if o.EntityID == "" {
+		o.EntityID = o.ServiceID
+	}
+	if o.EntityName == "" {
+		o.EntityName = o.ServiceName
+	}
+	if o.ServiceID == "" {
+		o.ServiceID = o.EntityID
+	}
+	if o.ServiceName == "" {
+		o.ServiceName = o.EntityName
+	}
+	return o
+}
+
+// ServicePublicKeyRecord 表示存储在全局数据库中的实体通信公钥记录。
 type ServicePublicKeyRecord struct {
 	KeyID string
 	Owner ServiceKeyOwner
@@ -175,8 +214,11 @@ type EncryptedMessageMeta struct {
 	IssuedAt       time.Time
 }
 
-// PublicKeyLookupRequest 表示按服务或 key id 查询通信公钥目录。
+// PublicKeyLookupRequest 表示按实体或 key id 查询通信公钥目录。
 type PublicKeyLookupRequest struct {
+	EntityType  string
+	EntityID    string
+	EntityName  string
 	ServiceID   string
 	ServiceName string
 	KeyID       string

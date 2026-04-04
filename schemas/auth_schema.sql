@@ -53,13 +53,14 @@ CREATE TABLE IF NOT EXISTS auth_token_claims (
   CONSTRAINT fk_auth_claims_token FOREIGN KEY (token_id) REFERENCES auth_token_records(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS auth_service_public_keys (
+CREATE TABLE IF NOT EXISTS auth_entity_public_keys (
   key_id VARCHAR(128) NOT NULL,
   owner_type VARCHAR(32) NOT NULL,
-  service_id VARCHAR(128) NOT NULL,
-  service_name VARCHAR(128) NOT NULL,
-  instance_id VARCHAR(128) NOT NULL,
-  instance_name VARCHAR(128) NOT NULL,
+  entity_type VARCHAR(32) NOT NULL,
+  entity_id VARCHAR(128) NOT NULL,
+  entity_name VARCHAR(128) NOT NULL,
+  instance_id VARCHAR(128) NULL,
+  instance_name VARCHAR(128) NULL,
   key_exchange_algorithm VARCHAR(64) NOT NULL,
   signature_algorithm VARCHAR(64) NOT NULL,
   public_key_pem TEXT NOT NULL,
@@ -70,7 +71,8 @@ CREATE TABLE IF NOT EXISTS auth_service_public_keys (
   expires_at DATETIME(3) NOT NULL,
   revoked_at DATETIME(3) NULL,
   PRIMARY KEY (key_id),
-  KEY idx_auth_pubkey_owner (owner_type, service_id, instance_id),
+  KEY idx_auth_pubkey_entity (entity_type, entity_id, instance_id),
+  KEY idx_auth_pubkey_owner (owner_type, entity_id, instance_id),
   KEY idx_auth_pubkey_status_exp (status, expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

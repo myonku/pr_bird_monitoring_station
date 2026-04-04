@@ -2,6 +2,7 @@ import json
 import time
 from dataclasses import asdict
 from typing import Any
+from typing import cast
 
 from src.iface.auth_interface import IEdgeAuthStateStore
 from src.local_storage.sqlite_client import SQLiteClient
@@ -88,14 +89,14 @@ class SQLiteEdgeAuthStateStore(IEdgeAuthStateStore):
     def _to_session(value: dict[str, Any] | None) -> EdgeSession | None:
         if value is None:
             return None
-        status = value.get("status", "active")
-        if status not in SessionStatus:
-            status = "active"
+        status_raw = str(value.get("status", "active")).strip().lower()
+        if status_raw not in {"active", "expired", "revoked"}:
+            status_raw = "active"
         return EdgeSession(
             session_id=str(value.get("session_id", "")),
             principal_id=str(value.get("principal_id", "")),
             device_id=str(value.get("device_id", "")),
-            status=status,
+            status=cast(SessionStatus, status_raw),
             issued_at=float(value.get("issued_at", 0.0)),
             expires_at=float(value.get("expires_at", 0.0)),
             token_family_id=str(value.get("token_family_id", "")),
@@ -106,12 +107,12 @@ class SQLiteEdgeAuthStateStore(IEdgeAuthStateStore):
     def _to_token(value: dict[str, Any] | None) -> EdgeToken | None:
         if value is None:
             return None
-        token_type = value.get("token_type", "access")
-        if token_type not in TokenType:
-            token_type = "access"
+        token_type_raw = str(value.get("token_type", "access")).strip().lower()
+        if token_type_raw not in {"access", "refresh"}:
+            token_type_raw = "access"
         return EdgeToken(
             raw=str(value.get("raw", "")),
-            token_type=token_type,
+            token_type=cast(TokenType, token_type_raw),
             token_id=str(value.get("token_id", "")),
             family_id=str(value.get("family_id", "")),
             session_id=str(value.get("session_id", "")),
@@ -133,11 +134,19 @@ class SQLiteEdgeAuthStateStore(IEdgeAuthStateStore):
                 access_token=access_token,
                 refresh_token=refresh_token,
             )
-        stage = row["stage"]
-        if stage not in AuthStage:
-            stage = "uninitialized"
+        stage_raw = str(row["stage"]).strip().lower()
+        if stage_raw not in {
+            "uninitialized",
+            "challenge_issued",
+            "ready",
+            "refreshing",
+            "expired",
+            "revoked",
+            "failed",
+        }:
+            stage_raw = "uninitialized"
         return EdgeAuthState(
-            stage=stage,
+            stage=cast(AuthStage, stage_raw),
             session=session,
             tokens=token_bundle,
             failure_reason=str(row["failure_reason"] or ""),

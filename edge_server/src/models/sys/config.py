@@ -10,10 +10,34 @@ ArtifactFormat = Literal["onnx", "tflite", "torchscript", "openvino", "custom"]
 
 @dataclass(slots=True)
 class UploadHttpConfig:
-    upload_url: str
-    healthcheck_url: str
+    base_backend_url: str
+    upload_path: str = "/v1/edge/events"
+    auth_path: str = "/v1/edge/auth"
+    healthcheck_path: str = "/health"
     timeout_sec: float = 3.0
-    auth_token: str | None = None
+
+    @staticmethod
+    def _normalize_path(path: str) -> str:
+        normalized = path.strip()
+        if not normalized:
+            return "/"
+        if not normalized.startswith("/"):
+            normalized = f"/{normalized}"
+        if len(normalized) > 1 and normalized.endswith("/"):
+            normalized = normalized.rstrip("/")
+        return normalized
+
+    def build_url(self, path: str) -> str:
+        base = self.base_backend_url.rstrip("/")
+        return f"{base}{self._normalize_path(path)}"
+
+    @property
+    def upload_url(self) -> str:
+        return self.build_url(self.upload_path)
+
+    @property
+    def healthcheck_url(self) -> str:
+        return self.build_url(self.healthcheck_path)
 
 
 @dataclass(slots=True)

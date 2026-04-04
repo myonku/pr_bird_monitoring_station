@@ -1,306 +1,242 @@
-import time
-import uuid
-from collections.abc import Callable
+import json
+from dataclasses import asdict
+from typing import cast
+from urllib import request
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 
-from src.iface.auth_interface import (
-    IEdgeAuthStateStore,
-    IEdgeAuthTransportCoordinator,
-    IEdgeGatewayAuthClient,
-    ISecretKeyManager,
+from src.iface.auth_interface import IEdgeGatewayAuthClient
+from src.models.auth.auth import (
+    AuthStage,
+    EdgeSession,
+    EdgeToken,
+    EdgeTokenBundle,
+    SessionStatus,
+    TokenType,
 )
-from src.models.auth.auth import EdgeSession, EdgeToken, EdgeTokenBundle
-from src.models.auth.auth_contract import (
-    EdgeAuthHeaders,
-    EdgeAuthState,
-    RefreshTokenRequest,
-)
-from src.models.auth.bootstrap import SignedBootstrapProof
-from src.utils.crypto_utils import CryptoUtils
+from src.models.auth.auth_contract import EdgeAuthState, RefreshTokenRequest
+from src.models.auth.bootstrap import BootstrapChallenge, SignedBootstrapProof
+from src.orchestration.auth_coordinator import EdgeAuthCoordinator
 
 
-class EdgeAuthTransportCoordinator(IEdgeAuthTransportCoordinator):
-    """边缘认证流程协调器。
-
-    仅实现认证流程本体，不负责与业务上传流程接线。
-    """
+class EdgeGatewayAuthHttpClient(IEdgeGatewayAuthClient):
+    """边缘端到网关认证接口的 HTTP 客户端实现。"""
 
     def __init__(
         self,
         *,
-        key_provider: ISecretKeyManager,
-        gateway_auth_client: IEdgeGatewayAuthClient,
-        state_store: IEdgeAuthStateStore,
-        access_token_skew_sec: int = 30,
-        refresh_request_builder: Callable[[str], RefreshTokenRequest] | None = None,
+        auth_base_url: str,
+        auth_path: str = "/v1/edge/auth",
+        timeout_sec: float = 3.0,
+        default_audience: str = "gateway",
     ) -> None:
-        self._key_provider = key_provider
-        self._gateway_auth_client = gateway_auth_client
-        self._state_store = state_store
-        self._access_token_skew_sec = max(0, access_token_skew_sec)
-        self._refresh_request_builder = (
-            refresh_request_builder or self._default_refresh_request
-        )
+        base = auth_base_url.rstrip("/")
+        if not base:
+            raise ValueError("auth_base_url is required")
+
+        parsed = urlparse(base)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError(f"invalid auth_base_url: {auth_base_url}")
+
+        self._base_url = base
+        self._auth_path = self._normalize_path(auth_path)
+        self._timeout_sec = max(0.1, float(timeout_sec))
+        self._default_audience = default_audience or "gateway"
 
     @staticmethod
-    def _now(now_ts: float | None = None) -> float:
-        return now_ts if now_ts is not None else time.time()
-
-    @staticmethod
-    def _is_token_usable(token: EdgeToken | None, now_ts: float, skew_sec: int) -> bool:
-        if token is None:
-            return False
-        return now_ts + max(0, skew_sec) < token.expires_at
-
-    @staticmethod
-    def _is_session_active(session: EdgeSession | None, now_ts: float) -> bool:
-        if session is None:
-            return False
-        if session.status != "active":
-            return False
-        return now_ts < session.expires_at
-
-    def _is_state_ready(self, state: EdgeAuthState | None, now_ts: float) -> bool:
-        if state is None or state.tokens is None:
-            return False
-        if not self._is_session_active(state.session, now_ts):
-            return False
-        return self._is_token_usable(
-            state.tokens.access_token,
-            now_ts,
-            self._access_token_skew_sec,
-        )
-
-    @staticmethod
-    def _default_refresh_request(refresh_token: str) -> RefreshTokenRequest:
-        request_id = str(uuid.uuid4())
-        return RefreshTokenRequest(
-            refresh_token=refresh_token,
-            client_id="edge-server",
-            gateway_id="gateway",
-            source_ip="0.0.0.0",
-            user_agent="edge-server-auth-transport",
-            request_id=request_id,
-            trace_id=request_id,
-        )
-
-    def _build_refreshed_state(
-        self,
-        *,
-        previous_state: EdgeAuthState,
-        refreshed_bundle: EdgeTokenBundle,
-        now_ts: float,
-    ) -> EdgeAuthState:
-        session = previous_state.session
-        if session is not None:
-            updated_session_id = session.session_id
-            if (
-                refreshed_bundle.access_token is not None
-                and refreshed_bundle.access_token.session_id
-            ):
-                updated_session_id = refreshed_bundle.access_token.session_id
-
-            updated_family_id = session.token_family_id
-            if (
-                refreshed_bundle.refresh_token is not None
-                and refreshed_bundle.refresh_token.family_id
-            ):
-                updated_family_id = refreshed_bundle.refresh_token.family_id
-
-            session = EdgeSession(
-                session_id=updated_session_id,
-                principal_id=session.principal_id,
-                device_id=session.device_id,
-                status=session.status,
-                issued_at=session.issued_at,
-                expires_at=session.expires_at,
-                token_family_id=updated_family_id,
-                last_verified_at=now_ts,
-            )
-
-        return EdgeAuthState(
-            stage="ready",
-            session=session,
-            tokens=refreshed_bundle,
-            failure_reason="",
-        )
-
-    def _try_refresh(
-        self,
-        *,
-        state: EdgeAuthState,
-        now_ts: float,
-    ) -> EdgeAuthState | None:
-        if state.tokens is None:
-            return None
-        refresh_token = state.tokens.refresh_token
-        if not self._is_token_usable(refresh_token, now_ts, skew_sec=0):
-            return None
-        if not refresh_token:
-            return None
-        request_payload = self._refresh_request_builder(refresh_token.raw)
-        refreshed_bundle = self._gateway_auth_client.refresh_tokens(request_payload)
-        if refreshed_bundle is None or refreshed_bundle.access_token is None:
-            return None
-
-        refreshed_state = self._build_refreshed_state(
-            previous_state=state,
-            refreshed_bundle=refreshed_bundle,
-            now_ts=now_ts,
-        )
-        self._state_store.save(refreshed_state)
-        return refreshed_state
-
-    def _bootstrap(self, now_ts: float) -> EdgeAuthState:
-        trust_material = self._key_provider.get_local_trust_material()
-        challenge = self._gateway_auth_client.init_bootstrap_challenge(
-            trust_material.device_id,
-            trust_material.key_id,
-        )
-
-        proof = self._build_bootstrap_proof(
-            challenge=challenge,
-            trust_material=trust_material,
-            now_ts=now_ts,
-        )
-
-        state = self._gateway_auth_client.authenticate_bootstrap(proof)
-
-        normalized = EdgeAuthState(
-            stage="ready",
-            session=state.session,
-            tokens=state.tokens,
-            failure_reason="",
-        )
-        self._state_store.save(normalized)
+    def _normalize_path(path: str) -> str:
+        normalized = (path or "").strip()
+        if not normalized:
+            return "/"
+        if not normalized.startswith("/"):
+            normalized = f"/{normalized}"
+        if len(normalized) > 1 and normalized.endswith("/"):
+            normalized = normalized.rstrip("/")
         return normalized
 
-    def _build_bootstrap_signature(
+    def _build_auth_path(self, suffix: str) -> str:
+        normalized_suffix = suffix.lstrip("/")
+        if self._auth_path == "/":
+            return f"/{normalized_suffix}"
+        return f"{self._auth_path}/{normalized_suffix}"
+
+    def request_bootstrap_challenge(
         self,
-        *,
-        challenge,
-        trust_material,
-        challenge_key_id: str,
-        entity_type: str,
-        entity_id: str,
-    ) -> str:
-        payload = CryptoUtils.build_bootstrap_signature_payload(
-            challenge,
-            key_id=challenge_key_id,
-            entity_type=entity_type,
-            entity_id=entity_id,
-        )
-        return CryptoUtils.sign_by_algorithm(
-            trust_material.signature_algorithm,
+        device_id: str,
+        key_id: str,
+        audience: str = "gateway",
+    ) -> BootstrapChallenge:
+        payload = {
+            "device_id": device_id,
+            "key_id": key_id,
+            "audience": audience or self._default_audience,
+        }
+        data = self._request_json(
+            "POST",
+            self._build_auth_path("bootstrap/challenge"),
             payload,
-            self._key_provider.get_private_key_pem(),
+        )
+        return self._parse_bootstrap_challenge(data)
+
+    def submit_bootstrap_proof(self, proof: SignedBootstrapProof) -> EdgeAuthState:
+        payload = asdict(proof)
+        data = self._request_json(
+            "POST",
+            self._build_auth_path("bootstrap/authenticate"),
+            payload,
+        )
+        return self._parse_auth_state(data)
+
+    def refresh_token_bundle(self, req: RefreshTokenRequest) -> EdgeTokenBundle | None:
+        data = self._request_json(
+            "POST",
+            self._build_auth_path("token/refresh"),
+            asdict(req),
+        )
+        return self._parse_token_bundle(data)
+
+    def revoke_tokens(self, token_id: str | None, family_id: str | None) -> None:
+        if not token_id and not family_id:
+            return
+        self._request_json(
+            "POST",
+            self._build_auth_path("token/revoke"),
+            {
+                "token_id": token_id,
+                "family_id": family_id,
+            },
         )
 
-    def _build_bootstrap_proof(
+    def _request_json(
         self,
-        *,
-        challenge,
-        trust_material,
-        now_ts: float,
-    ) -> SignedBootstrapProof:
+        method: str,
+        path: str,
+        payload: dict | None = None,
+    ) -> dict:
+        url = f"{self._base_url}{path}"
+        headers = {"Content-Type": "application/json"}
+        data = None
+        if payload is not None:
+            data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
-        challenge_key_id = challenge.key_id or trust_material.key_id
-        if challenge_key_id != trust_material.key_id:
-            raise ValueError(
-                "challenge key_id does not match local key material: "
-                f"challenge={challenge_key_id}, local={trust_material.key_id}"
-            )
-
-        entity_type = challenge.entity_type or "device"
-        entity_id = challenge.entity_id or trust_material.device_id
-        signature = self._build_bootstrap_signature(
-            challenge=challenge,
-            trust_material=trust_material,
-            challenge_key_id=challenge_key_id,
-            entity_type=entity_type,
-            entity_id=entity_id,
-        )
-        return SignedBootstrapProof(
-            challenge_id=challenge.challenge_id,
-            device_id=trust_material.device_id,
-            key_id=challenge_key_id,
-            signature=signature,
-            signature_algorithm=trust_material.signature_algorithm,
-            signed_at=now_ts,
-        )
-
-    def ensure_ready(self, now_ts: float | None = None) -> EdgeAuthState:
-        ts = self._now(now_ts)
-        state = self._state_store.load()
-        if not state:
-            return self._bootstrap(ts)
-
-        if self._is_state_ready(state, ts):
-            return state
-
-        if state is not None:
-            refreshed = self._try_refresh(state=state, now_ts=ts)
-            if refreshed is not None and self._is_state_ready(refreshed, ts):
-                return refreshed
-
-        return self._bootstrap(ts)
-
-    def get_auth_headers(self, now_ts: float | None = None) -> EdgeAuthHeaders:
-        state = self.ensure_ready(now_ts=now_ts)
-        if (
-            state.session is None
-            or state.tokens is None
-            or state.tokens.access_token is None
-        ):
-            raise ValueError("edge auth state is not ready for header generation")
-
-        access = state.tokens.access_token
-        return EdgeAuthHeaders(
-            authorization=f"Bearer {access.raw}",
-            session_id=state.session.session_id,
-            token_id=access.token_id,
-            token_type=access.token_type,
-            principal_id=state.session.principal_id,
-            scopes=access.scopes,
-        )
-
-    def on_unauthorized(
-        self,
-        status_code: int,
-        response_text: str = "",
-    ) -> EdgeAuthState:
-        ts = self._now()
-        state = self._state_store.load()
-        if status_code not in (401, 403):
-            return self.ensure_ready(now_ts=ts)
-
-        if state is not None:
-            refreshed = self._try_refresh(state=state, now_ts=ts)
-            if refreshed is not None and self._is_state_ready(refreshed, ts):
-                return refreshed
-
-        reason = f"unauthorized({status_code})"
-        if response_text:
-            reason = f"{reason}: {response_text}"
-        self._state_store.clear(reason=reason)
-        return self._bootstrap(ts)
-
-    def logout(self, reason: str = "") -> None:
-        state = self._state_store.load()
-        token_id: str | None = None
-        family_id: str | None = None
-
-        if state is not None and state.tokens is not None:
-            refresh_token = state.tokens.refresh_token
-            access_token = state.tokens.access_token
-
-            if refresh_token is not None:
-                token_id = refresh_token.token_id
-                family_id = refresh_token.family_id
-            elif access_token is not None:
-                token_id = access_token.token_id
-                family_id = access_token.family_id
-
+        req = request.Request(url=url, data=data, headers=headers, method=method)
         try:
-            self._gateway_auth_client.revoke(token_id=token_id, family_id=family_id)
-        finally:
-            self._state_store.clear(reason=reason or "logout")
+            with request.urlopen(req, timeout=self._timeout_sec) as resp:
+                raw = resp.read()
+        except HTTPError as err:
+            details = ""
+            try:
+                details = err.read().decode("utf-8", errors="ignore")
+            except Exception:
+                details = ""
+            raise RuntimeError(
+                f"gateway auth request failed: method={method} path={path} "
+                f"status={err.code} body={details}"
+            ) from err
+        except URLError as err:
+            raise RuntimeError(
+                f"gateway auth request failed: method={method} path={path} reason={err.reason}"
+            ) from err
+
+        if not raw:
+            return {}
+        parsed = json.loads(raw.decode("utf-8"))
+        if not isinstance(parsed, dict):
+            raise RuntimeError(
+                f"gateway auth response is not an object: method={method} path={path}"
+            )
+        return parsed
+
+    @staticmethod
+    def _parse_bootstrap_challenge(payload: dict) -> BootstrapChallenge:
+        return BootstrapChallenge(
+            challenge_id=str(payload.get("challenge_id", "")),
+            nonce=str(payload.get("nonce", "")),
+            issuer=str(payload.get("issuer", "")),
+            audience=str(payload.get("audience", "gateway")),
+            issued_at=float(payload.get("issued_at", 0.0)),
+            expires_at=float(payload.get("expires_at", 0.0)),
+            entity_type=str(payload.get("entity_type", "device")),
+            entity_id=str(payload.get("entity_id", "")),
+            key_id=str(payload.get("key_id", "")),
+        )
+
+    @staticmethod
+    def _parse_edge_session(payload: dict | None) -> EdgeSession | None:
+        if not isinstance(payload, dict):
+            return None
+
+        status_raw = str(payload.get("status", "active")).strip().lower()
+        if status_raw not in {"active", "expired", "revoked"}:
+            status_raw = "active"
+
+        return EdgeSession(
+            session_id=str(payload.get("session_id", "")),
+            principal_id=str(payload.get("principal_id", "")),
+            device_id=str(payload.get("device_id", "")),
+            status=cast(SessionStatus, status_raw),
+            issued_at=float(payload.get("issued_at", 0.0)),
+            expires_at=float(payload.get("expires_at", 0.0)),
+            token_family_id=str(payload.get("token_family_id", "")),
+            last_verified_at=float(payload.get("last_verified_at", 0.0)),
+        )
+
+    @staticmethod
+    def _parse_edge_token(payload: dict | None, *, fallback_type: str) -> EdgeToken | None:
+        if not isinstance(payload, dict):
+            return None
+
+        token_type_raw = str(payload.get("token_type", fallback_type)).strip().lower()
+        if token_type_raw not in {"access", "refresh"}:
+            token_type_raw = fallback_type if fallback_type in {"access", "refresh"} else "access"
+
+        scopes = payload.get("scopes")
+        if not isinstance(scopes, list):
+            scopes = []
+        return EdgeToken(
+            raw=str(payload.get("raw", "")),
+            token_type=cast(TokenType, token_type_raw),
+            token_id=str(payload.get("token_id", "")),
+            family_id=str(payload.get("family_id", "")),
+            session_id=str(payload.get("session_id", "")),
+            issued_at=float(payload.get("issued_at", 0.0)),
+            expires_at=float(payload.get("expires_at", 0.0)),
+            scopes=[str(item) for item in scopes],
+            role=str(payload.get("role", "")),
+        )
+
+    @classmethod
+    def _parse_token_bundle(cls, payload: dict) -> EdgeTokenBundle | None:
+        access = cls._parse_edge_token(payload.get("access_token"), fallback_type="access")
+        refresh = cls._parse_edge_token(
+            payload.get("refresh_token"),
+            fallback_type="refresh",
+        )
+        if access is None and refresh is None:
+            return None
+        return EdgeTokenBundle(access_token=access, refresh_token=refresh)
+
+    @classmethod
+    def _parse_auth_state(cls, payload: dict) -> EdgeAuthState:
+        stage_raw = str(payload.get("stage", "ready")).strip().lower()
+        if stage_raw not in {
+            "uninitialized",
+            "challenge_issued",
+            "ready",
+            "refreshing",
+            "expired",
+            "revoked",
+            "failed",
+        }:
+            stage_raw = "ready"
+
+        return EdgeAuthState(
+            stage=cast(AuthStage, stage_raw),
+            session=cls._parse_edge_session(payload.get("session")),
+            tokens=cls._parse_token_bundle(payload.get("tokens") or {}),
+            failure_reason=str(payload.get("failure_reason", "")),
+        )
+
+
+# 向后兼容旧命名；后续应直接使用 EdgeAuthCoordinator。
+EdgeAuthTransportCoordinator = EdgeAuthCoordinator

@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Any, Literal, cast
+from urllib.parse import urlparse
 
 
 from src.models.workflow.workflow import (
@@ -96,6 +97,30 @@ def _resolve_path(base_dir: Path, value: str) -> str:
     return str(path.resolve())
 
 
+def _normalize_backend_base_url(value: str, *, default: str) -> str:
+    raw = str(value).strip() if value is not None else ""
+    if not raw:
+        raw = default
+    parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(f"invalid backend base url: {raw}")
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+
+def _normalize_http_path(value: str | None, *, default: str) -> str:
+    raw = str(value).strip() if value is not None else ""
+    if not raw:
+        raw = default
+    parsed = urlparse(raw)
+    if parsed.scheme and parsed.netloc:
+        raw = parsed.path or "/"
+    if not raw.startswith("/"):
+        raw = f"/{raw}"
+    if len(raw) > 1 and raw.endswith("/"):
+        raw = raw.rstrip("/")
+    return raw
+
+
 def load_edge_config(
     config_data: dict[str, Any],
     *,
@@ -165,16 +190,23 @@ def load_edge_config(
         raise ValueError("memory_high_watermark must be in (0, 1]")
 
     upload = UploadHttpConfig(
-        upload_url=str(
-            upload_tbl.get("upload_url", "http://127.0.0.1:8000/v1/edge/events")
+        base_backend_url=_normalize_backend_base_url(
+            str(upload_tbl.get("base_backend_url", "")),
+            default="http://127.0.0.1:8000",
         ),
-        healthcheck_url=str(
-            upload_tbl.get("healthcheck_url", "http://127.0.0.1:8000/health")
+        upload_path=_normalize_http_path(
+            str(upload_tbl.get("upload_path", "")).strip(),
+            default="/v1/edge/events",
+        ),
+        auth_path=_normalize_http_path(
+            str(upload_tbl.get("auth_path", "")).strip(),
+            default="/v1/edge/auth",
+        ),
+        healthcheck_path=_normalize_http_path(
+            str(upload_tbl.get("healthcheck_path", "")).strip(),
+            default="/health",
         ),
         timeout_sec=float(upload_tbl.get("timeout_sec", 3.0)),
-        auth_token=(
-            str(upload_tbl["auth_token"]) if upload_tbl.get("auth_token") else None
-        ),
     )
 
     decision = DecisionPolicyConfig(

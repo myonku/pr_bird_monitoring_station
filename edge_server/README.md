@@ -85,7 +85,13 @@
   - `high_load_skip_inference`
   - `cpu_high_watermark`, `memory_high_watermark`
 - `[upload_http]`
-  - 上传与健康检查地址
+  - `base_backend_url`：后端基准地址（scheme + host + port）
+  - `upload_path`：事件上传路径
+  - `auth_path`：认证通道路径前缀
+  - `healthcheck_path`：健康检查路径
+  - `timeout_sec`：HTTP 超时控制参数
+
+说明：上传请求的访问令牌由 `EdgeAuthCoordinator` 动态提供，不再从配置读取静态 token。
 - `[model_pack]` + `[[model_pack_lightweight_candidates]]`
   - 模型目录与候选映射
 

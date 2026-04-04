@@ -11,6 +11,7 @@ import (
 	interfaces "certification_server/src/interfaces/auth"
 	commseciface "certification_server/src/interfaces/commsec"
 	authmodel "certification_server/src/models/auth"
+	commsecmodel "certification_server/src/models/commsec"
 	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
 	"certification_server/src/utils"
@@ -68,8 +69,22 @@ func (s *BootstrapService) InitChallenge(
 	if req == nil {
 		return nil, &modelsystem.ErrChallengeRequestNil
 	}
-	if req.EntityID == "" || req.KeyID == "" {
-		return nil, &modelsystem.ErrEntityIDAndKeyIDRequired
+	if req.EntityID == "" {
+		return nil, &modelsystem.ErrEntityIDRequired
+	}
+
+	resolvedKeyID := strings.TrimSpace(req.KeyID)
+	if resolvedKeyID == "" && s.keySvc != nil {
+		lookup, err := s.keySvc.GetPublicKeyByEntityID(ctx, req.EntityID)
+		if err != nil {
+			return nil, err
+		}
+		if lookup.Found {
+			resolvedKeyID = lookup.Key.KeyID
+		}
+	}
+	if resolvedKeyID == "" {
+		return nil, &modelsystem.ErrKeyIDRequired
 	}
 
 	ttlSec := req.TTLSec
@@ -84,7 +99,7 @@ func (s *BootstrapService) InitChallenge(
 		Audience:    req.Audience,
 		EntityType:  req.EntityType,
 		EntityID:    req.EntityID,
-		KeyID:       req.KeyID,
+		KeyID:       resolvedKeyID,
 		Nonce:       uuid.NewString(),
 		IssuedAt:    now,
 		ExpiresAt:   now.Add(time.Duration(ttlSec) * time.Second),
@@ -126,17 +141,32 @@ func (s *BootstrapService) AuthenticateBootstrap(
 	if time.Now().After(stored.ExpiresAt) {
 		return nil, &modelsystem.ErrChallengeExpired
 	}
-	if req.Signed.ChallengeID != stored.ChallengeID || req.Signed.KeyID != stored.KeyID {
+	if req.Signed.ChallengeID != stored.ChallengeID {
+		return nil, &modelsystem.ErrChallengeResponseMismatch
+	}
+	if stored.KeyID != "" && req.Signed.KeyID != "" && req.Signed.KeyID != stored.KeyID {
 		return nil, &modelsystem.ErrChallengeResponseMismatch
 	}
 
 	if s.keySvc != nil {
-		lookup, err := s.keySvc.GetPublicKeyByKeyID(ctx, stored.KeyID)
+		lookup, err := s.resolvePublicKeyForChallenge(ctx, stored, req.Signed.KeyID)
 		if err != nil {
 			return nil, err
 		}
 		if !lookup.Found {
+			if stored.EntityID != "" {
+				return nil, &modelsystem.ErrPublicKeyNotFoundForEntityID
+			}
 			return nil, &modelsystem.ErrPublicKeyNotFoundForKeyID
+		}
+		if stored.KeyID != "" && lookup.Key.KeyID != stored.KeyID {
+			return nil, &modelsystem.ErrChallengeResponseMismatch
+		}
+		if req.Signed.KeyID != "" && lookup.Key.KeyID != req.Signed.KeyID {
+			return nil, &modelsystem.ErrChallengeResponseMismatch
+		}
+		if stored.KeyID == "" {
+			stored.KeyID = lookup.Key.KeyID
 		}
 		sigAlgo := req.Signed.SignatureAlgorithm
 		if sigAlgo == "" {
@@ -232,6 +262,54 @@ func (s *BootstrapService) AuthenticateBootstrap(
 	}
 
 	return result, nil
+}
+
+func (s *BootstrapService) resolvePublicKeyForChallenge(
+	ctx context.Context,
+	challenge *authmodel.ChallengePayload,
+	signedKeyID string,
+) (commsecmodel.PublicKeyLookupResult, error) {
+	if s.keySvc == nil {
+		return commsecmodel.PublicKeyLookupResult{}, nil
+	}
+	if challenge == nil {
+		return commsecmodel.PublicKeyLookupResult{}, nil
+	}
+
+	preferred := strings.TrimSpace(challenge.KeyID)
+	if preferred == "" {
+		preferred = strings.TrimSpace(signedKeyID)
+	}
+	if preferred != "" {
+		lookup, err := s.keySvc.GetPublicKeyByKeyID(ctx, preferred)
+		if err != nil {
+			return commsecmodel.PublicKeyLookupResult{}, err
+		}
+		if lookup.Found {
+			return lookup, nil
+		}
+	}
+
+	if challenge.EntityID != "" {
+		lookup, err := s.keySvc.GetPublicKeyByEntityID(ctx, challenge.EntityID)
+		if err != nil {
+			return commsecmodel.PublicKeyLookupResult{}, err
+		}
+		if lookup.Found {
+			return lookup, nil
+		}
+		return lookup, nil
+	}
+
+	if preferred != "" {
+		lookup, err := s.keySvc.GetPublicKeyByKeyID(ctx, preferred)
+		if err != nil {
+			return commsecmodel.PublicKeyLookupResult{}, err
+		}
+		return lookup, nil
+	}
+
+	return commsecmodel.PublicKeyLookupResult{}, nil
 }
 
 // GetBootstrapStage 查询指定实体的冷启动认证阶段，返回阶段枚举值。

@@ -117,3 +117,30 @@ type DownstreamGrantRequest struct {
 	RequireEncryption bool
 	TTLSec            int64
 }
+
+// UserPasswordAuthRequest 表示客户端用户通过用户名/密码发起认证的参数。
+type UserPasswordAuthRequest struct {
+	Username string
+	Password string
+
+	Audience string
+	Scopes   []string
+
+	ClientID  string
+	GatewayID string
+	SourceIP  string
+	UserAgent string
+
+	RequestID string
+	TraceID   string
+}
+
+// UserPasswordAuthResult 表示用户名/密码认证成功后的统一返回结果。
+type UserPasswordAuthResult struct {
+	Identity *IdentityContext
+	Session  *Session
+	Tokens   TokenBundle
+
+	IssuedAt  time.Time
+	ExpiresAt time.Time
+}

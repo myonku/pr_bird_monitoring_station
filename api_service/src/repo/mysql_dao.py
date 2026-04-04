@@ -65,13 +65,14 @@ class ServicePublicKeysDAO(MySQLBaseDAO):
     def __init__(self, mysql_db: MySQLClient):
         super().__init__(
             mysql_db=mysql_db,
-            table_name="auth_service_public_keys",
+            table_name="auth_entity_public_keys",
             primary_key="key_id",
             allowed_columns={
                 "key_id",
                 "owner_type",
-                "service_id",
-                "service_name",
+                "entity_type",
+                "entity_id",
+                "entity_name",
                 "instance_id",
                 "instance_name",
                 "key_exchange_algorithm",

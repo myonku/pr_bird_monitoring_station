@@ -10,10 +10,14 @@ from src.orchestration.pipeline import EdgePipeline
 from src.orchestration.runtime_signal import ResourceMonitor
 from src.models.workflow.runtime import RuntimeStatus
 from src.local_storage.sqlite_spool import SQLiteSpoolStorage
+from src.local_storage.sqlite_auth_store import SQLiteEdgeAuthStateStore
 from src.sync_worker.sync_worker import SyncWorker
 from src.reasoner.infrencer import TwoStageInferenceModule
 from src.reasoner.model_loader import LocalModelBundleLoader
+from src.orchestration.auth_coordinator import EdgeAuthCoordinator
 from src.transport.event_uploader import EdgeEventHttpUploadCoordinator
+from src.transport.auth_transport import EdgeGatewayAuthHttpClient
+from src.utils.secret_key_utils import SecretKeyUtils
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -38,17 +42,43 @@ def main() -> None:
     model_loader.load(cfg.model_pack)
     infer = TwoStageInferenceModule()
 
+    auth_coordinator = None
+    if cfg.auth.active_key_id:
+        try:
+            key_manager = SecretKeyUtils.from_secret_dir(
+                device_id=cfg.runtime.device_id,
+                active_key_id=cfg.auth.active_key_id,
+                secret_dir=cfg.auth.secret_key_dir,
+            )
+            auth_state_store = SQLiteEdgeAuthStateStore(
+                db_path=cfg.auth.auth_state_db_path,
+            )
+            gateway_auth_client = EdgeGatewayAuthHttpClient(
+                auth_base_url=cfg.upload_http.base_backend_url,
+                auth_path=cfg.upload_http.auth_path,
+                timeout_sec=cfg.upload_http.timeout_sec,
+            )
+            auth_coordinator = EdgeAuthCoordinator(
+                key_manager=key_manager,
+                gateway_auth_client=gateway_auth_client,
+                state_store=auth_state_store,
+            )
+        except Exception as err:
+            print(
+                f"[edge-auth] auth coordinator init failed, continue without auth headers: {err}"
+            )
+
     pipeline_uploader = EdgeEventHttpUploadCoordinator(
         upload_url=cfg.upload_http.upload_url,
         healthcheck_url=cfg.upload_http.healthcheck_url,
         timeout_sec=cfg.upload_http.timeout_sec,
-        auth_token=cfg.upload_http.auth_token or None,
+        auth_coordinator=auth_coordinator,
     )
     sync_uploader = EdgeEventHttpUploadCoordinator(
         upload_url=cfg.upload_http.upload_url,
         healthcheck_url=cfg.upload_http.healthcheck_url,
         timeout_sec=cfg.upload_http.timeout_sec,
-        auth_token=cfg.upload_http.auth_token or None,
+        auth_coordinator=auth_coordinator,
     )
 
     resource_monitor = ResourceMonitor(

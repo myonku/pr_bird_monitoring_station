@@ -57,9 +57,13 @@ func (s *CommSecurityService) InitHandshake(
 	if req == nil {
 		return nil, &modelsystem.ErrHandshakeInitRequestNil
 	}
-	if req.Initiator.ServiceID == "" || req.Responder.ServiceID == "" {
+	initiatorEntityID := req.Initiator.EffectiveEntityID()
+	responderEntityID := req.Responder.EffectiveEntityID()
+	if initiatorEntityID == "" || responderEntityID == "" {
 		return nil, &modelsystem.ErrInitiatorResponderServiceRequired
 	}
+	req.Initiator = req.Initiator.Normalized()
+	req.Responder = req.Responder.Normalized()
 
 	selectedKeyExchange := pickKeyExchange(req.SupportedKeyExchanges)
 	selectedSig := pickSignature(req.SupportedSignatures)
@@ -599,8 +603,8 @@ func marshalAdditionalData(ad map[string]string) ([]byte, error) {
 func buildHandshakeSignPayload(item *commsecmodel.ECDHEHandshakeRecord) []byte {
 	parts := []string{
 		item.ID.String(),
-		item.Initiator.ServiceID,
-		item.Responder.ServiceID,
+		item.Initiator.EffectiveEntityID(),
+		item.Responder.EffectiveEntityID(),
 		item.InitiatorKeyID,
 		string(item.KeyExchangeAlgorithm),
 		string(item.SignatureAlgorithm),

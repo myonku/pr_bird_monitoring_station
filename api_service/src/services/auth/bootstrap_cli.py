@@ -19,6 +19,7 @@ from src.models.auth.bootstrap import (
     ChallengePayload,
     ChallengeRequest,
 )
+from src.services.commsec.secret_key_svc import SecretKeyService
 from src.repo.redis_store import RedisManager
 
 
@@ -32,9 +33,11 @@ class BootstrapClient:
         self,
         issuer: str = "certification_server",
         redis_manager: RedisManager | None = None,
+        secret_key_service: SecretKeyService | None = None,
     ):
         self.issuer = issuer
         self._redis_manager = redis_manager
+        self._secret_key_service = secret_key_service
         self._challenges: dict[UUID, ChallengePayload] = {}
         self._stages: dict[str, BootstrapStage] = {}
 
@@ -84,8 +87,18 @@ class BootstrapClient:
         return cast(BootstrapStage, str(raw))
 
     async def init_challenge(self, req: ChallengeRequest) -> ChallengePayload:
-        if not req.entity_id or not req.key_id:
-            raise ValueError("entity_id and key_id are required")
+        if not req.entity_id:
+            raise ValueError("entity_id is required")
+
+        resolved_key_id = str(req.key_id or "").strip()
+        if not resolved_key_id and self._secret_key_service is not None:
+            lookup = await self._secret_key_service.get_public_key_by_entity_id(
+                req.entity_id
+            )
+            if lookup.found and lookup.key is not None:
+                resolved_key_id = lookup.key.key_id
+        if not resolved_key_id:
+            raise ValueError("key_id is required or must be resolvable by entity_id")
 
         now = time()
         ttl = req.ttl_sec if req.ttl_sec > 0 else 120
@@ -95,7 +108,7 @@ class BootstrapClient:
             audience=req.audience,
             entity_type=req.entity_type,
             entity_id=req.entity_id,
-            key_id=req.key_id,
+            key_id=resolved_key_id,
             nonce=uuid4().hex,
             issued_at=now,
             expires_at=now + ttl,

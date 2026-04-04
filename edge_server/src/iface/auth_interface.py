@@ -1,16 +1,10 @@
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
 
-from src.models.auth.auth import (
-    EdgeTokenBundle,
-    LocalTrustMaterial,
-    TokenType,
-)
+from src.models.auth.auth import EdgeTokenBundle, LocalTrustMaterial
 from src.models.auth.auth_contract import (
     EdgeAuthHeaders,
     EdgeAuthState,
     RefreshTokenRequest,
-    TokenVerificationResult,
 )
 from src.models.auth.bootstrap import BootstrapChallenge, SignedBootstrapProof
 
@@ -38,30 +32,24 @@ class IEdgeGatewayAuthClient(ABC):
     """
 
     @abstractmethod
-    def init_bootstrap_challenge(
-        self, device_id: str, key_id: str
+    def request_bootstrap_challenge(
+        self,
+        device_id: str,
+        key_id: str,
+        audience: str = "gateway",
     ) -> BootstrapChallenge:
         raise NotImplementedError
 
     @abstractmethod
-    def authenticate_bootstrap(self, proof: SignedBootstrapProof) -> EdgeAuthState:
+    def submit_bootstrap_proof(self, proof: SignedBootstrapProof) -> EdgeAuthState:
         raise NotImplementedError
 
     @abstractmethod
-    def refresh_tokens(self, req: RefreshTokenRequest) -> EdgeTokenBundle | None:
+    def refresh_token_bundle(self, req: RefreshTokenRequest) -> EdgeTokenBundle | None:
         raise NotImplementedError
 
     @abstractmethod
-    def verify_token(
-        self,
-        raw_token: str,
-        expected_types: Sequence[TokenType] | None = None,
-        allow_expired_skew_sec: int = 0,
-    ) -> TokenVerificationResult:
-        raise NotImplementedError
-
-    @abstractmethod
-    def revoke(self, token_id: str | None, family_id: str | None) -> None:
+    def revoke_tokens(self, token_id: str | None, family_id: str | None) -> None:
         raise NotImplementedError
 
 
@@ -82,7 +70,7 @@ class IEdgeAuthStateStore(ABC):
         raise NotImplementedError
 
 
-class IEdgeAuthTransportCoordinator(ABC):
+class IEdgeAuthCoordinator(ABC):
     """高层认证协调器接口，定义了边缘认证的核心流程和策略。
     认证协调器负责管理认证状态、处理认证事件，并与网关进行交互以完成认证和授权流程。"""
 
@@ -106,3 +94,7 @@ class IEdgeAuthTransportCoordinator(ABC):
     @abstractmethod
     def logout(self, reason: str = "") -> None:
         raise NotImplementedError
+
+
+# 向后兼容旧命名；后续应统一使用 IEdgeAuthCoordinator。
+IEdgeAuthTransportCoordinator = IEdgeAuthCoordinator

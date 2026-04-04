@@ -1,66 +1,62 @@
-# Edge Auth Design Spec
+# 边缘端认证模块设计说明
 
-## 1. Goal
+## 1. 目标
 
-This document defines edge-side authentication architecture for the bird monitoring platform.
+本文档定义鸟类监测平台边缘端认证模块的架构设计。
 
-Scope:
-- Edge device authentication and token lifecycle.
-- Session and credential management for HTTP business requests to gateway.
-- Separation of authentication flow from business upload/inference flow.
+范围：
+- 边缘认证模块的分层与接口边界。
+- 认证模型与传输适配层之间的数据契约映射。
+- 认证通道与业务上传通道的隔离约束。
 
-Out of scope:
-- Business payload schema and upload orchestration details.
-- Database schema changes on edge side.
-- Transport-level encryption between edge and gateway.
-
-
-## 2. Constraints and Assumptions
-
-1. Edge runtime cannot connect remote databases.
-2. Edge only uses local trust material as initial credential:
-- private key from local storage, TPM, secure element, or file-based keystore.
-- matching public key is pre-registered in system database.
-3. Edge to gateway communication is business HTTP only.
-4. No additional app-layer encryption is required between edge and gateway.
-5. Auth center is not called directly by edge:
-- edge calls gateway auth endpoints.
-- gateway forwards auth calls to auth center.
-6. Edge still follows session + short/long token model:
-- access token for request auth.
-- refresh token for renewal.
-- session for lifecycle and revocation tracking.
+不在范围内：
+- 跨模块认证链路与启动链路的全局定义。
+- 全局标识/密钥/配置生命周期规范。
+- 业务 payload 结构与上传编排细节。
+- 边缘端与网关之间的传输层加密细节。
 
 
-## 3. Layering and Isolation
+## 2. 约束与假设
 
-Authentication must be independent from business features (capture/inference/upload).
-
-Boundary:
-- Business modules only depend on an auth header provider abstraction.
-- Business modules do not build bootstrap requests, sign challenges, or refresh tokens.
-- Business modules do not parse auth responses.
-
-Recommended dependency direction:
-- business pipeline -> IEdgeAuthCoordinator
-- IEdgeAuthCoordinator -> ISecretKeyProvider, IEdgeGatewayAuthClient, IEdgeAuthStateStore
-- auth components must not depend on business pipeline modules
+1. 边缘运行时不直接连接远端数据库。
+2. 边缘端不直接调用认证中心，认证请求统一经网关转发。
+3. 认证通道与业务上传通道必须严格隔离。
+4. 全局标识、密钥与配置生命周期规则见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
+5. 认证接口 HTTP 契约细节见 `EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
 
 
-## 4. Interface Set
+## 3. 分层与隔离
 
-Implemented in:
-- src/auth_interface.py
-- src/models/auth_models.py
+认证能力必须独立于业务流程（采集/推理/上传）。
+
+边界约束：
+- 业务模块仅依赖认证头提供能力。
+- 业务模块不构建 bootstrap 请求、不执行 challenge 签名、不直接处理 refresh。
+- 业务模块不解析认证响应细节。
+
+建议依赖方向：
+- business pipeline -> IEdgeAuthTransportCoordinator
+- IEdgeAuthTransportCoordinator -> ISecretKeyManager, IEdgeGatewayAuthClient, IEdgeAuthStateStore
+- 认证组件不得依赖业务 pipeline 模块
+
+
+## 4. 接口集合
+
+对应实现位置：
+- src/iface/auth_interface.py
+- src/models/auth/auth.py
+- src/models/auth/auth_contract.py
+- src/models/auth/bootstrap.py
+- src/transport/auth_transport.py
 - src/utils/crypto_utils.py
 - src/utils/secret_key_utils.py
 
-Core abstractions:
-1. ISecretKeyProvider
-- Provides local trust material, key lookup, private key loading, and bootstrap challenge signing.
+核心抽象：
+1. ISecretKeyManager
+- 提供本地信任材料、密钥检索、私钥加载与 bootstrap challenge 签名能力。
 
 2. IEdgeGatewayAuthClient
-- Calls gateway auth APIs:
+- 调用网关认证 API：
 - init bootstrap challenge
 - authenticate bootstrap
 - refresh token
@@ -68,21 +64,21 @@ Core abstractions:
 - revoke token/family
 
 3. IEdgeAuthStateStore
-- Persists auth state locally (session + token bundle + stage).
-- Suggested storage options: file, sqlite, lightweight kv.
+- 本地持久化认证状态（session + token bundle + stage）。
+- 建议存储实现：文件、sqlite、轻量 kv。
 
-4. IEdgeAuthCoordinator
-- Auth orchestration entry for business modules.
-- Exposes:
+4. IEdgeAuthTransportCoordinator
+- 面向业务模块的认证编排入口。
+- 对外能力：
 - ensure_ready
 - get_auth_headers
 - on_unauthorized
 - logout
 
 
-## 5. Data Contracts
+## 5. 数据契约
 
-Key contracts are in src/models/auth_models.py:
+关键契约位于 src/models/auth/auth.py、src/models/auth/auth_contract.py、src/models/auth/bootstrap.py：
 - LocalTrustMaterial
 - BootstrapChallenge
 - SignedBootstrapProof
@@ -93,120 +89,35 @@ Key contracts are in src/models/auth_models.py:
 - TokenVerificationResult
 - EdgeAuthHeaders
 
-Design note:
-- Keep model fields protocol-neutral where possible.
-- Map to concrete gateway HTTP payloads in adapter/client layer.
+设计说明：
+- 模型字段尽量保持协议中立。
+- 与网关 HTTP payload 的具体映射放在 adapter/client 层。
 
-### 5.1 Bootstrap Signature Payload Canonical Format
+### 5.1 Bootstrap 签名载荷规范格式
 
-Edge signer must build payload exactly as auth center verifier expects:
+边缘端签名载荷必须与认证中心验签器期望完全一致：
 
 - challenge_id|issuer|audience|entity_type|entity_id|key_id|nonce|issued_at_rfc3339nano|expires_at_rfc3339nano
 
-This is implemented in src/utils/crypto_utils.py by:
+对应实现位于 src/utils/crypto_utils.py：
 - CryptoUtils.build_bootstrap_signature_payload
 - CryptoUtils.unix_ts_to_rfc3339nano
 
-Key loading and local key catalog lookup are implemented in src/utils/secret_key_utils.py by:
+密钥加载与本地 key catalog 查询位于 src/utils/secret_key_utils.py：
 - SecretKeyUtils.load_pem_bytes_from_ref
 - SecretKeyUtils.get_public_key_by_key_id
 - SecretKeyUtils.get_private_key_pem
 - SecretKeyUtils.sign_bootstrap_challenge
 
-Supported signature algorithms:
+支持的签名算法：
 - ed25519
 - ecdsa_p256_sha256
 - rsa_pss_sha256
 
 
-## 6. End-to-End Flow
+## 6. 全局引用
 
-### Phase A: Cold Start Bootstrap
-
-1. Edge starts and calls IEdgeAuthCoordinator.ensure_ready().
-2. Coordinator loads local state from IEdgeAuthStateStore.
-3. If no valid session/token:
-- select key material via ISecretKeyProvider
-- request challenge via IEdgeGatewayAuthClient.init_bootstrap_challenge()
-- sign challenge via ISecretKeyProvider.sign_bootstrap_challenge()
-- submit proof via IEdgeGatewayAuthClient.authenticate_bootstrap()
-4. Persist resulting EdgeAuthState to IEdgeAuthStateStore.
-5. System enters ready state.
-
-### Phase B: Business Request Authorization
-
-1. Business uploader asks IEdgeAuthCoordinator.get_auth_headers().
-2. Coordinator ensures access token is valid:
-- if expiring/expired, refresh via IEdgeGatewayAuthClient.refresh_tokens()
-3. Coordinator returns EdgeAuthHeaders for HTTP request.
-4. Uploader adds these headers and sends business payload.
-
-### Phase C: Unauthorized Recovery
-
-1. Business request gets 401/403 from gateway.
-2. Uploader reports this via IEdgeAuthCoordinator.on_unauthorized().
-3. Coordinator strategy:
-- first try refresh token flow;
-- if refresh failed, clear local state and re-bootstrap.
-4. Save updated state and continue retry policy.
-
-### Phase D: Logout or Key Rotation
-
-1. On explicit logout or key rotation event:
-- call IEdgeGatewayAuthClient.revoke()
-- clear local state via IEdgeAuthStateStore.clear()
-2. Next ensure_ready() starts new bootstrap with latest local key material.
-
-
-## 7. Gateway API Expectations (Forwarded to Auth Center)
-
-Edge-facing (gateway hosted) API set should include:
-- POST /v1/edge/auth/bootstrap/challenge
-- POST /v1/edge/auth/bootstrap/authenticate
-- POST /v1/edge/auth/token/refresh
-- POST /v1/edge/auth/token/verify
-- POST /v1/edge/auth/token/revoke
-
-Gateway responsibilities:
-- authenticate and validate edge request envelope.
-- forward to auth center.
-- map auth center response to edge contract.
-
-
-## 8. Operational Guidance
-
-1. Local state durability
-- Persist refresh token and session atomically.
-- Prevent partial writes that leave unusable mixed states.
-
-2. Time handling
-- Use monotonic-safe strategy for token expiry checks when possible.
-- Keep gateway and edge clock skew allowance configurable.
-
-3. Retry and backoff
-- Backoff bootstrap/refresh calls to avoid gateway storm during unstable networks.
-
-4. Key protection
-- private_key_ref should point to protected key source.
-- avoid exporting raw private key in logs, memory dumps, or telemetry.
-
-5. Audit fields
-- always include request_id and trace_id on refresh/verify calls.
-
-
-## 9. Integration Plan (Non-breaking)
-
-Step 1:
-- Introduce auth interfaces and models (this change).
-
-Step 2:
-- Implement IEdgeGatewayAuthClient over existing HTTP transport primitives.
-
-Step 3:
-- Add concrete IEdgeAuthCoordinator + local store implementation.
-
-Step 4:
-- Update uploader transport path to request headers from IEdgeAuthCoordinator instead of static auth_token config.
-
-Step 5:
-- Keep old static auth_token as fallback for migration window, then remove.
+- 跨模块认证链路与启动链路见 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
+- 全局统一约定见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
+- 边缘端到网关的接口路径、payload 与头部契约见 `EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
+- 本文档仅承载边缘认证模块内部架构定义。

@@ -15,6 +15,8 @@ type ISecretKeyService interface {
 
 	// 按 key id 查询全局公钥目录
 	GetPublicKeyByKeyID(ctx context.Context, keyID string) (commsecmodel.PublicKeyLookupResult, error)
+	// 按实体 id 查询全局公钥目录（用于 key_id 缺失或不确定场景）
+	GetPublicKeyByEntityID(ctx context.Context, entityID string) (commsecmodel.PublicKeyLookupResult, error)
 	// 按 owner 查询全局公钥目录
 	GetPublicKeysByOwner(ctx context.Context, owner commsecmodel.ServiceKeyOwner) ([]commsecmodel.ServicePublicKeyRecord, error)
 }
