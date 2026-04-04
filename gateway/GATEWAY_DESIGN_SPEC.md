@@ -116,10 +116,10 @@
   - IssueDownstreamGrant
 - 职责：获取下游访问授权（grant）。
 
-### 4.2.4 ISessionService / ITokenManager
+### 4.2.4 IAuthGatewayAuthorityClient
 
-- 文件：src/interfaces/auth/session_svc.go, src/interfaces/auth/token_manager.go
-- 职责：会话与令牌状态的读取/刷新/验证能力。
+- 文件：src/interfaces/auth/auth_gateway_authority.go
+- 职责：统一定义网关到认证中心的远端鉴权门面调用（bootstrap、用户认证、token/session 校验、downstream grant）。
 
 ---
 

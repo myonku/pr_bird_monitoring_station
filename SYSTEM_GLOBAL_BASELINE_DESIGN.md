@@ -127,11 +127,12 @@
 
 ## 7. 跨模块职责边界（摘要）
 
-- Gateway：公共入口与协议映射，不实现认证中心核心签发逻辑。
+- Gateway：公共入口与协议映射，认证相关操作统一转发认证中心，不本地管理 challenge/session/token/grant 状态。
 - Certification Server：认证签发、会话/令牌/通道安全控制中心。
-- API Service：业务处理与出站调用，不承载认证中心职责。
+- API Service：业务处理与出站调用，认证相关操作统一转发认证中心，不本地管理 challenge/session/token/grant 状态。
 - Edge Server：本地采集/推理/上传与边缘认证协调，不直接调用认证中心。
 - Client：仅走用户名密码链路，不参与密钥 bootstrap。
+- 非认证中心模块仅可消费认证结果进行限流和访问控制，不得本地签发、刷新、撤销或缓存认证凭证状态。
 
 ---
 

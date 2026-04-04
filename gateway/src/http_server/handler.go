@@ -29,25 +29,11 @@ func (h *AuthHTTPHandler) RegisterRoutes(mux *http.ServeMux) {
 	if mux == nil {
 		return
 	}
-	// 阶段1：网关不再承载客户端认证入口，统一返回下线响应。
-	mux.HandleFunc("/v1/client/auth/login", h.handleAuthEntryDisabled)
-	mux.HandleFunc("/v1/client/auth/token/refresh", h.handleAuthEntryDisabled)
-	mux.HandleFunc("/v1/client/auth/token/verify", h.handleAuthEntryDisabled)
-	mux.HandleFunc("/v1/client/auth/token/revoke", h.handleAuthEntryDisabled)
-	mux.HandleFunc("/v1/client/auth/logout", h.handleAuthEntryDisabled)
-}
-
-func (h *AuthHTTPHandler) handleAuthEntryDisabled(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is supported")
-		return
-	}
-	writeError(
-		w,
-		http.StatusGone,
-		"auth_entrypoint_disabled",
-		"gateway auth entrypoint is disabled; route authentication requests to certification_server",
-	)
+	mux.HandleFunc("/v1/client/auth/login", h.handleLogin)
+	mux.HandleFunc("/v1/client/auth/token/refresh", h.handleRefresh)
+	mux.HandleFunc("/v1/client/auth/token/verify", h.handleVerify)
+	mux.HandleFunc("/v1/client/auth/token/revoke", h.handleRevoke)
+	mux.HandleFunc("/v1/client/auth/logout", h.handleLogout)
 }
 
 type loginRequest struct {

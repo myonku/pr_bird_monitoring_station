@@ -180,6 +180,15 @@
   - RevokeChannelFlow
 - 作用：把协商策略、验签、派生、落地、传输前后处理统一为流程。
 
+### 4.4.3 IAuthGatewayOrchestrator
+
+- 文件：src/interfaces/orchestration/auth_gateway.go
+- 方法：
+  - InitChallenge / AuthenticateBootstrap / GetBootstrapStage
+  - AuthenticateByPassword / RefreshByUserSession / VerifyToken / RevokeToken / RevokeUserSession
+  - ValidateSession / IssueDownstreamGrant
+- 作用：作为认证中心统一鉴权门面，向网关与普通服务提供单一编排入口。
+
 ---
 
 ## 4.5 RateLimit 模块

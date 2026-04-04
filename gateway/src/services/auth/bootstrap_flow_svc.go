@@ -11,8 +11,6 @@ import (
 	authmodel "gateway/src/models/auth"
 	modelsystem "gateway/src/models/system"
 	"gateway/src/utils"
-
-	"github.com/google/uuid"
 )
 
 var _ authif.IBootstrapFlowCoordinator = (*BootstrapFlowCoordinator)(nil)
@@ -21,7 +19,6 @@ var _ authif.IBootstrapFlowCoordinator = (*BootstrapFlowCoordinator)(nil)
 type BootstrapFlowCoordinator struct {
 	BootstrapClient authif.IBootstrapClient
 	KeyService      commsecif.ISecretKeyService
-	TokenManager    authif.ITokenManager
 
 	Crypto *utils.CryptoUtils
 }
@@ -45,15 +42,12 @@ func (c *BootstrapFlowCoordinator) EnsureReady(
 		return nil, err
 	}
 	if stage == authmodel.BootstrapStageReady {
-		result := &authmodel.BootstrapAuthResult{Stage: authmodel.BootstrapStageReady, IssuedAt: time.Now(), ExpiresAt: time.Now().Add(10 * time.Minute)}
-		if c.TokenManager != nil {
-			token, tokenErr := c.TokenManager.GetAccessToken(ctx)
-			if tokenErr == nil && token != nil {
-				result.Tokens.AccessToken = token
-				result.ExpiresAt = token.Claims.ExpiresAt
-			}
-		}
-		return result, nil
+		now := time.Now()
+		return &authmodel.BootstrapAuthResult{
+			Stage:     authmodel.BootstrapStageReady,
+			IssuedAt:  now,
+			ExpiresAt: now,
+		}, nil
 	}
 
 	challenge, err := c.BootstrapClient.InitChallenge(ctx, req.ChallengeRequest)
@@ -75,19 +69,6 @@ func (c *BootstrapFlowCoordinator) EnsureReady(
 	})
 	if err != nil {
 		return nil, err
-	}
-
-	if c.TokenManager != nil {
-		familyID := result.Identity.TokenFamilyID
-		if result.Tokens.AccessToken != nil {
-			familyID = result.Tokens.AccessToken.Claims.FamilyID
-		}
-		if familyID != uuid.Nil {
-			_ = c.TokenManager.Revoke(ctx, &authmodel.TokenRevokeRequest{FamilyID: familyID})
-		}
-		if setter, ok := c.TokenManager.(interface{ SetTokenBundleFromBootstrap(authmodel.TokenBundle) }); ok {
-			setter.SetTokenBundleFromBootstrap(result.Tokens)
-		}
 	}
 
 	return result, nil
