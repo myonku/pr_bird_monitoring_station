@@ -4,15 +4,16 @@ import base64
 import hashlib
 from pathlib import Path
 from time import time
-from typing import Any, cast
+from typing import cast
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 
-from src.models.auth.bootstrap import PublicKeyLookupResult
 from src.models.commsec.commsec import (
-    KeyExchangeAlgorithm,
+    CommKeyStatus,
     LocalPrivateKeyRef,
+    PublicKeyLookupRequest,
+    PublicKeyLookupResult,
     ServiceKeyOwner,
     ServicePublicKeyRecord,
     SignatureAlgorithm,
@@ -31,19 +32,12 @@ class SecretKeyService:
         owner: ServiceKeyOwner,
         active_key_id: str,
         secret_dir: str | Path,
-        key_exchange_algorithm: KeyExchangeAlgorithm = "ecdhe_p256",
-        signature_algorithm: SignatureAlgorithm | None = None,
         public_key_ref: str = "",
         private_key_ref: str = "",
         catalog: list[ServicePublicKeyRecord] | None = None,
         mysql_client: MySQLClient | None = None,
     ) -> "SecretKeyService":
-        """从本地密钥目录构建后端密钥服务。
-
-        后端密钥服务同时承载两类职责：
-        - 本地私钥/公钥装载（用于签名、握手）
-        - 全局公钥目录查询（优先本地缓存，必要时回源 MySQL）
-        """
+        """从本地密钥目录构建后端密钥服务。"""
         resolved_key_id = active_key_id.strip()
         if not resolved_key_id:
             raise ValueError("active_key_id is required")
@@ -53,9 +47,7 @@ class SecretKeyService:
             raise ValueError(f"secret dir does not exist: {secret_root}")
 
         resolved_public_ref = public_key_ref.strip() or f"{resolved_key_id}.public.pem"
-        resolved_private_ref = (
-            private_key_ref.strip() or f"{resolved_key_id}.private.pem"
-        )
+        resolved_private_ref = private_key_ref.strip() or f"{resolved_key_id}.private.pem"
 
         public_key_pem = cls.load_pem_bytes_from_ref(
             resolved_public_ref,
@@ -68,18 +60,11 @@ class SecretKeyService:
 
         cls._ensure_spki_public_key_pem(public_key_pem)
         detected_signature_algorithm = cls._detect_signature_algorithm(public_key_pem)
-        resolved_signature_algorithm = signature_algorithm or detected_signature_algorithm
-        if resolved_signature_algorithm != detected_signature_algorithm:
-            raise ValueError(
-                "signature algorithm mismatch for active key: "
-                f"configured={resolved_signature_algorithm} "
-                f"detected={detected_signature_algorithm}"
-            )
 
         cls._ensure_pkcs8_private_key_pem(private_key_pem)
         cls._ensure_private_key_matches_algorithm(
             private_key_pem,
-            resolved_signature_algorithm,
+            detected_signature_algorithm,
         )
 
         normalized_owner = owner.normalized()
@@ -87,8 +72,6 @@ class SecretKeyService:
         local_public = ServicePublicKeyRecord(
             key_id=resolved_key_id,
             owner=normalized_owner,
-            key_exchange_algorithm=key_exchange_algorithm,
-            signature_algorithm=resolved_signature_algorithm,
             public_key_pem=public_key_pem.decode("utf-8"),
             fingerprint=cls._sha256_hex(public_key_pem),
             status="active",
@@ -100,8 +83,6 @@ class SecretKeyService:
         local_private = LocalPrivateKeyRef(
             key_id=resolved_key_id,
             owner=normalized_owner,
-            key_exchange_algorithm=key_exchange_algorithm,
-            signature_algorithm=resolved_signature_algorithm,
             private_key_ref=private_key_pem.decode("utf-8"),
             loaded_at=now,
         )
@@ -135,7 +116,11 @@ class SecretKeyService:
                 raise ValueError("empty base64 key material")
             return base64.b64decode(encoded)
 
-        file_path = raw_value[len("file://") :] if raw_value.startswith("file://") else raw_value
+        file_path = (
+            raw_value[len("file://") :]
+            if raw_value.startswith("file://")
+            else raw_value
+        )
         path = Path(file_path)
         if base_dir is not None and not path.is_absolute():
             path = Path(base_dir) / path
@@ -169,12 +154,73 @@ class SecretKeyService:
     async def get_private_key_ref(self) -> LocalPrivateKeyRef:
         return self._local_private_key
 
+    async def lookup_public_key(
+        self,
+        req: PublicKeyLookupRequest,
+    ) -> PublicKeyLookupResult:
+        if req is None:
+            return PublicKeyLookupResult(
+                found=False,
+                failure_reason="public key lookup request is required",
+                checked_at=time(),
+            )
+
+        q = req.normalized()
+        if not q.key_id and not q.entity_id and q.owner is None:
+            return PublicKeyLookupResult(
+                found=False,
+                failure_reason="public key lookup criteria is required",
+                checked_at=time(),
+            )
+
+        if q.key_id:
+            result = await self.get_public_key_by_key_id(q.key_id)
+            if result.found and result.key and self._key_matches_lookup(result.key, q):
+                return PublicKeyLookupResult(
+                    found=True,
+                    key=result.key,
+                    matched_by="key_id",
+                    checked_at=time(),
+                )
+
+        if q.entity_id:
+            result = await self.get_public_key_by_entity_id(q.entity_id)
+            if result.found and result.key and self._key_matches_lookup(result.key, q):
+                return PublicKeyLookupResult(
+                    found=True,
+                    key=result.key,
+                    matched_by="entity_id",
+                    checked_at=time(),
+                )
+
+        if q.owner is not None:
+            items = await self.get_public_keys_by_owner(q.owner)
+            selected: ServicePublicKeyRecord | None = None
+            for item in items:
+                if not self._key_matches_lookup(item, q):
+                    continue
+                if selected is None or self._should_prefer_key(item, selected):
+                    selected = item
+
+            if selected is not None:
+                return PublicKeyLookupResult(
+                    found=True,
+                    key=selected,
+                    matched_by="owner",
+                    checked_at=time(),
+                )
+
+        return PublicKeyLookupResult(
+            found=False,
+            failure_reason="public key not found by lookup criteria",
+            checked_at=time(),
+        )
+
     async def get_public_key_by_key_id(self, key_id: str) -> PublicKeyLookupResult:
         normalized_key_id = key_id.strip()
         if not normalized_key_id:
             return PublicKeyLookupResult(
                 found=False,
-                key=None,
                 failure_reason="key id is required",
                 checked_at=time(),
             )
@@ -187,25 +233,19 @@ class SecretKeyService:
         if key is None:
             return PublicKeyLookupResult(
                 found=False,
-                key=None,
                 failure_reason="key id not found",
                 checked_at=time(),
             )
-        return PublicKeyLookupResult(
-            found=True,
-            key=key,
-            failure_reason="",
-            checked_at=time(),
-        )
+        return PublicKeyLookupResult(found=True, key=key, checked_at=time())
 
     async def get_public_key_by_entity_id(
-        self, entity_id: str
+        self,
+        entity_id: str,
     ) -> PublicKeyLookupResult:
         normalized_entity_id = entity_id.strip()
         if not normalized_entity_id:
             return PublicKeyLookupResult(
                 found=False,
-                key=None,
                 failure_reason="entity id is required",
                 checked_at=time(),
             )
@@ -219,41 +259,20 @@ class SecretKeyService:
         if key is None:
             return PublicKeyLookupResult(
                 found=False,
-                key=None,
                 failure_reason="entity id not found",
                 checked_at=time(),
             )
 
-        return PublicKeyLookupResult(
-            found=True,
-            key=key,
-            failure_reason="",
-            checked_at=time(),
-        )
+        return PublicKeyLookupResult(found=True, key=key, checked_at=time())
 
     async def get_public_keys_by_owner(
-        self, owner: ServiceKeyOwner
+        self,
+        owner: ServiceKeyOwner,
     ) -> list[ServicePublicKeyRecord]:
         owner = owner.normalized()
         out: list[ServicePublicKeyRecord] = []
         for key in self._catalog_by_key_id.values():
-            if owner.owner_type and owner.owner_type != key.owner.owner_type:
-                continue
-            if owner.entity_type and owner.entity_type != key.owner.entity_type:
-                continue
-            if (
-                owner.effective_entity_id
-                and owner.effective_entity_id != key.owner.effective_entity_id
-            ):
-                continue
-            if (
-                owner.effective_entity_name
-                and owner.effective_entity_name != key.owner.effective_entity_name
-            ):
-                continue
-            if owner.instance_id and owner.instance_id != key.owner.instance_id:
-                continue
-            if owner.instance_name and owner.instance_name != key.owner.instance_name:
+            if not self._match_owner(owner, key.owner):
                 continue
             out.append(key)
         if out:
@@ -264,16 +283,15 @@ class SecretKeyService:
             self._catalog_by_key_id[item.key_id] = item
         return db_items
 
-    async def _load_public_key_by_id(
-        self, key_id: str
-    ) -> ServicePublicKeyRecord | None:
+    async def _load_public_key_by_id(self, key_id: str) -> ServicePublicKeyRecord | None:
         if self._public_keys_dao is None:
             return None
         row = await self._public_keys_dao.find_by_id(key_id)
         return self._row_to_record(row) if row else None
 
     async def _load_public_key_by_entity_id(
-        self, entity_id: str
+        self,
+        entity_id: str,
     ) -> ServicePublicKeyRecord | None:
         if self._public_keys_dao is None:
             return None
@@ -296,14 +314,13 @@ class SecretKeyService:
         return preferred
 
     async def _load_public_keys_by_owner(
-        self, owner: ServiceKeyOwner
+        self,
+        owner: ServiceKeyOwner,
     ) -> list[ServicePublicKeyRecord]:
         if self._public_keys_dao is None:
             return []
 
         filters: dict[str, str] = {}
-        if owner.owner_type:
-            filters["owner_type"] = owner.owner_type
         if owner.entity_type:
             filters["entity_type"] = owner.entity_type
         if owner.effective_entity_id:
@@ -331,27 +348,18 @@ class SecretKeyService:
         expires_at = row["expires_at"].timestamp() if row.get("expires_at") else 0.0
         revoked_at = row["revoked_at"].timestamp() if row.get("revoked_at") else 0.0
 
-        entity_type = str(row.get("entity_type") or "")
-        entity_id = str(row.get("entity_id") or "")
-        entity_name = str(row.get("entity_name") or "")
-
         return ServicePublicKeyRecord(
             key_id=str(row["key_id"]),
             owner=ServiceKeyOwner(
-                owner_type=cast(Any, str(row["owner_type"])),
-                entity_type=entity_type,
-                entity_id=entity_id,
-                entity_name=entity_name,
-                service_id=entity_id,
-                service_name=entity_name,
+                entity_type=str(row.get("entity_type") or ""),
+                entity_id=str(row.get("entity_id") or ""),
+                entity_name=str(row.get("entity_name") or ""),
                 instance_id=str(row.get("instance_id") or ""),
                 instance_name=str(row.get("instance_name") or ""),
             ).normalized(),
-            key_exchange_algorithm=cast(Any, str(row["key_exchange_algorithm"])),
-            signature_algorithm=cast(Any, str(row["signature_algorithm"])),
             public_key_pem=str(row["public_key_pem"]),
             fingerprint=str(row["fingerprint"]),
-            status=cast(Any, str(row["status"])),
+            status=cast(CommKeyStatus, str(row["status"])),
             created_at=created_at,
             activated_at=activated_at,
             expires_at=expires_at,
@@ -362,8 +370,6 @@ class SecretKeyService:
         return ServicePublicKeyRecord(
             key_id=item.key_id,
             owner=item.owner.normalized(),
-            key_exchange_algorithm=item.key_exchange_algorithm,
-            signature_algorithm=item.signature_algorithm,
             public_key_pem=item.public_key_pem,
             fingerprint=item.fingerprint,
             status=item.status,
@@ -373,9 +379,7 @@ class SecretKeyService:
             revoked_at=item.revoked_at,
         )
 
-    def _pick_catalog_key_by_entity_id(
-        self, entity_id: str
-    ) -> ServicePublicKeyRecord | None:
+    def _pick_catalog_key_by_entity_id(self, entity_id: str) -> ServicePublicKeyRecord | None:
         preferred: ServicePublicKeyRecord | None = None
         for key in self._catalog_by_key_id.values():
             if key.owner.effective_entity_id != entity_id:
@@ -383,6 +387,43 @@ class SecretKeyService:
             if preferred is None or self._should_prefer_key(key, preferred):
                 preferred = key
         return preferred
+
+    @staticmethod
+    def _match_owner(expected: ServiceKeyOwner, actual: ServiceKeyOwner) -> bool:
+        expected = expected.normalized()
+        actual = actual.normalized()
+        if expected.entity_type and expected.entity_type != actual.entity_type:
+            return False
+        if (
+            expected.effective_entity_id
+            and expected.effective_entity_id != actual.effective_entity_id
+        ):
+            return False
+        if (
+            expected.effective_entity_name
+            and expected.effective_entity_name != actual.effective_entity_name
+        ):
+            return False
+        if expected.instance_id and expected.instance_id != actual.instance_id:
+            return False
+        if expected.instance_name and expected.instance_name != actual.instance_name:
+            return False
+        return True
+
+    def _key_matches_lookup(
+        self,
+        key: ServicePublicKeyRecord,
+        query: PublicKeyLookupRequest,
+    ) -> bool:
+        if query.key_id and key.key_id != query.key_id:
+            return False
+        if query.entity_id and key.owner.effective_entity_id != query.entity_id:
+            return False
+        if query.owner is not None and not self._match_owner(query.owner, key.owner):
+            return False
+        if query.require_active and key.status != "active":
+            return False
+        return True
 
     @staticmethod
     def _should_prefer_key(

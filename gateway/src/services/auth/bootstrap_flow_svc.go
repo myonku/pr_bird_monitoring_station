@@ -89,6 +89,14 @@ func (c *BootstrapFlowCoordinator) signChallenge(
 	if err != nil {
 		return nil, err
 	}
+	publicKey, err := c.KeyService.GetPublicKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sigAlg, err := c.Crypto.DetectSignatureAlgorithmFromPublicPEM([]byte(publicKey.PublicKeyPEM))
+	if err != nil {
+		return nil, err
+	}
 
 	payload, err := json.Marshal(struct {
 		ChallengeID string               `json:"challenge_id"`
@@ -111,7 +119,7 @@ func (c *BootstrapFlowCoordinator) signChallenge(
 		return nil, err
 	}
 
-	sig, err := c.Crypto.SignByAlgorithm(string(privateRef.SignatureAlgorithm), payload, []byte(privateRef.PrivateKeyRef))
+	sig, err := c.Crypto.SignByAlgorithm(string(sigAlg), payload, []byte(privateRef.PrivateKeyRef))
 	if err != nil {
 		return nil, fmt.Errorf("sign challenge failed: %w", err)
 	}
@@ -119,7 +127,7 @@ func (c *BootstrapFlowCoordinator) signChallenge(
 	return &authmodel.SignedChallengeResponse{
 		ChallengeID:        challenge.ChallengeID,
 		KeyID:              privateRef.KeyID,
-		SignatureAlgorithm: privateRef.SignatureAlgorithm,
+		SignatureAlgorithm: sigAlg,
 		Signature:          sig,
 		SignedAt:           time.Now(),
 	}, nil

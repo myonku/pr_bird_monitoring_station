@@ -11,6 +11,7 @@ import (
 	interfaces "certification_server/src/interfaces/auth"
 	commseciface "certification_server/src/interfaces/commsec"
 	authmodel "certification_server/src/models/auth"
+	commonmodel "certification_server/src/models/common"
 	commsecmodel "certification_server/src/models/commsec"
 	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
@@ -75,7 +76,10 @@ func (s *BootstrapService) InitChallenge(
 
 	resolvedKeyID := strings.TrimSpace(req.KeyID)
 	if resolvedKeyID == "" && s.keySvc != nil {
-		lookup, err := s.keySvc.GetPublicKeyByEntityID(ctx, req.EntityID)
+		lookup, err := s.keySvc.LookupPublicKey(ctx, &commsecmodel.PublicKeyLookupRequest{
+			EntityID:      req.EntityID,
+			RequireActive: true,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -170,14 +174,7 @@ func (s *BootstrapService) AuthenticateBootstrap(
 		}
 		sigAlgo := req.Signed.SignatureAlgorithm
 		if sigAlgo == "" {
-			sigAlgo = lookup.Key.SignatureAlgorithm
-		}
-		if sigAlgo == "" {
 			return nil, &modelsystem.ErrSignatureAlgorithmRequired
-		}
-		if req.Signed.SignatureAlgorithm != "" && lookup.Key.SignatureAlgorithm != "" &&
-			req.Signed.SignatureAlgorithm != lookup.Key.SignatureAlgorithm {
-			return nil, &modelsystem.ErrSignatureAlgorithmMismatch
 		}
 		signPayload := buildBootstrapSignaturePayload(stored)
 		if verifyErr := s.crypto.VerifyByAlgorithm(
@@ -280,41 +277,20 @@ func (s *BootstrapService) resolvePublicKeyForChallenge(
 	if preferred == "" {
 		preferred = strings.TrimSpace(signedKeyID)
 	}
-	if preferred != "" {
-		lookup, err := s.keySvc.GetPublicKeyByKeyID(ctx, preferred)
-		if err != nil {
-			return commsecmodel.PublicKeyLookupResult{}, err
-		}
-		if lookup.Found {
-			return lookup, nil
-		}
+	lookup, err := s.keySvc.LookupPublicKey(ctx, &commsecmodel.PublicKeyLookupRequest{
+		KeyID:         preferred,
+		EntityID:      challenge.EntityID,
+		RequireActive: true,
+	})
+	if err != nil {
+		return commsecmodel.PublicKeyLookupResult{}, err
 	}
-
-	if challenge.EntityID != "" {
-		lookup, err := s.keySvc.GetPublicKeyByEntityID(ctx, challenge.EntityID)
-		if err != nil {
-			return commsecmodel.PublicKeyLookupResult{}, err
-		}
-		if lookup.Found {
-			return lookup, nil
-		}
-		return lookup, nil
-	}
-
-	if preferred != "" {
-		lookup, err := s.keySvc.GetPublicKeyByKeyID(ctx, preferred)
-		if err != nil {
-			return commsecmodel.PublicKeyLookupResult{}, err
-		}
-		return lookup, nil
-	}
-
-	return commsecmodel.PublicKeyLookupResult{}, nil
+	return lookup, nil
 }
 
 // GetBootstrapStage 查询指定实体的冷启动认证阶段，返回阶段枚举值。
 func (s *BootstrapService) GetBootstrapStage(
-	ctx context.Context, entityType authmodel.EntityType, entityID string) (authmodel.BootstrapStage, error) {
+	ctx context.Context, entityType commonmodel.EntityType, entityID string) (authmodel.BootstrapStage, error) {
 
 	if entityID == "" {
 		return authmodel.BootstrapStageUninitialized, &modelsystem.ErrEntityIDRequired
@@ -337,13 +313,6 @@ func (s *BootstrapService) GetBootstrapStage(
 	}
 
 	return stage, nil
-}
-
-func (s *BootstrapService) persistChallenge(ctx context.Context, payload *authmodel.ChallengePayload) error {
-	if payload == nil {
-		return nil
-	}
-	return nil
 }
 
 func (s *BootstrapService) cacheChallenge(ctx context.Context, payload *authmodel.ChallengePayload) error {

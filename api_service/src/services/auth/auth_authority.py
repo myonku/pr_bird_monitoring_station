@@ -22,8 +22,8 @@ from src.models.auth.bootstrap import (
 )
 
 
-class IAuthGatewayAuthorityClient(Protocol):
-    """认证中心统一鉴权门面客户端协议。"""
+class IAuthAuthorityClient(Protocol):
+    """模块直连认证中心的统一鉴权门面客户端协议。"""
 
     async def init_challenge(self, req: ChallengeRequest) -> ChallengePayload:
         ...

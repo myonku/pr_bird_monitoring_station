@@ -5,9 +5,9 @@ import (
 	authmodel "gateway/src/models/auth"
 )
 
-// IAuthGatewayAuthorityClient 定义网关到认证中心统一鉴权门面的远端调用接口。
-// Gateway 仅做转发，不在本地管理会话/令牌/挑战状态。
-type IAuthGatewayAuthorityClient interface {
+// IAuthAuthorityClient 定义模块直连认证中心的统一鉴权门面调用接口。
+// 该接口仅表达“调用认证中心能力”，不表示“经网关中转内部流量”。
+type IAuthAuthorityClient interface {
 	InitChallenge(ctx context.Context, req *authmodel.ChallengeRequest) (*authmodel.ChallengePayload, error)
 	AuthenticateBootstrap(ctx context.Context, req *authmodel.BootstrapAuthRequest) (*authmodel.BootstrapAuthResult, error)
 	GetBootstrapStage(ctx context.Context, entityType authmodel.EntityType, entityID string) (authmodel.BootstrapStage, error)

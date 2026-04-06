@@ -28,8 +28,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	secretKeyParams := cfg.BuildSecretKeyStartupParams("gateway")
 
-	secretKeySvc, err := commsecsvc.NewSecretKeyServiceFromConfig(cfg.SecretKey, nil, nil)
+	secretKeySvc, err := commsecsvc.NewSecretKeyServiceFromStartupParams(secretKeyParams, nil, nil)
 	if err != nil {
 		panic(err)
 	}

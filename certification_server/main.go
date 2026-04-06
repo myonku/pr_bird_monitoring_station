@@ -17,8 +17,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	secretKeyParams := cfg.BuildSecretKeyStartupParams("certification_server")
 
-	if _, err = commsecsvc.NewSecretKeyServiceFromConfig(cfg.SecretKey, nil, nil); err != nil {
+	if _, err = commsecsvc.NewSecretKeyServiceFromStartupParams(secretKeyParams, nil, nil); err != nil {
 		panic(err)
 	}
 

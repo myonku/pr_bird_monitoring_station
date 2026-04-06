@@ -13,6 +13,7 @@ from src.models.auth.internal_assertion import (
     InternalAssertionVerifyRequest,
     VerifiedInternalIdentity,
 )
+from src.models.commsec.commsec import PublicKeyLookupRequest
 from src.models.sys.config import InternalAssertionConfig
 from src.repo.redis_store import RedisManager
 from src.services.auth.runtime_metrics import AuthRuntimeMetrics
@@ -58,7 +59,9 @@ class InternalAssertionVerifier:
             if not assertion:
                 raise ValueError("internal assertion is missing")
 
-            header, claims, signing_input, signature_segment = _parse_assertion(assertion)
+            header, claims, signing_input, signature_segment = _parse_assertion(
+                assertion
+            )
 
             self._validate_claims(
                 claims=claims,
@@ -68,7 +71,9 @@ class InternalAssertionVerifier:
                 body=req.body,
             )
 
-            public_key_pem = await self._resolve_public_key_pem(header=header, claims=claims)
+            public_key_pem = await self._resolve_public_key_pem(
+                header=header, claims=claims
+            )
             signature_std = _signature_segment_to_standard_b64(signature_segment)
             self._crypto.verify_by_algorithm(
                 header.alg,
@@ -150,9 +155,13 @@ class InternalAssertionVerifier:
         header: InternalAssertionHeader,
         claims: InternalAssertionClaims,
     ) -> bytes:
-        lookup = await self._secret_key_service.get_public_key_by_key_id(header.kid)
-        if (not lookup.found or lookup.key is None) and claims.iss:
-            lookup = await self._secret_key_service.get_public_key_by_entity_id(claims.iss)
+        lookup = await self._secret_key_service.lookup_public_key(
+            PublicKeyLookupRequest(
+                key_id=header.kid,
+                entity_id=claims.iss or "",
+                require_active=True,
+            )
+        )
 
         if not lookup.found or lookup.key is None:
             raise ValueError("public key for internal assertion is not found")
@@ -160,11 +169,6 @@ class InternalAssertionVerifier:
         key = lookup.key
         if key.status != "active":
             raise ValueError("public key for internal assertion is not active")
-
-        if key.signature_algorithm and key.signature_algorithm != header.alg:
-            raise ValueError(
-                "internal assertion signature algorithm does not match public key metadata"
-            )
 
         return key.public_key_pem.encode("utf-8")
 

@@ -1,12 +1,12 @@
 package commsec
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-type CommKeyOwnerType string
 type CommKeyStatus string
 type KeyExchangeAlgorithm string
 type SignatureAlgorithm string
@@ -14,13 +14,6 @@ type CipherSuite string
 type HandshakeStatus string
 type SecureChannelStatus string
 type ChannelBindingType string
-
-const (
-	CommKeyOwnerService  CommKeyOwnerType = "service"
-	CommKeyOwnerInstance CommKeyOwnerType = "instance"
-	CommKeyOwnerDevice   CommKeyOwnerType = "device"
-	CommKeyOwnerGateway  CommKeyOwnerType = "gateway"
-)
 
 const (
 	CommKeyActive  CommKeyStatus = "active"
@@ -63,47 +56,34 @@ const (
 )
 
 // ServiceKeyOwner 标识通信密钥属于哪一个实体或实例。
-//
-// 说明：
-// - EntityID/EntityName 是统一语义字段，适用于 service/device/gateway 等实体。
-// - ServiceID/ServiceName 为历史兼容别名，读取时会与 EntityID/EntityName 互补。
+// 统一使用 entity 语义字段，避免 service/entity 双轨冗余。
 type ServiceKeyOwner struct {
-	OwnerType    CommKeyOwnerType
 	EntityType   string
 	EntityID     string
 	EntityName   string
-	ServiceID    string
-	ServiceName  string
 	InstanceID   string
 	InstanceName string
 }
 
 func (o ServiceKeyOwner) EffectiveEntityID() string {
-	if o.EntityID != "" {
-		return o.EntityID
-	}
-	return o.ServiceID
+	return o.EntityID
 }
 
 func (o ServiceKeyOwner) EffectiveEntityName() string {
 	if o.EntityName != "" {
 		return o.EntityName
 	}
-	return o.ServiceName
+	return o.EntityID
 }
 
 func (o ServiceKeyOwner) Normalized() ServiceKeyOwner {
-	if o.EntityID == "" {
-		o.EntityID = o.ServiceID
-	}
+	o.EntityType = strings.ToLower(strings.TrimSpace(o.EntityType))
+	o.EntityID = strings.TrimSpace(o.EntityID)
+	o.EntityName = strings.TrimSpace(o.EntityName)
+	o.InstanceID = strings.TrimSpace(o.InstanceID)
+	o.InstanceName = strings.TrimSpace(o.InstanceName)
 	if o.EntityName == "" {
-		o.EntityName = o.ServiceName
-	}
-	if o.ServiceID == "" {
-		o.ServiceID = o.EntityID
-	}
-	if o.ServiceName == "" {
-		o.ServiceName = o.EntityName
+		o.EntityName = o.EntityID
 	}
 	return o
 }
@@ -113,10 +93,8 @@ type ServicePublicKeyRecord struct {
 	KeyID string
 	Owner ServiceKeyOwner
 
-	KeyExchangeAlgorithm KeyExchangeAlgorithm
-	SignatureAlgorithm   SignatureAlgorithm
-	PublicKeyPEM         string
-	Fingerprint          string
+	PublicKeyPEM string
+	Fingerprint  string
 
 	Status CommKeyStatus
 
@@ -131,9 +109,6 @@ type ServicePublicKeyRecord struct {
 type LocalPrivateKeyRef struct {
 	KeyID string
 	Owner ServiceKeyOwner
-
-	KeyExchangeAlgorithm KeyExchangeAlgorithm
-	SignatureAlgorithm   SignatureAlgorithm
 
 	PrivateKeyRef string
 	LoadedAt      time.Time
@@ -215,20 +190,33 @@ type EncryptedMessageMeta struct {
 	IssuedAt       time.Time
 }
 
-// PublicKeyLookupRequest 表示按实体或 key id 查询通信公钥目录。
+// PublicKeyLookupRequest 表示统一的公钥目录查询请求。
 type PublicKeyLookupRequest struct {
-	EntityType  string
-	EntityID    string
-	EntityName  string
-	ServiceID   string
-	ServiceName string
-	KeyID       string
+	KeyID string
+
+	EntityID      string
+	Owner         *ServiceKeyOwner
+	RequireActive bool
+}
+
+func (r PublicKeyLookupRequest) Normalized() PublicKeyLookupRequest {
+	r.KeyID = strings.TrimSpace(r.KeyID)
+	r.EntityID = strings.TrimSpace(r.EntityID)
+	if r.Owner != nil {
+		normalizedOwner := r.Owner.Normalized()
+		r.Owner = &normalizedOwner
+		if r.EntityID == "" {
+			r.EntityID = normalizedOwner.EffectiveEntityID()
+		}
+	}
+	return r
 }
 
 // PublicKeyLookupResult 是公钥目录查询结果。
 type PublicKeyLookupResult struct {
-	Found bool
-	Key   ServicePublicKeyRecord
+	Found     bool
+	Key       ServicePublicKeyRecord
+	MatchedBy string
 
 	FailureReason string
 	CheckedAt     time.Time

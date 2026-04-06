@@ -4,6 +4,7 @@ import (
 	authif "certification_server/src/interfaces/auth"
 	orchestrationif "certification_server/src/interfaces/orchestration"
 	authmodel "certification_server/src/models/auth"
+	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"
 	"context"
 )
@@ -41,7 +42,7 @@ func (u *AuthGatewayUsecase) AuthenticateBootstrap(
 
 func (u *AuthGatewayUsecase) GetBootstrapStage(
 	ctx context.Context,
-	entityType authmodel.EntityType,
+	entityType commonmodel.EntityType,
 	entityID string,
 ) (authmodel.BootstrapStage, error) {
 	if u == nil || u.Bootstrap == nil {

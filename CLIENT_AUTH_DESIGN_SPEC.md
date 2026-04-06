@@ -6,7 +6,7 @@
 
 - 客户端认证链路与启动链路已统一归口到 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`（第 6 章）。
 - 全局约定（UUID、密钥、配置生命周期）见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
-- 边缘端认证与上传接口契约见 `edge_server/EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
+- 边缘端认证与上传接口契约文档待重建（当前暂时下线）。
 
 ## 2. 客户端边界（保留）
 

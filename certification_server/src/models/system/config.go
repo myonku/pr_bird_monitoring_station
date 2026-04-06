@@ -16,62 +16,34 @@ const (
 
 // Config 定义了认证服务器的整体配置结构体。
 type ProjectConfig struct {
-	MySQL     *MySQLConfig
-	Redis     *RedisClientConfig
-	Etcd      *EtcdClientConfig
-	SecretKey *SecretKeyConfig
+	MySQL   *MySQLConfig
+	Redis   *RedisClientConfig
+	Etcd    *EtcdClientConfig
+	Runtime *RuntimeConfig
+	Auth    *AuthConfig
 }
 
-// SecretKeyConfig 定义后端本地密钥装载配置。
-type SecretKeyConfig struct {
-	Enabled bool
-
-	SecretDir   string
-	ActiveKeyID string
-
-	OwnerType    string
+// RuntimeConfig 定义服务本体运行时标识配置。
+type RuntimeConfig struct {
 	EntityType   string
 	EntityID     string
 	EntityName   string
-	ServiceID    string
-	ServiceName  string
 	InstanceID   string
 	InstanceName string
-
-	KeyExchangeAlgorithm string
-	SignatureAlgorithm   string
-
-	PublicKeyRef  string
-	PrivateKeyRef string
 }
 
-// Normalized 返回包含默认值的密钥装载配置快照。
-func (c *SecretKeyConfig) Normalized(defaultEntityID string) SecretKeyConfig {
+// Normalized 返回包含默认值的运行时标识配置快照。
+func (c *RuntimeConfig) Normalized(defaultEntityID string) RuntimeConfig {
 	if c == nil {
 		entityID := strings.TrimSpace(defaultEntityID)
-		return SecretKeyConfig{
-			Enabled:              false,
-			SecretDir:            "secret_keys",
-			OwnerType:            "service",
-			EntityType:           "service",
-			EntityID:             entityID,
-			EntityName:           entityID,
-			ServiceID:            entityID,
-			ServiceName:          entityID,
-			KeyExchangeAlgorithm: "ecdhe_p256",
+		return RuntimeConfig{
+			EntityType: "service",
+			EntityID:   entityID,
+			EntityName: entityID,
 		}
 	}
 
 	normalized := *c
-	normalized.SecretDir = strings.TrimSpace(normalized.SecretDir)
-	if normalized.SecretDir == "" {
-		normalized.SecretDir = "secret_keys"
-	}
-	normalized.ActiveKeyID = strings.TrimSpace(normalized.ActiveKeyID)
-	normalized.OwnerType = strings.ToLower(strings.TrimSpace(normalized.OwnerType))
-	if normalized.OwnerType == "" {
-		normalized.OwnerType = "service"
-	}
 	normalized.EntityType = strings.ToLower(strings.TrimSpace(normalized.EntityType))
 	if normalized.EntityType == "" {
 		normalized.EntityType = "service"
@@ -84,25 +56,68 @@ func (c *SecretKeyConfig) Normalized(defaultEntityID string) SecretKeyConfig {
 	if normalized.EntityName == "" {
 		normalized.EntityName = normalized.EntityID
 	}
-	normalized.ServiceID = strings.TrimSpace(normalized.ServiceID)
-	if normalized.ServiceID == "" {
-		normalized.ServiceID = normalized.EntityID
-	}
-	normalized.ServiceName = strings.TrimSpace(normalized.ServiceName)
-	if normalized.ServiceName == "" {
-		normalized.ServiceName = normalized.EntityName
-	}
 	normalized.InstanceID = strings.TrimSpace(normalized.InstanceID)
 	normalized.InstanceName = strings.TrimSpace(normalized.InstanceName)
-	normalized.KeyExchangeAlgorithm = strings.ToLower(strings.TrimSpace(normalized.KeyExchangeAlgorithm))
-	if normalized.KeyExchangeAlgorithm == "" {
-		normalized.KeyExchangeAlgorithm = "ecdhe_p256"
-	}
-	normalized.SignatureAlgorithm = strings.ToLower(strings.TrimSpace(normalized.SignatureAlgorithm))
-	normalized.PublicKeyRef = strings.TrimSpace(normalized.PublicKeyRef)
-	normalized.PrivateKeyRef = strings.TrimSpace(normalized.PrivateKeyRef)
 
 	return normalized
+}
+
+// AuthConfig 定义认证相关配置。
+// 根据全局约束，密钥配置仅保留目录与 active_key_id。
+type AuthConfig struct {
+	SecretKeyDir string
+	ActiveKeyID  string
+}
+
+// Normalized 返回包含默认值的认证配置快照。
+func (c *AuthConfig) Normalized() AuthConfig {
+	if c == nil {
+		return AuthConfig{SecretKeyDir: "secret_keys"}
+	}
+
+	normalized := *c
+	normalized.SecretKeyDir = strings.TrimSpace(normalized.SecretKeyDir)
+	if normalized.SecretKeyDir == "" {
+		normalized.SecretKeyDir = "secret_keys"
+	}
+	normalized.ActiveKeyID = strings.TrimSpace(normalized.ActiveKeyID)
+	return normalized
+}
+
+// SecretKeyStartupParams 是启动期注入到密钥服务的参数快照。
+// 仅由 main 在读取配置后构建，后续在主流程按参数传递。
+type SecretKeyStartupParams struct {
+	SecretKeyDir string
+	ActiveKeyID  string
+
+	EntityType   string
+	EntityID     string
+	EntityName   string
+	InstanceID   string
+	InstanceName string
+}
+
+// BuildSecretKeyStartupParams 从 ProjectConfig 构建密钥服务启动参数。
+func (c *ProjectConfig) BuildSecretKeyStartupParams(defaultEntityID string) SecretKeyStartupParams {
+	var runtimeCfg *RuntimeConfig
+	var authCfg *AuthConfig
+	if c != nil {
+		runtimeCfg = c.Runtime
+		authCfg = c.Auth
+	}
+
+	runtime := runtimeCfg.Normalized(defaultEntityID)
+	auth := authCfg.Normalized()
+
+	return SecretKeyStartupParams{
+		SecretKeyDir: auth.SecretKeyDir,
+		ActiveKeyID:  auth.ActiveKeyID,
+		EntityType:   runtime.EntityType,
+		EntityID:     runtime.EntityID,
+		EntityName:   runtime.EntityName,
+		InstanceID:   runtime.InstanceID,
+		InstanceName: runtime.InstanceName,
+	}
 }
 
 // EtcdClientConfig 定义 EtcdClient 的连接参数。

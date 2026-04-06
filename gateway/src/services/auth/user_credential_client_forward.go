@@ -12,10 +12,10 @@ var _ authif.IUserCredentialAuthClient = (*ForwardUserCredentialAuthClient)(nil)
 
 // ForwardUserCredentialAuthClient 把用户认证相关请求统一转发给认证中心。
 type ForwardUserCredentialAuthClient struct {
-	Authority authif.IAuthGatewayAuthorityClient
+	Authority authif.IAuthAuthorityClient
 }
 
-func NewForwardUserCredentialAuthClient(authority authif.IAuthGatewayAuthorityClient) *ForwardUserCredentialAuthClient {
+func NewForwardUserCredentialAuthClient(authority authif.IAuthAuthorityClient) *ForwardUserCredentialAuthClient {
 	return &ForwardUserCredentialAuthClient{Authority: authority}
 }
 

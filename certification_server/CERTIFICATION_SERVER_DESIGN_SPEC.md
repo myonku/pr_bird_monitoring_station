@@ -94,6 +94,9 @@
 
 - 文件：main.go
 - 现状：已连接 App + gRPC Server 骨架，作为顶层边界固定入口。
+- 配置约束：
+  - `settings.toml` 使用 `runtime`（本体标识）与 `auth`（`secret_key_dir`、`active_key_id`）分区。
+  - 配置信息仅在启动阶段读取一次，并在主流程中转换为启动参数快照后向下传递；服务层不直接读取配置文件。
 
 ---
 
@@ -322,4 +325,4 @@
 
 - 认证链路与启动链路见根目录 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
 - ID/密钥/配置等统一约定见根目录 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
-- 边缘端与网关的认证/上传接口契约见 `edge_server/EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
+- 边缘端与网关的认证/上传接口契约文档待重建（当前暂时下线）。

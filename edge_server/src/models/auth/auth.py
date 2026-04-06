@@ -63,7 +63,6 @@ class LocalTrustMaterial:
 
     device_id: str
     key_id: str
-    signature_algorithm: SignatureAlgorithm
     private_key_ref: str
     public_key_pem: str
     fingerprint: str = ""

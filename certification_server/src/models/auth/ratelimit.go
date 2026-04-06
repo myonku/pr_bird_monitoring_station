@@ -1,6 +1,9 @@
 package auth
 
-import "time"
+import (
+	commonmodel "certification_server/src/models/common"
+	"time"
+)
 
 type RateLimitSubjectType string // 限流主体类型，表示计数器的维度，可以是IP、实体、会话、令牌、客户端、网关、路由或复合等。
 type RateLimitScope string       // 限流范围，表示规则适用的场景，可以是边缘入站、内部RPC、认证等。
@@ -48,7 +51,7 @@ type RateLimitDescriptor struct {
 	SourceService string
 	TargetService string
 
-	EntityType  EntityType
+	EntityType  commonmodel.EntityType
 	EntityID    string
 	PrincipalID string
 	SessionID   string
@@ -104,7 +107,7 @@ type RateLimitRule struct {
 	MatchAction         string
 	MatchRoute          string
 	MatchMethods        []string
-	MatchEntityTypes    []EntityType
+	MatchEntityTypes    []commonmodel.EntityType
 	MatchTokenTypes     []TokenType
 	MatchScopes         []string
 	MatchGatewayIDs     []string

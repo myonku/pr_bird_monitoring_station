@@ -13,6 +13,38 @@ class CryptoUtils:
     """边缘认证密码学工具套件（功能方法集合）。"""
 
     @staticmethod
+    def detect_signature_algorithm_from_private_key(
+        private_key_pem: bytes,
+    ) -> SignatureAlgorithm:
+        """根据私钥 PEM 推断签名算法。"""
+        private_key = CryptoUtils._parse_private_key(private_key_pem)
+        if isinstance(private_key, ed25519.Ed25519PrivateKey):
+            return "ed25519"
+        if isinstance(private_key, ec.EllipticCurvePrivateKey):
+            if not isinstance(private_key.curve, ec.SECP256R1):
+                raise ValueError("unsupported ecdsa curve, only p256 is allowed")
+            return "ecdsa_p256_sha256"
+        if isinstance(private_key, rsa.RSAPrivateKey):
+            return "rsa_pss_sha256"
+        raise ValueError("unsupported private key type")
+
+    @staticmethod
+    def detect_signature_algorithm_from_public_key(
+        public_key_pem: bytes,
+    ) -> SignatureAlgorithm:
+        """根据公钥 PEM 推断签名算法。"""
+        public_key = CryptoUtils._parse_public_key(public_key_pem)
+        if isinstance(public_key, ed25519.Ed25519PublicKey):
+            return "ed25519"
+        if isinstance(public_key, ec.EllipticCurvePublicKey):
+            if not isinstance(public_key.curve, ec.SECP256R1):
+                raise ValueError("unsupported ecdsa curve, only p256 is allowed")
+            return "ecdsa_p256_sha256"
+        if isinstance(public_key, rsa.RSAPublicKey):
+            return "rsa_pss_sha256"
+        raise ValueError("unsupported public key type")
+
+    @staticmethod
     def sign_by_algorithm(
         algorithm: SignatureAlgorithm,
         message: bytes,

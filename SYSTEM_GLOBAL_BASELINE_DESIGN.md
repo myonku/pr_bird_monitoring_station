@@ -1,6 +1,6 @@
 # 系统全局基线设计说明（统一约定）
 
-版本：1.0.0
+版本：1.1.0
 状态：Baseline
 
 ## 1. 文档目的
@@ -15,7 +15,7 @@
 - 各模块内设计文档仅保留层级/结构/接口等架构信息。
 - 全局统一约定以本文件为唯一基准。
 - 按模块认证链路与启动链路见 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
-- 边缘端认证与上传通信协议细节继续以 `edge_server/EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md` 为准（该文档不在本次重构范围内）。
+- 边缘端认证与上传通信协议细节的独立契约文档待重建（当前暂时下线）。
 
 ---
 
@@ -87,10 +87,35 @@
 公钥目录约束：
 
 - 系统内所有需要记录公钥的非客户端实体（service/device/gateway/worker 等）统一使用同一张公钥目录表结构，不按模块拆分多套结构。
-- 公钥校验查询支持两种入口：
+- 公钥查询必须收敛为统一目录查询请求（等价 `LookupPublicKey` 语义），至少支持三种检索条件：
   - 按 `key_id` 精确查询。
-  - 按关联 `entity_id` 查询当前可用公钥（用于 `key_id` 缺失或不确定场景）。
+  - 按 `entity_id` 查询当前可用公钥（用于 `key_id` 缺失或不确定场景）。
+  - 按 owner 维度查询（`entity_type + entity_id + instance_id`）。
+- 查询请求必须支持 `require_active` 等价语义，要求仅返回当前激活密钥。
 - 模块配置文件至少应包含一个可用键（active key），并可由认证中心通过 `entity_id` 反查到对应公钥记录。
+
+### 4.1 公钥目录语义收敛（强制）
+
+- owner 语义统一使用 entity 维度：`entity_type`、`entity_id`、`instance_id`（可选）。
+- 禁止新增或继续依赖 `owner_type` 作为并行语义轴，避免与 `entity_type` 重复。
+- 公钥目录表与密钥领域模型必须保持同构语义，不得出现 service/entity 双轨字段并存。
+
+### 4.2 密钥模型边界（强制）
+
+- 密钥实体模型仅承载 key material 与归属关系（如 `key_id`、owner、公钥内容、状态、时效）。
+- 禁止在密钥实体模型中固化算法字段（如 `key_exchange_algorithm`、`signature_algorithm`）。
+- 算法信息属于流程协商结果，不属于目录主数据。
+
+### 4.3 算法协商边界（强制）
+
+- bootstrap 验签算法必须由签名请求显式声明（等价 `signed.signature_algorithm`），不得回退到密钥目录字段。
+- commsec 握手算法（密钥交换/签名/套件）必须在握手流程中由双方能力集合协商产生。
+- 公钥目录查询不得以“密钥记录中的算法字段”作为过滤前提。
+
+### 4.4 公钥单活约束（强制）
+
+- 同一 owner 作用域（`entity_type + entity_id + instance_scope`）在任一时刻最多允许一条 `active` 公钥记录。
+- 数据库实现必须提供等价唯一约束（例如生成列 + 唯一索引），防止出现并发双活。
 
 ---
 
@@ -159,7 +184,7 @@
 ## 8. 链路文档引用
 
 - 按模块认证链路与启动链路见 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
-- 边缘端认证通道与上传通道的接口契约见 `edge_server/EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
+- 边缘端认证通道与上传通道的接口契约文档待重建（当前暂时下线）。
 
 ---
 
@@ -207,7 +232,7 @@
 
 - `SYSTEM_GLOBAL_BASELINE_DESIGN.md`（本文件）
 - `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`（模块认证链路与启动链路）
-- `edge_server/EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`（边缘通信契约）
+- 边缘通信契约文档待重建（当前暂时下线）
 - `CLIENT_AUTH_DESIGN_SPEC.md`（客户端认证索引）
 
 ---

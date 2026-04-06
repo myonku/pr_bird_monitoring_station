@@ -35,7 +35,7 @@ from src.models.auth.internal_header_keys import (
     HEADER_VERIFIED_TRACE_ID,
 )
 from src.models.sys.config import InternalAssertionConfig
-from src.services.auth.internal_assertion_verifier import IInternalAssertionVerifier
+from src.services.auth.internal_assertion_verifier_svc import InternalAssertionVerifier
 
 
 class InternalAssertionUnaryInterceptor:
@@ -43,7 +43,7 @@ class InternalAssertionUnaryInterceptor:
 
     def __init__(
         self,
-        verifier: IInternalAssertionVerifier,
+        verifier: InternalAssertionVerifier,
         config: InternalAssertionConfig | None = None,
     ):
         self._verifier = verifier
@@ -70,7 +70,9 @@ class InternalAssertionUnaryInterceptor:
             or ""
         )
         raw_query = _get_header_value(request.headers, "x-request-query")
-        query_dict = dict(parse_qsl(raw_query, keep_blank_values=True)) if raw_query else {}
+        query_dict = (
+            dict(parse_qsl(raw_query, keep_blank_values=True)) if raw_query else {}
+        )
 
         try:
             verified_identity = await self._verifier.verify_request(

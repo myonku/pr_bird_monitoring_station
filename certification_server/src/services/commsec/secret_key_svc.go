@@ -10,7 +10,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,15 +36,14 @@ type SecretKeyService struct {
 	catalogByKey map[string]commsecmodel.ServicePublicKeyRecord
 }
 
-// NewSecretKeyServiceFromConfig 基于本地密钥配置构建密钥服务。
+// NewSecretKeyServiceFromStartupParams 基于启动参数构建密钥服务。
 // 该构造器负责装载并校验本地私钥/公钥，同时保留全局公钥目录查询能力。
-func NewSecretKeyServiceFromConfig(
-	cfg *modelsystem.SecretKeyConfig,
+func NewSecretKeyServiceFromStartupParams(
+	params modelsystem.SecretKeyStartupParams,
 	catalog []commsecmodel.ServicePublicKeyRecord,
 	mysql *repo.MySQLClient,
 ) (*SecretKeyService, error) {
-	normalized := cfg.Normalized("certification_server")
-	if !normalized.Enabled {
+	if strings.TrimSpace(params.ActiveKeyID) == "" {
 		return NewSecretKeyService(
 			mysql,
 			commsecmodel.ServicePublicKeyRecord{},
@@ -54,24 +52,14 @@ func NewSecretKeyServiceFromConfig(
 		), nil
 	}
 
-	if normalized.ActiveKeyID == "" {
-		return nil, &modelsystem.ErrKeyIDRequired
-	}
+	publicRef := strings.TrimSpace(params.ActiveKeyID) + ".public.pem"
+	privateRef := strings.TrimSpace(params.ActiveKeyID) + ".private.pem"
 
-	publicRef := normalized.PublicKeyRef
-	if publicRef == "" {
-		publicRef = normalized.ActiveKeyID + ".public.pem"
-	}
-	privateRef := normalized.PrivateKeyRef
-	if privateRef == "" {
-		privateRef = normalized.ActiveKeyID + ".private.pem"
-	}
-
-	publicPEM, err := loadPEMBytesFromRef(publicRef, normalized.SecretDir)
+	publicPEM, err := loadPEMBytesFromRef(publicRef, params.SecretKeyDir)
 	if err != nil {
 		return nil, err
 	}
-	privatePEM, err := loadPEMBytesFromRef(privateRef, normalized.SecretDir)
+	privatePEM, err := loadPEMBytesFromRef(privateRef, params.SecretKeyDir)
 	if err != nil {
 		return nil, err
 	}
@@ -83,13 +71,6 @@ func NewSecretKeyServiceFromConfig(
 	if err != nil {
 		return nil, err
 	}
-	if normalized.SignatureAlgorithm != "" && normalized.SignatureAlgorithm != string(detectedSignature) {
-		return nil, fmt.Errorf(
-			"signature algorithm mismatch: configured=%s detected=%s",
-			normalized.SignatureAlgorithm,
-			detectedSignature,
-		)
-	}
 	if err = ensurePKCS8PrivateKeyPEM(privatePEM); err != nil {
 		return nil, err
 	}
@@ -98,37 +79,30 @@ func NewSecretKeyServiceFromConfig(
 	}
 
 	owner := commsecmodel.ServiceKeyOwner{
-		OwnerType:    commsecmodel.CommKeyOwnerType(normalized.OwnerType),
-		EntityType:   normalized.EntityType,
-		EntityID:     normalized.EntityID,
-		EntityName:   normalized.EntityName,
-		ServiceID:    normalized.ServiceID,
-		ServiceName:  normalized.ServiceName,
-		InstanceID:   normalized.InstanceID,
-		InstanceName: normalized.InstanceName,
+		EntityType:   params.EntityType,
+		EntityID:     params.EntityID,
+		EntityName:   params.EntityName,
+		InstanceID:   params.InstanceID,
+		InstanceName: params.InstanceName,
 	}.Normalized()
 
 	now := time.Now()
 	localPublic := commsecmodel.ServicePublicKeyRecord{
-		KeyID:                normalized.ActiveKeyID,
-		Owner:                owner,
-		KeyExchangeAlgorithm: commsecmodel.KeyExchangeAlgorithm(normalized.KeyExchangeAlgorithm),
-		SignatureAlgorithm:   detectedSignature,
-		PublicKeyPEM:         string(publicPEM),
-		Fingerprint:          sha256Hex(publicPEM),
-		Status:               commsecmodel.CommKeyActive,
-		CreatedAt:            now,
-		ActivatedAt:          now,
-		ExpiresAt:            time.Time{},
-		RevokedAt:            time.Time{},
+		KeyID:        strings.TrimSpace(params.ActiveKeyID),
+		Owner:        owner,
+		PublicKeyPEM: string(publicPEM),
+		Fingerprint:  sha256Hex(publicPEM),
+		Status:       commsecmodel.CommKeyActive,
+		CreatedAt:    now,
+		ActivatedAt:  now,
+		ExpiresAt:    time.Time{},
+		RevokedAt:    time.Time{},
 	}
 	localPrivate := commsecmodel.LocalPrivateKeyRef{
-		KeyID:                normalized.ActiveKeyID,
-		Owner:                owner,
-		KeyExchangeAlgorithm: commsecmodel.KeyExchangeAlgorithm(normalized.KeyExchangeAlgorithm),
-		SignatureAlgorithm:   detectedSignature,
-		PrivateKeyRef:        string(privatePEM),
-		LoadedAt:             now,
+		KeyID:         strings.TrimSpace(params.ActiveKeyID),
+		Owner:         owner,
+		PrivateKeyRef: string(privatePEM),
+		LoadedAt:      now,
 	}
 
 	return NewSecretKeyService(mysql, localPublic, localPrivate, catalog), nil
@@ -185,6 +159,78 @@ func (s *SecretKeyService) GetPrivateKeyRef(ctx context.Context) (commsecmodel.L
 		return commsecmodel.LocalPrivateKeyRef{}, &modelsystem.ErrLocalPrivateKeyRefNotConfigured
 	}
 	return s.localPrivate, nil
+}
+
+// LookupPublicKey 按 key_id/entity_id/owner 统一查询公钥目录。
+func (s *SecretKeyService) LookupPublicKey(
+	ctx context.Context,
+	req *commsecmodel.PublicKeyLookupRequest,
+) (commsecmodel.PublicKeyLookupResult, error) {
+	if req == nil {
+		return commsecmodel.PublicKeyLookupResult{}, &modelsystem.ErrPublicKeyLookupRequestNil
+	}
+	q := req.Normalized()
+	if q.KeyID == "" && q.EntityID == "" && q.Owner == nil {
+		return commsecmodel.PublicKeyLookupResult{}, &modelsystem.ErrPublicKeyLookupCriteriaRequired
+	}
+
+	if q.KeyID != "" {
+		result, err := s.GetPublicKeyByKeyID(ctx, q.KeyID)
+		if err != nil {
+			return commsecmodel.PublicKeyLookupResult{}, err
+		}
+		if result.Found && keyMatchesLookup(result.Key, q) {
+			result.MatchedBy = "key_id"
+			return result, nil
+		}
+	}
+
+	if q.EntityID != "" {
+		result, err := s.GetPublicKeyByEntityID(ctx, q.EntityID)
+		if err != nil {
+			return commsecmodel.PublicKeyLookupResult{}, err
+		}
+		if result.Found && keyMatchesLookup(result.Key, q) {
+			result.MatchedBy = "entity_id"
+			return result, nil
+		}
+	}
+
+	if q.Owner != nil {
+		items, err := s.GetPublicKeysByOwner(ctx, *q.Owner)
+		if err != nil {
+			return commsecmodel.PublicKeyLookupResult{}, err
+		}
+		var selected commsecmodel.ServicePublicKeyRecord
+		found := false
+		for _, item := range items {
+			if !keyMatchesLookup(item, q) {
+				continue
+			}
+			if !found {
+				selected = item
+				found = true
+				continue
+			}
+			if shouldPreferKey(item, selected) {
+				selected = item
+			}
+		}
+		if found {
+			return commsecmodel.PublicKeyLookupResult{
+				Found:     true,
+				Key:       selected,
+				MatchedBy: "owner",
+				CheckedAt: time.Now(),
+			}, nil
+		}
+	}
+
+	return commsecmodel.PublicKeyLookupResult{
+		Found:         false,
+		FailureReason: "public key not found by lookup criteria",
+		CheckedAt:     time.Now(),
+	}, nil
 }
 
 // GetPublicKeyByKeyID 根据密钥ID查询公钥信息。
@@ -332,25 +378,22 @@ func (s *SecretKeyService) loadActivePublicKeyByEntityIDFromDB(
 	ctx context.Context, entityID string) (*commsecmodel.ServicePublicKeyRecord, error) {
 
 	var row struct {
-		KeyID                string    `db:"key_id"`
-		OwnerType            string    `db:"owner_type"`
-		EntityType           string    `db:"entity_type"`
-		EntityID             string    `db:"entity_id"`
-		EntityName           string    `db:"entity_name"`
-		InstanceID           string    `db:"instance_id"`
-		InstanceName         string    `db:"instance_name"`
-		KeyExchangeAlgorithm string    `db:"key_exchange_algorithm"`
-		SignatureAlgorithm   string    `db:"signature_algorithm"`
-		PublicKeyPEM         string    `db:"public_key_pem"`
-		Fingerprint          string    `db:"fingerprint"`
-		Status               string    `db:"status"`
-		CreatedAt            time.Time `db:"created_at"`
-		ActivatedAt          time.Time `db:"activated_at"`
-		ExpiresAt            time.Time `db:"expires_at"`
+		KeyID        string    `db:"key_id"`
+		EntityType   string    `db:"entity_type"`
+		EntityID     string    `db:"entity_id"`
+		EntityName   string    `db:"entity_name"`
+		InstanceID   string    `db:"instance_id"`
+		InstanceName string    `db:"instance_name"`
+		PublicKeyPEM string    `db:"public_key_pem"`
+		Fingerprint  string    `db:"fingerprint"`
+		Status       string    `db:"status"`
+		CreatedAt    time.Time `db:"created_at"`
+		ActivatedAt  time.Time `db:"activated_at"`
+		ExpiresAt    time.Time `db:"expires_at"`
 	}
 	err := s.mysql.Get(ctx, &row, `
-SELECT key_id, owner_type, entity_type, entity_id, entity_name, instance_id, instance_name,
-       key_exchange_algorithm, signature_algorithm, public_key_pem, fingerprint,
+SELECT key_id, entity_type, entity_id, entity_name, instance_id, instance_name,
+	   public_key_pem, fingerprint,
        status, created_at, activated_at, expires_at
 FROM auth_entity_public_keys
 WHERE entity_id = ?
@@ -367,23 +410,18 @@ LIMIT 1
 	item := commsecmodel.ServicePublicKeyRecord{
 		KeyID: row.KeyID,
 		Owner: commsecmodel.ServiceKeyOwner{
-			OwnerType:    commsecmodel.CommKeyOwnerType(row.OwnerType),
 			EntityType:   row.EntityType,
 			EntityID:     row.EntityID,
 			EntityName:   row.EntityName,
-			ServiceID:    row.EntityID,
-			ServiceName:  row.EntityName,
 			InstanceID:   row.InstanceID,
 			InstanceName: row.InstanceName,
 		}.Normalized(),
-		KeyExchangeAlgorithm: commsecmodel.KeyExchangeAlgorithm(row.KeyExchangeAlgorithm),
-		SignatureAlgorithm:   commsecmodel.SignatureAlgorithm(row.SignatureAlgorithm),
-		PublicKeyPEM:         row.PublicKeyPEM,
-		Fingerprint:          row.Fingerprint,
-		Status:               commsecmodel.CommKeyStatus(row.Status),
-		CreatedAt:            row.CreatedAt,
-		ActivatedAt:          row.ActivatedAt,
-		ExpiresAt:            row.ExpiresAt,
+		PublicKeyPEM: row.PublicKeyPEM,
+		Fingerprint:  row.Fingerprint,
+		Status:       commsecmodel.CommKeyStatus(row.Status),
+		CreatedAt:    row.CreatedAt,
+		ActivatedAt:  row.ActivatedAt,
+		ExpiresAt:    row.ExpiresAt,
 	}
 	return &item, nil
 }
@@ -392,26 +430,23 @@ func (s *SecretKeyService) loadPublicKeyByIDFromDB(
 	ctx context.Context, keyID string) (*commsecmodel.ServicePublicKeyRecord, error) {
 
 	var row struct {
-		KeyID                string    `db:"key_id"`
-		OwnerType            string    `db:"owner_type"`
-		EntityType           string    `db:"entity_type"`
-		EntityID             string    `db:"entity_id"`
-		EntityName           string    `db:"entity_name"`
-		InstanceID           string    `db:"instance_id"`
-		InstanceName         string    `db:"instance_name"`
-		KeyExchangeAlgorithm string    `db:"key_exchange_algorithm"`
-		SignatureAlgorithm   string    `db:"signature_algorithm"`
-		PublicKeyPEM         string    `db:"public_key_pem"`
-		Fingerprint          string    `db:"fingerprint"`
-		Status               string    `db:"status"`
-		CreatedAt            time.Time `db:"created_at"`
-		ActivatedAt          time.Time `db:"activated_at"`
-		ExpiresAt            time.Time `db:"expires_at"`
-		RevokedAtRaw         []byte    `db:"revoked_at"`
+		KeyID        string    `db:"key_id"`
+		EntityType   string    `db:"entity_type"`
+		EntityID     string    `db:"entity_id"`
+		EntityName   string    `db:"entity_name"`
+		InstanceID   string    `db:"instance_id"`
+		InstanceName string    `db:"instance_name"`
+		PublicKeyPEM string    `db:"public_key_pem"`
+		Fingerprint  string    `db:"fingerprint"`
+		Status       string    `db:"status"`
+		CreatedAt    time.Time `db:"created_at"`
+		ActivatedAt  time.Time `db:"activated_at"`
+		ExpiresAt    time.Time `db:"expires_at"`
+		RevokedAtRaw []byte    `db:"revoked_at"`
 	}
 	err := s.mysql.Get(ctx, &row, `
-SELECT key_id, owner_type, entity_type, entity_id, entity_name, instance_id, instance_name,
-       key_exchange_algorithm, signature_algorithm, public_key_pem, fingerprint,
+SELECT key_id, entity_type, entity_id, entity_name, instance_id, instance_name,
+	   public_key_pem, fingerprint,
        status, created_at, activated_at, expires_at, revoked_at
 FROM auth_entity_public_keys
 WHERE key_id = ? LIMIT 1
@@ -425,23 +460,18 @@ WHERE key_id = ? LIMIT 1
 	item := commsecmodel.ServicePublicKeyRecord{
 		KeyID: row.KeyID,
 		Owner: commsecmodel.ServiceKeyOwner{
-			OwnerType:    commsecmodel.CommKeyOwnerType(row.OwnerType),
 			EntityType:   row.EntityType,
 			EntityID:     row.EntityID,
 			EntityName:   row.EntityName,
-			ServiceID:    row.EntityID,
-			ServiceName:  row.EntityName,
 			InstanceID:   row.InstanceID,
 			InstanceName: row.InstanceName,
 		}.Normalized(),
-		KeyExchangeAlgorithm: commsecmodel.KeyExchangeAlgorithm(row.KeyExchangeAlgorithm),
-		SignatureAlgorithm:   commsecmodel.SignatureAlgorithm(row.SignatureAlgorithm),
-		PublicKeyPEM:         row.PublicKeyPEM,
-		Fingerprint:          row.Fingerprint,
-		Status:               commsecmodel.CommKeyStatus(row.Status),
-		CreatedAt:            row.CreatedAt,
-		ActivatedAt:          row.ActivatedAt,
-		ExpiresAt:            row.ExpiresAt,
+		PublicKeyPEM: row.PublicKeyPEM,
+		Fingerprint:  row.Fingerprint,
+		Status:       commsecmodel.CommKeyStatus(row.Status),
+		CreatedAt:    row.CreatedAt,
+		ActivatedAt:  row.ActivatedAt,
+		ExpiresAt:    row.ExpiresAt,
 	}
 	return &item, nil
 }
@@ -451,15 +481,11 @@ func (s *SecretKeyService) loadPublicKeysByOwnerFromDB(
 	owner = owner.Normalized()
 
 	query := `
-SELECT key_id, owner_type, entity_type, entity_id, entity_name, instance_id, instance_name,
-       key_exchange_algorithm, signature_algorithm, public_key_pem, fingerprint,
+SELECT key_id, entity_type, entity_id, entity_name, instance_id, instance_name,
+       public_key_pem, fingerprint,
        status, created_at, activated_at, expires_at, revoked_at
 FROM auth_entity_public_keys WHERE 1=1`
 	args := make([]any, 0)
-	if owner.OwnerType != "" {
-		query += ` AND owner_type = ?`
-		args = append(args, string(owner.OwnerType))
-	}
 	if owner.EntityType != "" {
 		query += ` AND entity_type = ?`
 		args = append(args, owner.EntityType)
@@ -482,21 +508,18 @@ FROM auth_entity_public_keys WHERE 1=1`
 	}
 
 	type keyRow struct {
-		KeyID                string    `db:"key_id"`
-		OwnerType            string    `db:"owner_type"`
-		EntityType           string    `db:"entity_type"`
-		EntityID             string    `db:"entity_id"`
-		EntityName           string    `db:"entity_name"`
-		InstanceID           string    `db:"instance_id"`
-		InstanceName         string    `db:"instance_name"`
-		KeyExchangeAlgorithm string    `db:"key_exchange_algorithm"`
-		SignatureAlgorithm   string    `db:"signature_algorithm"`
-		PublicKeyPEM         string    `db:"public_key_pem"`
-		Fingerprint          string    `db:"fingerprint"`
-		Status               string    `db:"status"`
-		CreatedAt            time.Time `db:"created_at"`
-		ActivatedAt          time.Time `db:"activated_at"`
-		ExpiresAt            time.Time `db:"expires_at"`
+		KeyID        string    `db:"key_id"`
+		EntityType   string    `db:"entity_type"`
+		EntityID     string    `db:"entity_id"`
+		EntityName   string    `db:"entity_name"`
+		InstanceID   string    `db:"instance_id"`
+		InstanceName string    `db:"instance_name"`
+		PublicKeyPEM string    `db:"public_key_pem"`
+		Fingerprint  string    `db:"fingerprint"`
+		Status       string    `db:"status"`
+		CreatedAt    time.Time `db:"created_at"`
+		ActivatedAt  time.Time `db:"activated_at"`
+		ExpiresAt    time.Time `db:"expires_at"`
 	}
 	rows := make([]keyRow, 0)
 	if err := s.mysql.Select(ctx, &rows, query, args...); err != nil {
@@ -513,23 +536,18 @@ FROM auth_entity_public_keys WHERE 1=1`
 		out = append(out, commsecmodel.ServicePublicKeyRecord{
 			KeyID: r.KeyID,
 			Owner: commsecmodel.ServiceKeyOwner{
-				OwnerType:    commsecmodel.CommKeyOwnerType(r.OwnerType),
 				EntityType:   r.EntityType,
 				EntityID:     r.EntityID,
 				EntityName:   r.EntityName,
-				ServiceID:    r.EntityID,
-				ServiceName:  r.EntityName,
 				InstanceID:   r.InstanceID,
 				InstanceName: r.InstanceName,
 			}.Normalized(),
-			KeyExchangeAlgorithm: commsecmodel.KeyExchangeAlgorithm(r.KeyExchangeAlgorithm),
-			SignatureAlgorithm:   commsecmodel.SignatureAlgorithm(r.SignatureAlgorithm),
-			PublicKeyPEM:         r.PublicKeyPEM,
-			Fingerprint:          r.Fingerprint,
-			Status:               commsecmodel.CommKeyStatus(r.Status),
-			CreatedAt:            r.CreatedAt,
-			ActivatedAt:          r.ActivatedAt,
-			ExpiresAt:            r.ExpiresAt,
+			PublicKeyPEM: r.PublicKeyPEM,
+			Fingerprint:  r.Fingerprint,
+			Status:       commsecmodel.CommKeyStatus(r.Status),
+			CreatedAt:    r.CreatedAt,
+			ActivatedAt:  r.ActivatedAt,
+			ExpiresAt:    r.ExpiresAt,
 		})
 	}
 	return out, nil
@@ -538,9 +556,6 @@ FROM auth_entity_public_keys WHERE 1=1`
 func matchOwner(expected commsecmodel.ServiceKeyOwner, actual commsecmodel.ServiceKeyOwner) bool {
 	expected = expected.Normalized()
 	actual = actual.Normalized()
-	if expected.OwnerType != "" && expected.OwnerType != actual.OwnerType {
-		return false
-	}
 	if expected.EntityType != "" && expected.EntityType != actual.EntityType {
 		return false
 	}
@@ -554,6 +569,22 @@ func matchOwner(expected commsecmodel.ServiceKeyOwner, actual commsecmodel.Servi
 		return false
 	}
 	if expected.InstanceName != "" && expected.InstanceName != actual.InstanceName {
+		return false
+	}
+	return true
+}
+
+func keyMatchesLookup(key commsecmodel.ServicePublicKeyRecord, query commsecmodel.PublicKeyLookupRequest) bool {
+	if query.KeyID != "" && key.KeyID != query.KeyID {
+		return false
+	}
+	if query.EntityID != "" && key.Owner.EffectiveEntityID() != query.EntityID {
+		return false
+	}
+	if query.Owner != nil && !matchOwner(*query.Owner, key.Owner) {
+		return false
+	}
+	if query.RequireActive && key.Status != commsecmodel.CommKeyActive {
 		return false
 	}
 	return true

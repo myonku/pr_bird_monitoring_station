@@ -22,7 +22,7 @@
 2. 边缘端不直接调用认证中心，认证请求统一经网关转发。
 3. 认证通道与业务上传通道必须严格隔离。
 4. 全局标识、密钥与配置生命周期规则见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
-5. 认证接口 HTTP 契约细节见 `EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
+5. 认证接口 HTTP 契约独立文档待重建（当前暂时下线），实现以本模块代码与全局基线约束为准。
 6. 边缘端到网关的服务端通信必须走加密信道；握手初始化优先在 bootstrap 完成后的 ensure_ready 阶段，未预热时在首次业务上传前完成。
 
 
@@ -36,8 +36,8 @@
 - 业务模块不解析认证响应细节。
 
 建议依赖方向：
-- business pipeline -> IEdgeAuthTransportCoordinator
-- IEdgeAuthTransportCoordinator -> ISecretKeyManager, IEdgeGatewayAuthClient, IEdgeAuthStateStore
+- business pipeline -> IEdgeAuthCoordinator
+- IEdgeAuthCoordinator -> ISecretKeyManager, IEdgeGatewayAuthClient, IEdgeAuthStateStore
 - 认证组件不得依赖业务 pipeline 模块
 
 
@@ -54,21 +54,20 @@
 
 核心抽象：
 1. ISecretKeyManager
-- 提供本地信任材料、密钥检索、私钥加载与 bootstrap challenge 签名能力。
+- 提供本地信任材料、密钥检索与 PEM 装载能力；签名算法识别与签名流程由 CryptoUtils 与认证编排层负责。
 
 2. IEdgeGatewayAuthClient
 - 调用网关认证 API：
 - init bootstrap challenge
 - authenticate bootstrap
 - refresh token
-- verify token
 - revoke token/family
 
 3. IEdgeAuthStateStore
 - 本地持久化认证状态（session + token bundle + stage）。
 - 建议存储实现：文件、sqlite、轻量 kv。
 
-4. IEdgeAuthTransportCoordinator
+4. IEdgeAuthCoordinator
 - 面向业务模块的认证编排入口。
 - 对外能力：
 - ensure_ready
@@ -104,12 +103,14 @@
 对应实现位于 src/utils/crypto_utils.py：
 - CryptoUtils.build_bootstrap_signature_payload
 - CryptoUtils.unix_ts_to_rfc3339nano
+- CryptoUtils.detect_signature_algorithm_from_private_key
+- CryptoUtils.detect_signature_algorithm_from_public_key
 
 密钥加载与本地 key catalog 查询位于 src/utils/secret_key_utils.py：
 - SecretKeyUtils.load_pem_bytes_from_ref
-- SecretKeyUtils.get_public_key_by_key_id
+- SecretKeyUtils.get_local_trust_material
 - SecretKeyUtils.get_private_key_pem
-- SecretKeyUtils.sign_bootstrap_challenge
+- SecretKeyUtils.get_public_key_pem
 
 支持的签名算法：
 - ed25519
@@ -121,6 +122,6 @@
 
 - 跨模块认证链路与启动链路见 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
 - 全局统一约定见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
-- 边缘端到网关的接口路径、payload 与头部契约见 `EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
+- 边缘端到网关的接口契约文档待重建（当前暂时下线）。
 - 本文档仅承载边缘认证模块内部架构定义。
 - 若安全通道未预热，必须在首次业务通信前完成握手；禁止明文上传回退。

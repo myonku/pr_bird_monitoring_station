@@ -162,6 +162,8 @@ var (
 	ErrCommSecurityServiceRequired       Error = *NewError(CommSecErr, "comm security service is required")
 	ErrLocalPublicKeyNotConfigured       Error = *NewError(CommSecErr, "local public key is not configured")
 	ErrLocalPrivateKeyRefNotConfigured   Error = *NewError(CommSecErr, "local private key ref is not configured")
+	ErrPublicKeyLookupRequestNil         Error = *NewError(CommSecErr, "public key lookup request is nil")
+	ErrPublicKeyLookupCriteriaRequired   Error = *NewError(CommSecErr, "public key lookup criteria is required")
 	ErrKeyIDRequired                     Error = *NewError(CommSecErr, "key id is required")
 	ErrHandshakeInitRequestNil           Error = *NewError(CommSecErr, "handshake init request is nil")
 	ErrInitiatorResponderServiceRequired Error = *NewError(CommSecErr, "initiator and responder entity id are required")

@@ -19,10 +19,12 @@ from src.app.internal_assertion_assembly import wire_internal_assertion_verifica
 from src.models.auth.internal_header_keys import HEADER_INTERNAL_ASSERTION
 from src.models.commsec.commsec import ServiceKeyOwner
 from src.models.sys.config import (
+    AuthConfig,
     InternalAssertionConfig,
     ProjectConfig,
     RedisConfig,
-    SecretKeyConfig,
+    RuntimeConfig,
+    SecretKeyStartupParams,
 )
 from src.repo.redis_store import RedisManager
 from src.services.commsec.secret_key_svc import SecretKeyService
@@ -140,35 +142,88 @@ def _build_redis_config(section: dict[str, Any]) -> RedisConfig | None:
     )
 
 
-def _build_secret_key_config(section: dict[str, Any]) -> SecretKeyConfig | None:
-    if not section:
-        return None
+def _build_runtime_config(
+    section: dict[str, Any],
+    legacy_secret_key_section: dict[str, Any],
+) -> RuntimeConfig:
+    entity_type = _to_str(section.get("entity_type"), "")
+    entity_id = _to_str(section.get("entity_id"), "")
+    entity_name = _to_str(section.get("entity_name"), "")
+    instance_id = _to_str(section.get("instance_id"), "")
+    instance_name = _to_str(section.get("instance_name"), "")
 
-    return SecretKeyConfig(
-        enabled=_to_bool(section.get("enabled"), False),
-        secret_dir=_to_str(section.get("secret_dir"), "secret_keys"),
-        active_key_id=_to_str(section.get("active_key_id"), ""),
-        owner_type=_to_str(section.get("owner_type"), "service"),
-        entity_type=_to_str(section.get("entity_type"), "service"),
-        entity_id=_to_str(section.get("entity_id"), ""),
-        entity_name=_to_str(section.get("entity_name"), ""),
-        service_id=_to_str(section.get("service_id"), ""),
-        service_name=_to_str(section.get("service_name"), ""),
-        instance_id=_to_str(section.get("instance_id"), ""),
-        instance_name=_to_str(section.get("instance_name"), ""),
-        key_exchange_algorithm=_to_str(
-            section.get("key_exchange_algorithm"),
-            "ecdhe_p256",
-        ),
-        signature_algorithm=_to_str(section.get("signature_algorithm"), ""),
-        public_key_ref=_to_str(section.get("public_key_ref"), ""),
-        private_key_ref=_to_str(section.get("private_key_ref"), ""),
+    if legacy_secret_key_section:
+        entity_type = entity_type or _to_str(
+            legacy_secret_key_section.get("entity_type"),
+            "service",
+        )
+        entity_id = entity_id or _to_str(
+            legacy_secret_key_section.get("entity_id"),
+            _to_str(legacy_secret_key_section.get("service_id"), ""),
+        )
+        entity_name = entity_name or _to_str(
+            legacy_secret_key_section.get("entity_name"),
+            _to_str(legacy_secret_key_section.get("service_name"), ""),
+        )
+        instance_id = instance_id or _to_str(
+            legacy_secret_key_section.get("instance_id"),
+            "",
+        )
+        instance_name = instance_name or _to_str(
+            legacy_secret_key_section.get("instance_name"),
+            "",
+        )
+
+    return RuntimeConfig(
+        entity_type=entity_type or "service",
+        entity_id=entity_id,
+        entity_name=entity_name,
+        instance_id=instance_id,
+        instance_name=instance_name,
     )
+
+
+def _build_auth_config(
+    section: dict[str, Any],
+    legacy_secret_key_section: dict[str, Any],
+) -> AuthConfig:
+    secret_key_dir = _to_str(section.get("secret_key_dir"), "") or _to_str(
+        section.get("secret_dir"),
+        "",
+    )
+    active_key_id = _to_str(section.get("active_key_id"), "")
+
+    if legacy_secret_key_section:
+        secret_key_dir = secret_key_dir or _to_str(
+            legacy_secret_key_section.get("secret_key_dir"),
+            _to_str(legacy_secret_key_section.get("secret_dir"), "secret_keys"),
+        )
+        active_key_id = active_key_id or _to_str(
+            legacy_secret_key_section.get("active_key_id"),
+            "",
+        )
+
+    cfg = AuthConfig(
+        secret_key_dir=secret_key_dir or "secret_keys",
+        active_key_id=active_key_id,
+    )
+    cfg = AuthConfig(
+        secret_key_dir=os.getenv("API_SECRET_KEY_DIR", cfg.secret_key_dir),
+        active_key_id=os.getenv("API_SECRET_KEY_ACTIVE_KEY_ID", cfg.active_key_id),
+    )
+
+    enabled_override_raw = os.getenv("API_SECRET_KEY_ENABLED")
+    if enabled_override_raw is not None and not _to_bool(enabled_override_raw, True):
+        cfg = AuthConfig(secret_key_dir=cfg.secret_key_dir, active_key_id="")
+
+    return cfg
 
 
 def _build_project_config(settings: dict[str, Any]) -> ProjectConfig:
     internal_section = _as_dict(settings.get("internal_assertion"))
-    secret_key_section = _as_dict(settings.get("secret_key"))
+    runtime_section = _as_dict(settings.get("runtime"))
+    auth_section = _as_dict(settings.get("auth"))
+    legacy_secret_key_section = _as_dict(settings.get("secret_key"))
 
     internal_cfg = InternalAssertionConfig(
         enabled=_to_bool(internal_section.get("enabled"), False),
@@ -204,81 +259,41 @@ def _build_project_config(settings: dict[str, Any]) -> ProjectConfig:
         ),
     )
 
-    secret_key_cfg = _build_secret_key_config(secret_key_section)
-    if secret_key_cfg is not None:
-        secret_key_cfg = SecretKeyConfig(
-            enabled=_env_bool("API_SECRET_KEY_ENABLED", secret_key_cfg.enabled),
-            secret_dir=os.getenv("API_SECRET_KEY_DIR", secret_key_cfg.secret_dir),
-            active_key_id=os.getenv(
-                "API_SECRET_KEY_ACTIVE_KEY_ID",
-                secret_key_cfg.active_key_id,
-            ),
-            owner_type=secret_key_cfg.owner_type,
-            entity_type=secret_key_cfg.entity_type,
-            entity_id=secret_key_cfg.entity_id,
-            entity_name=secret_key_cfg.entity_name,
-            service_id=secret_key_cfg.service_id,
-            service_name=secret_key_cfg.service_name,
-            instance_id=secret_key_cfg.instance_id,
-            instance_name=secret_key_cfg.instance_name,
-            key_exchange_algorithm=secret_key_cfg.key_exchange_algorithm,
-            signature_algorithm=os.getenv(
-                "API_SECRET_KEY_SIGNATURE_ALGORITHM",
-                secret_key_cfg.signature_algorithm,
-            ),
-            public_key_ref=secret_key_cfg.public_key_ref,
-            private_key_ref=secret_key_cfg.private_key_ref,
-        )
+    runtime_cfg = _build_runtime_config(runtime_section, legacy_secret_key_section)
+    auth_cfg = _build_auth_config(auth_section, legacy_secret_key_section)
 
     return ProjectConfig(
         redis=_build_redis_config(_as_dict(settings.get("redis"))),
         internal_assertion=internal_cfg,
-        secret_key=secret_key_cfg,
+        runtime=runtime_cfg,
+        auth=auth_cfg,
     )
 
 
 def _build_secret_key_service(
     project_root: Path,
-    cfg: ProjectConfig,
+    params: SecretKeyStartupParams,
 ) -> SecretKeyService | None:
-    if cfg.secret_key is None:
+    active_key_id = params.active_key_id.strip()
+    if not active_key_id:
         return None
 
-    secret_cfg = cfg.secret_key.normalized(default_entity_id="api_service")
-    if not secret_cfg.enabled:
-        return None
-    if not secret_cfg.active_key_id:
-        raise ValueError("secret_key.active_key_id is required when secret_key.enabled=true")
-
-    secret_dir = Path(secret_cfg.secret_dir)
+    secret_dir = Path(params.secret_key_dir)
     if not secret_dir.is_absolute():
         secret_dir = project_root / secret_dir
 
     owner = ServiceKeyOwner(
-        owner_type=cast(Any, secret_cfg.owner_type),
-        entity_type=secret_cfg.entity_type,
-        entity_id=secret_cfg.entity_id,
-        entity_name=secret_cfg.entity_name,
-        service_id=secret_cfg.service_id,
-        service_name=secret_cfg.service_name,
-        instance_id=secret_cfg.instance_id,
-        instance_name=secret_cfg.instance_name,
+        entity_type=params.entity_type,
+        entity_id=params.entity_id,
+        entity_name=params.entity_name,
+        instance_id=params.instance_id,
+        instance_name=params.instance_name,
     ).normalized()
-
-    signature_algorithm = (
-        cast(Any, secret_cfg.signature_algorithm)
-        if secret_cfg.signature_algorithm
-        else None
-    )
 
     return SecretKeyService.from_secret_dir(
         owner=owner,
-        active_key_id=secret_cfg.active_key_id,
+        active_key_id=active_key_id,
         secret_dir=secret_dir,
-        key_exchange_algorithm=cast(Any, secret_cfg.key_exchange_algorithm),
-        signature_algorithm=signature_algorithm,
-        public_key_ref=secret_cfg.public_key_ref,
-        private_key_ref=secret_cfg.private_key_ref,
         catalog=None,
         mysql_client=None,
     )
@@ -309,6 +324,7 @@ async def run_service(settings_path: Path) -> None:
     project_root = Path(__file__).resolve().parent
     settings = _read_settings_file(settings_path)
     cfg = _build_project_config(settings)
+    secret_key_params = cfg.build_secret_key_startup_params(default_entity_id="api_service")
 
     grpc_server = GrpcServerAdapter(address="0.0.0.0:50052", service_name="api_service")
     grpc_server.add_unary_handler("/api_service.v1.Internal/Echo", _default_echo_handler)
@@ -318,8 +334,11 @@ async def run_service(settings_path: Path) -> None:
         if cfg.internal_assertion is not None
         else InternalAssertionConfig().normalized()
     )
+    if assertion_cfg.enabled and not secret_key_params.active_key_id:
+        raise ValueError("auth.active_key_id is required when internal assertion is enabled")
+
     secret_key_service = (
-        _build_secret_key_service(project_root, cfg)
+        _build_secret_key_service(project_root, secret_key_params)
         if assertion_cfg.enabled
         else None
     )
@@ -366,9 +385,7 @@ async def run_service(settings_path: Path) -> None:
             "internal_assertion_enabled": assertion_cfg.enabled,
             "internal_assertion_required": assertion_cfg.required,
             "internal_assertion_header": assertion_cfg.header_name,
-            "secret_key_enabled": bool(
-                cfg.secret_key is not None and cfg.secret_key.enabled
-            ),
+            "secret_key_enabled": bool(secret_key_params.active_key_id),
         },
     )
 

@@ -3,12 +3,13 @@ package auth
 import (
 	"time"
 
+	commonmodel "gateway/src/models/common"
 	commsec "gateway/src/models/commsec"
 
 	"github.com/google/uuid"
 )
 
-type EntityType string
+type EntityType = commonmodel.EntityType
 type SessionStatus string
 type TokenType string
 type TokenStatus string
@@ -51,9 +52,9 @@ const (
 )
 
 const (
-	EntityUser    EntityType = "user"
-	EntityDevice  EntityType = "device"
-	EntityService EntityType = "service"
+	EntityUser    EntityType = commonmodel.EntityUser
+	EntityDevice  EntityType = commonmodel.EntityDevice
+	EntityService EntityType = commonmodel.EntityService
 )
 
 // Principal 代表认证实体的主标识符，包含了实体类型和实体ID等信息。

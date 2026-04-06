@@ -1,13 +1,10 @@
-[secret_key]
-enabled = false
-secret_dir = "secret_keys"
-active_key_id = "cert-local-key"
-owner_type = "service"
+[runtime]
 entity_type = "service"
 entity_id = "certification_server"
 entity_name = "certification_server"
-key_exchange_algorithm = "ecdhe_p256"
-signature_algorithm = "ed25519"
-# Relative to secret_dir when not absolute.
-public_key_ref = "public.pem"
-private_key_ref = "private.pem"
+instance_id = ""
+instance_name = ""
+
+[auth]
+secret_key_dir = "secret_keys"
+active_key_id = "cert-local-key"

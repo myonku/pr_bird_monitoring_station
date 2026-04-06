@@ -79,8 +79,8 @@ class SecureChannelQuery(Struct, kw_only=True):
     channel_id: UUID
     binding: SecureChannelBinding
 
-    source_service_id: str
-    target_service_id: str
+    source_entity_id: str
+    target_entity_id: str
 
 
 class SecureChannelRevokeRequest(Struct, kw_only=True):

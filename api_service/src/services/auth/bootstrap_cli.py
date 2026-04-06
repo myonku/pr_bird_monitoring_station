@@ -7,13 +7,13 @@ from src.models.auth.bootstrap import (
     ChallengePayload,
     ChallengeRequest,
 )
-from src.services.auth.auth_gateway_authority import IAuthGatewayAuthorityClient
+from src.services.auth.auth_authority import IAuthAuthorityClient
 
 
 class BootstrapClient:
-    """冷启动认证流程服务（只转发认证中心）。"""
+    """冷启动认证流程服务（直连认证中心）。"""
 
-    def __init__(self, authority_client: IAuthGatewayAuthorityClient):
+    def __init__(self, authority_client: IAuthAuthorityClient):
         self._authority_client = authority_client
 
     async def init_challenge(self, req: ChallengeRequest) -> ChallengePayload:

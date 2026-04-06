@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	authmodel "certification_server/src/models/auth"
+	commonmodel "certification_server/src/models/common"
 	"context"
 )
 
@@ -11,7 +12,7 @@ type IAuthGatewayOrchestrator interface {
 	// Bootstrap 相关能力。
 	InitChallenge(ctx context.Context, req *authmodel.ChallengeRequest) (*authmodel.ChallengePayload, error)
 	AuthenticateBootstrap(ctx context.Context, req *authmodel.BootstrapAuthRequest) (*authmodel.BootstrapAuthResult, error)
-	GetBootstrapStage(ctx context.Context, entityType authmodel.EntityType, entityID string) (authmodel.BootstrapStage, error)
+	GetBootstrapStage(ctx context.Context, entityType commonmodel.EntityType, entityID string) (authmodel.BootstrapStage, error)
 
 	// 用户认证与令牌能力。
 	AuthenticateByPassword(ctx context.Context, req *authmodel.UserPasswordAuthRequest) (*authmodel.UserPasswordAuthResult, error)

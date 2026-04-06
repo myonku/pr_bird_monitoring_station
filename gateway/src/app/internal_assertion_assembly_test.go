@@ -22,16 +22,8 @@ func (s *noopSecretKeyService) GetPrivateKeyRef(ctx context.Context) (commsecmod
 	return commsecmodel.LocalPrivateKeyRef{}, nil
 }
 
-func (s *noopSecretKeyService) GetPublicKeyByKeyID(ctx context.Context, keyID string) (commsecmodel.PublicKeyLookupResult, error) {
+func (s *noopSecretKeyService) LookupPublicKey(ctx context.Context, req *commsecmodel.PublicKeyLookupRequest) (commsecmodel.PublicKeyLookupResult, error) {
 	return commsecmodel.PublicKeyLookupResult{}, nil
-}
-
-func (s *noopSecretKeyService) GetPublicKeyByEntityID(ctx context.Context, entityID string) (commsecmodel.PublicKeyLookupResult, error) {
-	return commsecmodel.PublicKeyLookupResult{}, nil
-}
-
-func (s *noopSecretKeyService) GetPublicKeysByOwner(ctx context.Context, owner commsecmodel.ServiceKeyOwner) ([]commsecmodel.ServicePublicKeyRecord, error) {
-	return nil, nil
 }
 
 func TestWireInternalAssertionDisabledByDefault(t *testing.T) {

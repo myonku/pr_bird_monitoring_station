@@ -31,9 +31,9 @@ NIL_UUID = UUID(int=0)
 
 def _default_owner() -> ServiceKeyOwner:
     return ServiceKeyOwner(
-        owner_type="service",
-        service_id="",
-        service_name="",
+        entity_type="service",
+        entity_id="",
+        entity_name="",
         instance_id="",
         instance_name="",
     )
@@ -268,13 +268,13 @@ class CommSecurityService:
 
         for channel in self._channels.values():
             if (
-                req.source_service_id
-                and channel.source.service_id != req.source_service_id
+                req.source_entity_id
+                and channel.source.effective_entity_id != req.source_entity_id
             ):
                 continue
             if (
-                req.target_service_id
-                and channel.target.service_id != req.target_service_id
+                req.target_entity_id
+                and channel.target.effective_entity_id != req.target_entity_id
             ):
                 continue
             if not _match_binding(req.binding, channel.binding):

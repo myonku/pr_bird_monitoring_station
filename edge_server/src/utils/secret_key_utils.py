@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 
 from src.iface.auth_interface import ISecretKeyManager
 from src.models.auth.auth import LocalTrustMaterial, SignatureAlgorithm
+from src.utils.crypto_utils import CryptoUtils
 
 
 class SecretKeyUtils(ISecretKeyManager):
@@ -21,10 +22,14 @@ class SecretKeyUtils(ISecretKeyManager):
         self,
         local_trust_material: LocalTrustMaterial,
         base_dir: str | Path | None = None,
+        signature_algorithm: SignatureAlgorithm | None = None,
     ):
         self._local = local_trust_material
         self._base_dir = Path(base_dir).resolve() if base_dir is not None else None
-        self._validate_material(local_trust_material)
+        self._validate_material(
+            local_trust_material,
+            expected_algorithm=signature_algorithm,
+        )
 
     @classmethod
     def from_secret_dir(
@@ -50,18 +55,19 @@ class SecretKeyUtils(ISecretKeyManager):
 
         public_pem = public_path.read_bytes()
         cls._ensure_spki_public_key_pem(public_pem)
-        detected_algorithm = cls._detect_signature_algorithm(public_pem)
-        algorithm = signature_algorithm or detected_algorithm
 
         material = LocalTrustMaterial(
             device_id=device_id,
             key_id=active_key_id,
-            signature_algorithm=algorithm,
             private_key_ref=str(private_path),
             public_key_pem=str(public_path),
             fingerprint=cls._sha256_hex(public_pem),
         )
-        return cls(local_trust_material=material, base_dir=secret_root)
+        return cls(
+            local_trust_material=material,
+            base_dir=secret_root,
+            signature_algorithm=signature_algorithm,
+        )
 
     @staticmethod
     def resolve_module_root() -> Path:
@@ -126,19 +132,6 @@ class SecretKeyUtils(ISecretKeyManager):
         return hashlib.sha256(content).hexdigest()
 
     @staticmethod
-    def _detect_signature_algorithm(public_key_pem: bytes) -> SignatureAlgorithm:
-        parsed = serialization.load_pem_public_key(public_key_pem)
-        if isinstance(parsed, ed25519.Ed25519PublicKey):
-            return "ed25519"
-        if isinstance(parsed, ec.EllipticCurvePublicKey):
-            if not isinstance(parsed.curve, ec.SECP256R1):
-                raise ValueError("unsupported ecdsa curve, only p256 is allowed")
-            return "ecdsa_p256_sha256"
-        if isinstance(parsed, rsa.RSAPublicKey):
-            return "rsa_pss_sha256"
-        raise ValueError("unsupported public key type")
-
-    @staticmethod
     def _ensure_pkcs8_private_key_pem(private_key_pem: bytes) -> None:
         text = private_key_pem.decode("utf-8", errors="ignore")
         if "-----BEGIN PRIVATE KEY-----" not in text:
@@ -177,14 +170,19 @@ class SecretKeyUtils(ISecretKeyManager):
 
         raise ValueError(f"unsupported signature algorithm: {algorithm}")
 
-    def _validate_material(self, material: LocalTrustMaterial) -> None:
+    def _validate_material(
+        self,
+        material: LocalTrustMaterial,
+        *,
+        expected_algorithm: SignatureAlgorithm | None = None,
+    ) -> None:
         public_key_pem = self.load_pem_bytes_from_ref(material.public_key_pem, base_dir=self._base_dir)
         self._ensure_spki_public_key_pem(public_key_pem)
-        detected_algorithm = self._detect_signature_algorithm(public_key_pem)
-        if detected_algorithm != material.signature_algorithm:
+        detected_algorithm = CryptoUtils.detect_signature_algorithm_from_public_key(public_key_pem)
+        if expected_algorithm is not None and detected_algorithm != expected_algorithm:
             raise ValueError(
                 f"signature algorithm mismatch for key_id={material.key_id}: "
-                f"expected={material.signature_algorithm} detected={detected_algorithm}"
+                f"expected={expected_algorithm} detected={detected_algorithm}"
             )
 
         if not material.private_key_ref:
@@ -195,4 +193,4 @@ class SecretKeyUtils(ISecretKeyManager):
             base_dir=self._base_dir,
         )
         self._ensure_pkcs8_private_key_pem(private_key_pem)
-        self._ensure_private_key_matches_algorithm(private_key_pem, material.signature_algorithm)
+        self._ensure_private_key_matches_algorithm(private_key_pem, detected_algorithm)

@@ -10,6 +10,7 @@ import (
 
 	interfaces "certification_server/src/interfaces/auth"
 	authmodel "certification_server/src/models/auth"
+	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
 
@@ -595,8 +596,8 @@ func mapTokenRecordRow(row authmodel.TokenRecordRow) (*authmodel.TokenRecord, er
 		Type:            authmodel.TokenType(row.Type),
 		Status:          authmodel.TokenStatus(row.Status),
 		Storage:         authmodel.TokenStorage(row.Storage),
-		Principal:       authmodel.Principal{EntityType: authmodel.EntityType(row.PrincipalType), EntityID: row.PrincipalID},
-		PrincipalID:     string(authmodel.EntityType(row.PrincipalType)) + ":" + row.PrincipalID,
+		Principal:       authmodel.Principal{EntityType: commonmodel.EntityType(row.PrincipalType), EntityID: row.PrincipalID},
+		PrincipalID:     string(commonmodel.EntityType(row.PrincipalType)) + ":" + row.PrincipalID,
 		ParentTokenID:   parentID,
 		ClientID:        row.ClientID,
 		GatewayID:       row.GatewayID,
@@ -622,7 +623,7 @@ func mapTokenClaimsRow(row authmodel.TokenClaimsRow) (*authmodel.TokenClaims, er
 		Audience:      row.Audience,
 		Subject:       row.Subject,
 		Type:          authmodel.TokenType(row.Type),
-		EntityType:    authmodel.EntityType(row.EntityType),
+		EntityType:    commonmodel.EntityType(row.EntityType),
 		EntityID:      row.EntityID,
 		PrincipalID:   row.PrincipalID,
 		SessionID:     sessionID,

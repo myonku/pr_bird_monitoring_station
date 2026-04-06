@@ -125,10 +125,10 @@
   - BuildAssertion
 - 职责：在转发前构建短时内部断言（aud/method/path/body 摘要/iat/exp/jti）。
 
-### 4.2.5 IAuthGatewayAuthorityClient
+### 4.2.5 IAuthAuthorityClient
 
-- 文件：src/interfaces/auth/auth_gateway_authority.go
-- 职责：统一定义网关到认证中心的远端鉴权门面调用（bootstrap、用户认证、token/session 校验、downstream grant）。
+- 文件：src/interfaces/auth/auth_authority_client.go
+- 职责：统一定义模块直连认证中心的远端鉴权门面调用（bootstrap、用户认证、token/session 校验、downstream grant），不承载“内部模块经网关中转”的语义。
 
 ---
 
@@ -290,6 +290,8 @@
 建议顺序：
 
 1. LoadConfig
+  - 配置分区约束：模块本体标识放 `runtime`；密钥装载信息放 `auth`，且仅保留 `secret_key_dir` 与 `active_key_id`。
+  - 生命周期约束：配置只在启动期读取一次，后续链路按参数快照传递，禁止运行期重复读取 settings。
 2. 初始化 repo 客户端（mysql/redis/etcd/kafka）
 3. 组装 registry/discovery/adapters
 4. 执行 ReadinessUsecase（bootstrap）
@@ -342,4 +344,4 @@ HTTP middleware 与 gRPC interceptor 共用：
 
 - 网关参与的认证链路与启动链路见根目录 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
 - ID/密钥/配置等统一约定见根目录 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
-- 边缘端双通道接口契约见 `edge_server/EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
+- 边缘端双通道接口契约文档待重建（当前暂时下线）。

@@ -2,8 +2,9 @@ from typing import Literal
 from uuid import UUID
 from msgspec import Struct
 
+from src.models.common.entry import EntityType
 
-EntityType = Literal["user", "service", "device"]
+
 SessionStatus = Literal["active", "blocked", "revoked", "expired"]
 TokenType = Literal["access", "refresh", "downstream", "service"]
 TokenStatus = Literal["active", "rotated", "revoked", "expired"]

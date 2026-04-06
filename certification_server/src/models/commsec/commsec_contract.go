@@ -62,8 +62,8 @@ type SecureChannelQuery struct {
 	ChannelID uuid.UUID
 	Binding   SecureChannelBinding
 
-	SourceServiceID string
-	TargetServiceID string
+	SourceEntityID string
+	TargetEntityID string
 }
 
 // SecureChannelRevokeRequest 表示撤销通道请求。

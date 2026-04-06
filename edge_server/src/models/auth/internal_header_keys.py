@@ -1,0 +1,6 @@
+AUTHORIZATION_HEADER = "Authorization"
+DOWNSTREAM_SESSION_ID_HEADER = "x-downstream-session-id"
+DOWNSTREAM_TOKEN_ID_HEADER = "x-downstream-token-id"
+TOKEN_TYPE_HEADER = "x-token-type"
+DOWNSTREAM_PRINCIPAL_HEADER = "x-downstream-principal"
+SCOPES_HEADER = "x-scopes"

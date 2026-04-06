@@ -1,6 +1,14 @@
 from dataclasses import dataclass, field
 
 from src.models.auth.auth import AuthStage, EdgeSession, EdgeTokenBundle, TokenType
+from src.models.auth.internal_header_keys import (
+    AUTHORIZATION_HEADER,
+    DOWNSTREAM_PRINCIPAL_HEADER,
+    DOWNSTREAM_SESSION_ID_HEADER,
+    DOWNSTREAM_TOKEN_ID_HEADER,
+    SCOPES_HEADER,
+    TOKEN_TYPE_HEADER,
+)
 
 
 @dataclass(slots=True)
@@ -36,14 +44,14 @@ class EdgeAuthHeaders:
 
     def to_http_headers(self) -> dict[str, str]:
         out = {
-            "Authorization": self.authorization,
-            "x-downstream-session": self.session_id,
-            "x-downstream-token": self.token_id,
-            "x-token-type": self.token_type,
-            "x-downstream-principal": self.principal_id,
+            AUTHORIZATION_HEADER: self.authorization,
+            DOWNSTREAM_SESSION_ID_HEADER: self.session_id,
+            DOWNSTREAM_TOKEN_ID_HEADER: self.token_id,
+            TOKEN_TYPE_HEADER: self.token_type,
+            DOWNSTREAM_PRINCIPAL_HEADER: self.principal_id,
         }
         if self.scopes:
-            out["x-scopes"] = ",".join(self.scopes)
+            out[SCOPES_HEADER] = ",".join(self.scopes)
         return out
 
 

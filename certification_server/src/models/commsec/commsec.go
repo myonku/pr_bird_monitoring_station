@@ -1,13 +1,12 @@
 package commsec
 
 import (
-	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-type CommKeyOwnerType string     // 通信密钥所有者类型
 type CommKeyStatus string        // 通信密钥状态
 type KeyExchangeAlgorithm string // 密钥交换算法
 type SignatureAlgorithm string   // 签名算法
@@ -15,13 +14,6 @@ type CipherSuite string          // 密码套件
 type HandshakeStatus string      // 握手状态
 type SecureChannelStatus string  // 安全通道状态
 type ChannelBindingType string   // 通道绑定类型
-
-const (
-	CommKeyOwnerService  CommKeyOwnerType = "service"
-	CommKeyOwnerInstance CommKeyOwnerType = "instance"
-	CommKeyOwnerDevice   CommKeyOwnerType = "device"
-	CommKeyOwnerGateway  CommKeyOwnerType = "gateway"
-)
 
 const (
 	CommKeyActive  CommKeyStatus = "active"
@@ -66,60 +58,44 @@ const (
 )
 
 // ServiceKeyOwner 标识通信密钥属于哪一个实体或实例。
-//
-// 说明：
-// - EntityID/EntityName 是统一语义字段，适用于 service/device/gateway 等实体。
-// - ServiceID/ServiceName 为历史兼容别名，读取时会与 EntityID/EntityName 互补。
+// 统一使用 entity 语义字段，避免 service/entity 双轨冗余。
 type ServiceKeyOwner struct {
-	OwnerType    CommKeyOwnerType
 	EntityType   string
 	EntityID     string
 	EntityName   string
-	ServiceID    string
-	ServiceName  string
 	InstanceID   string
 	InstanceName string
 }
 
 func (o ServiceKeyOwner) EffectiveEntityID() string {
-	if o.EntityID != "" {
-		return o.EntityID
-	}
-	return o.ServiceID
+	return o.EntityID
 }
 
 func (o ServiceKeyOwner) EffectiveEntityName() string {
 	if o.EntityName != "" {
 		return o.EntityName
 	}
-	return o.ServiceName
+	return o.EntityID
 }
 
 func (o ServiceKeyOwner) Normalized() ServiceKeyOwner {
-	if o.EntityID == "" {
-		o.EntityID = o.ServiceID
-	}
+	o.EntityType = strings.ToLower(strings.TrimSpace(o.EntityType))
+	o.EntityID = strings.TrimSpace(o.EntityID)
+	o.EntityName = strings.TrimSpace(o.EntityName)
+	o.InstanceID = strings.TrimSpace(o.InstanceID)
+	o.InstanceName = strings.TrimSpace(o.InstanceName)
 	if o.EntityName == "" {
-		o.EntityName = o.ServiceName
-	}
-	if o.ServiceID == "" {
-		o.ServiceID = o.EntityID
-	}
-	if o.ServiceName == "" {
-		o.ServiceName = o.EntityName
+		o.EntityName = o.EntityID
 	}
 	return o
 }
 
 // ServicePublicKeyRecord 表示存储在全局数据库中的实体通信公钥记录。
 type ServicePublicKeyRecord struct {
-	KeyID string
-	Owner ServiceKeyOwner
-
-	KeyExchangeAlgorithm KeyExchangeAlgorithm
-	SignatureAlgorithm   SignatureAlgorithm
-	PublicKeyPEM         string
-	Fingerprint          string
+	KeyID        string
+	Owner        ServiceKeyOwner
+	PublicKeyPEM string
+	Fingerprint  string
 
 	Status CommKeyStatus
 
@@ -134,9 +110,6 @@ type ServicePublicKeyRecord struct {
 type LocalPrivateKeyRef struct {
 	KeyID string
 	Owner ServiceKeyOwner
-
-	KeyExchangeAlgorithm KeyExchangeAlgorithm
-	SignatureAlgorithm   SignatureAlgorithm
 
 	PrivateKeyRef string
 	LoadedAt      time.Time
@@ -218,83 +191,34 @@ type EncryptedMessageMeta struct {
 	IssuedAt       time.Time
 }
 
-// PublicKeyLookupRequest 表示按实体或 key id 查询通信公钥目录。
+// PublicKeyLookupRequest 表示统一的公钥目录查询请求。
 type PublicKeyLookupRequest struct {
-	EntityType  string
-	EntityID    string
-	EntityName  string
-	ServiceID   string
-	ServiceName string
-	KeyID       string
+	KeyID string
+
+	EntityID      string
+	Owner         *ServiceKeyOwner
+	RequireActive bool
+}
+
+func (r PublicKeyLookupRequest) Normalized() PublicKeyLookupRequest {
+	r.KeyID = strings.TrimSpace(r.KeyID)
+	r.EntityID = strings.TrimSpace(r.EntityID)
+	if r.Owner != nil {
+		normalizedOwner := r.Owner.Normalized()
+		r.Owner = &normalizedOwner
+		if r.EntityID == "" {
+			r.EntityID = normalizedOwner.EffectiveEntityID()
+		}
+	}
+	return r
 }
 
 // PublicKeyLookupResult 是公钥目录查询结果。
 type PublicKeyLookupResult struct {
-	Found bool
-	Key   ServicePublicKeyRecord
+	Found     bool
+	Key       ServicePublicKeyRecord
+	MatchedBy string
 
 	FailureReason string
 	CheckedAt     time.Time
-}
-
-// HandshakeRow 表示数据库中 commsec 握手记录的行结构。
-type HandshakeRow struct {
-	ID                          string       `db:"id"`
-	InitiatorOwnerType          string       `db:"initiator_owner_type"`
-	InitiatorServiceID          string       `db:"initiator_service_id"`
-	InitiatorServiceName        string       `db:"initiator_service_name"`
-	InitiatorInstanceID         string       `db:"initiator_instance_id"`
-	InitiatorInstanceName       string       `db:"initiator_instance_name"`
-	ResponderOwnerType          string       `db:"responder_owner_type"`
-	ResponderServiceID          string       `db:"responder_service_id"`
-	ResponderServiceName        string       `db:"responder_service_name"`
-	ResponderInstanceID         string       `db:"responder_instance_id"`
-	ResponderInstanceName       string       `db:"responder_instance_name"`
-	InitiatorKeyID              string       `db:"initiator_key_id"`
-	ResponderKeyID              string       `db:"responder_key_id"`
-	KeyExchangeAlgorithm        string       `db:"key_exchange_algorithm"`
-	SignatureAlgorithm          string       `db:"signature_algorithm"`
-	CipherSuite                 string       `db:"cipher_suite"`
-	InitiatorEphemeralPublicKey string       `db:"initiator_ephemeral_public_key"`
-	ResponderEphemeralPublicKey string       `db:"responder_ephemeral_public_key"`
-	InitiatorNonce              string       `db:"initiator_nonce"`
-	ResponderNonce              string       `db:"responder_nonce"`
-	InitiatorSignature          string       `db:"initiator_signature"`
-	ResponderSignature          string       `db:"responder_signature"`
-	Status                      string       `db:"status"`
-	FailureReason               string       `db:"failure_reason"`
-	StartedAt                   time.Time    `db:"started_at"`
-	CompletedAt                 sql.NullTime `db:"completed_at"`
-	ExpiresAt                   time.Time    `db:"expires_at"`
-	UpdatedAt                   sql.NullTime `db:"updated_at"`
-}
-
-// ChannelRow 表示数据库中 commsec 安全通道记录的行结构。
-type ChannelRow struct {
-	ID                 string         `db:"id"`
-	HandshakeID        string         `db:"handshake_id"`
-	BindingType        string         `db:"binding_type"`
-	BindingSessionID   sql.NullString `db:"binding_session_id"`
-	BindingTokenID     sql.NullString `db:"binding_token_id"`
-	BindingFamilyID    sql.NullString `db:"binding_family_id"`
-	SourceOwnerType    string         `db:"source_owner_type"`
-	SourceServiceID    string         `db:"source_service_id"`
-	SourceServiceName  string         `db:"source_service_name"`
-	SourceInstanceID   string         `db:"source_instance_id"`
-	SourceInstanceName string         `db:"source_instance_name"`
-	TargetOwnerType    string         `db:"target_owner_type"`
-	TargetServiceID    string         `db:"target_service_id"`
-	TargetServiceName  string         `db:"target_service_name"`
-	TargetInstanceID   string         `db:"target_instance_id"`
-	TargetInstanceName string         `db:"target_instance_name"`
-	LocalKeyID         string         `db:"local_key_id"`
-	PeerKeyID          string         `db:"peer_key_id"`
-	CipherSuite        string         `db:"cipher_suite"`
-	Status             string         `db:"status"`
-	DerivedKeyRef      string         `db:"derived_key_ref"`
-	Sequence           uint64         `db:"seq_no"`
-	EstablishedAt      time.Time      `db:"established_at"`
-	LastUsedAt         time.Time      `db:"last_used_at"`
-	ExpiresAt          time.Time      `db:"expires_at"`
-	RevokedAt          sql.NullTime   `db:"revoked_at"`
 }

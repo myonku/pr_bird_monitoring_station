@@ -4,23 +4,17 @@ import (
 	"database/sql"
 	"time"
 
+	commonmodel "certification_server/src/models/common"
 	commsec "certification_server/src/models/commsec"
 
 	"github.com/google/uuid"
 )
 
-type EntityType string    // 认证实体类型，表示认证对象的类别，可以是用户、设备或服务等。
 type SessionStatus string // 会话状态，表示会话的当前状态，可以是active/revoked/expired/blocked等。
 type TokenType string     // 令牌类型，表示令牌的类别，可以是access/refresh/service/downstream等。
 type TokenStatus string   // 令牌状态，表示令牌的当前状态，可以是active/rotated/revoked/expired等。
 type TokenStorage string  // 令牌存储方式，表示令牌的存储位置，可以是cache/database/hybrid等。
 type AuthMethod string    // 认证方法，表示使用的认证方式，可以是password/device_secret/service_secret/refresh_token/token_exchange等。
-
-const (
-	EntityUser    EntityType = "user"
-	EntityDevice  EntityType = "device"
-	EntityService EntityType = "service"
-)
 
 const (
 	TokenAccess     TokenType = "access"
@@ -59,7 +53,7 @@ const (
 
 // Principal 代表认证实体的主标识符，包含了实体类型和实体ID等信息。
 type Principal struct {
-	EntityType EntityType
+	EntityType commonmodel.EntityType
 	EntityID   string
 }
 
@@ -73,10 +67,10 @@ func (p Principal) PrincipalID() string {
 
 // IdentityContext 代表认证上下文信息，包含了认证实体的类型、ID、权限等信息。
 type IdentityContext struct {
-	Principal   Principal  // 认证实体的标准主标识
-	EntityType  EntityType // 认证实体的类型：user/device/service
-	EntityID    string     // 认证实体的ID
-	PrincipalID string     // 认证实体的主标识符
+	Principal   Principal              // 认证实体的标准主标识
+	EntityType  commonmodel.EntityType // 认证实体的类型：user/device/service
+	EntityID    string                 // 认证实体的ID
+	PrincipalID string                 // 认证实体的主标识符
 
 	SessionID     uuid.UUID // 会话ID
 	TokenID       uuid.UUID // 令牌ID（jti）
@@ -108,11 +102,11 @@ type IdentityContext struct {
 
 // Session 代表认证服务器中的会话实体，包含了会话的基本信息、状态、权限快照等内容。
 type Session struct {
-	ID          uuid.UUID  // 会话ID
-	Principal   Principal  // 认证实体的标准主标识
-	EntityType  EntityType // 认证实体的类型：user/device/service
-	EntityID    string     // 认证实体的ID
-	PrincipalID string     // 认证实体的主标识符（type:id）
+	ID          uuid.UUID              // 会话ID
+	Principal   Principal              // 认证实体的标准主标识
+	EntityType  commonmodel.EntityType // 认证实体的类型：user/device/service
+	EntityID    string                 // 认证实体的ID
+	PrincipalID string                 // 认证实体的主标识符（type:id）
 
 	Status     SessionStatus // 会话状态：active/revoked/expired/blocked
 	AuthMethod AuthMethod    // 创建该会话时使用的认证方式
@@ -167,13 +161,13 @@ type TokenClaims struct {
 	Subject  string    // 令牌的主题，通常是认证实体的ID
 	Type     TokenType // 令牌类型：access/refresh/service/downstream
 
-	EntityType  EntityType // 认证实体的类型：user/device/service
-	EntityID    string     // 认证实体的ID
-	PrincipalID string     // 认证实体主标识符
-	SessionID   uuid.UUID  // 令牌所属的会话ID
-	TokenID     uuid.UUID  // 令牌的唯一标识符（jti）
-	FamilyID    uuid.UUID  // 所属令牌族ID
-	ParentID    uuid.UUID  // 上游令牌ID，供 token exchange 或 refresh 链追踪使用
+	EntityType  commonmodel.EntityType // 认证实体的类型：user/device/service
+	EntityID    string                 // 认证实体的ID
+	PrincipalID string                 // 认证实体主标识符
+	SessionID   uuid.UUID              // 令牌所属的会话ID
+	TokenID     uuid.UUID              // 令牌的唯一标识符（jti）
+	FamilyID    uuid.UUID              // 所属令牌族ID
+	ParentID    uuid.UUID              // 上游令牌ID，供 token exchange 或 refresh 链追踪使用
 
 	Role       string     // 认证实体的角色（仅用户适用）
 	Scopes     []string   // 认证实体的权限范围

@@ -297,10 +297,10 @@ func (s *CommSecurityService) GetChannel(
 
 	s.mu.RLock()
 	for _, item := range s.channels {
-		if req.SourceServiceID != "" && item.Source.ServiceID != req.SourceServiceID {
+		if req.SourceEntityID != "" && item.Source.EffectiveEntityID() != req.SourceEntityID {
 			continue
 		}
-		if req.TargetServiceID != "" && item.Target.ServiceID != req.TargetServiceID {
+		if req.TargetEntityID != "" && item.Target.EffectiveEntityID() != req.TargetEntityID {
 			continue
 		}
 		if !matchBinding(req.Binding, item.Binding) {

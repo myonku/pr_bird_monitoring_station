@@ -188,6 +188,8 @@
 建议顺序：
 
 1. 加载配置。
+  - 配置分区约束：模块本体标识放 `runtime`；密钥装载信息放 `auth`，且仅保留 `secret_key_dir` 与 `active_key_id`。
+  - 生命周期约束：配置只在启动期读取一次，后续链路按参数快照传递，禁止运行期重复读取 settings。
 2. 初始化 repo 客户端。
 3. 初始化 GrpcClientHub 并注册下游服务 profile。
 4. 执行 ReadinessUsecase（必要时向认证中心完成 bootstrap）。
@@ -242,4 +244,4 @@
 
 - 跨模块认证链路与启动链路见根目录 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
 - 全局统一约定见根目录 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
-- 边缘端认证/上传双通道接口契约见 `edge_server/EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
+- 边缘端认证/上传双通道接口契约文档待重建（当前暂时下线）。

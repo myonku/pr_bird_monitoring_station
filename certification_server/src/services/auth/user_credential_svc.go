@@ -8,6 +8,7 @@ import (
 
 	interfaces "certification_server/src/interfaces/auth"
 	authmodel "certification_server/src/models/auth"
+	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"
 
 	"github.com/google/uuid"
@@ -118,7 +119,7 @@ func (s *UserCredentialAuthService) AuthenticateByPassword(
 	}
 
 	principal := authmodel.Principal{
-		EntityType: authmodel.EntityUser,
+		EntityType: commonmodel.EntityUser,
 		EntityID:   credential.UserID,
 	}
 

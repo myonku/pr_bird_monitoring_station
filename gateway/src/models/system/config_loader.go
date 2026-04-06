@@ -60,8 +60,16 @@ func parseProjectConfigFromTOML(content string, cfg *ProjectConfig) error {
 			if err := assignInternalAssertionField(cfg, key, value, lineNo); err != nil {
 				return err
 			}
+		case "runtime":
+			if err := assignRuntimeField(cfg, key, value, lineNo); err != nil {
+				return err
+			}
+		case "auth":
+			if err := assignAuthField(cfg, key, value, lineNo); err != nil {
+				return err
+			}
 		case "secret_key":
-			if err := assignSecretKeyField(cfg, key, value, lineNo); err != nil {
+			if err := assignLegacySecretKeyField(cfg, key, value, lineNo); err != nil {
 				return err
 			}
 		}
@@ -114,102 +122,124 @@ func assignInternalAssertionField(cfg *ProjectConfig, key, value string, lineNo 
 	return nil
 }
 
-func assignSecretKeyField(cfg *ProjectConfig, key, value string, lineNo int) error {
-	if cfg.SecretKey == nil {
-		cfg.SecretKey = &SecretKeyConfig{}
+func assignRuntimeField(cfg *ProjectConfig, key, value string, lineNo int) error {
+	if cfg.Runtime == nil {
+		cfg.Runtime = &RuntimeConfig{}
 	}
 
 	switch key {
-	case "enabled":
-		parsed, err := parseTOMLBool(value)
+	case "entity_type":
+		parsed, err := parseTOMLString(value)
 		if err != nil {
-			return fmt.Errorf("invalid [secret_key].enabled at line %d: %w", lineNo, err)
+			return fmt.Errorf("invalid [runtime].entity_type at line %d: %w", lineNo, err)
 		}
-		cfg.SecretKey.Enabled = parsed
-	case "secret_dir":
+		cfg.Runtime.EntityType = parsed
+	case "entity_id":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [runtime].entity_id at line %d: %w", lineNo, err)
+		}
+		cfg.Runtime.EntityID = parsed
+	case "entity_name":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [runtime].entity_name at line %d: %w", lineNo, err)
+		}
+		cfg.Runtime.EntityName = parsed
+	case "instance_id":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [runtime].instance_id at line %d: %w", lineNo, err)
+		}
+		cfg.Runtime.InstanceID = parsed
+	case "instance_name":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [runtime].instance_name at line %d: %w", lineNo, err)
+		}
+		cfg.Runtime.InstanceName = parsed
+	}
+
+	return nil
+}
+
+func assignAuthField(cfg *ProjectConfig, key, value string, lineNo int) error {
+	if cfg.Auth == nil {
+		cfg.Auth = &AuthConfig{}
+	}
+
+	switch key {
+	case "secret_key_dir", "secret_dir":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [auth].secret_key_dir at line %d: %w", lineNo, err)
+		}
+		cfg.Auth.SecretKeyDir = parsed
+	case "active_key_id":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [auth].active_key_id at line %d: %w", lineNo, err)
+		}
+		cfg.Auth.ActiveKeyID = parsed
+	}
+
+	return nil
+}
+
+func assignLegacySecretKeyField(cfg *ProjectConfig, key, value string, lineNo int) error {
+	if cfg.Runtime == nil {
+		cfg.Runtime = &RuntimeConfig{}
+	}
+	if cfg.Auth == nil {
+		cfg.Auth = &AuthConfig{}
+	}
+
+	switch key {
+	case "secret_dir", "secret_key_dir":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].secret_dir at line %d: %w", lineNo, err)
 		}
-		cfg.SecretKey.SecretDir = parsed
+		cfg.Auth.SecretKeyDir = parsed
 	case "active_key_id":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].active_key_id at line %d: %w", lineNo, err)
 		}
-		cfg.SecretKey.ActiveKeyID = parsed
-	case "owner_type":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].owner_type at line %d: %w", lineNo, err)
-		}
-		cfg.SecretKey.OwnerType = parsed
+		cfg.Auth.ActiveKeyID = parsed
 	case "entity_type":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].entity_type at line %d: %w", lineNo, err)
 		}
-		cfg.SecretKey.EntityType = parsed
-	case "entity_id":
+		cfg.Runtime.EntityType = parsed
+	case "entity_id", "service_id":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].entity_id at line %d: %w", lineNo, err)
 		}
-		cfg.SecretKey.EntityID = parsed
-	case "entity_name":
+		cfg.Runtime.EntityID = parsed
+	case "entity_name", "service_name":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].entity_name at line %d: %w", lineNo, err)
 		}
-		cfg.SecretKey.EntityName = parsed
-	case "service_id":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].service_id at line %d: %w", lineNo, err)
-		}
-		cfg.SecretKey.ServiceID = parsed
-	case "service_name":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].service_name at line %d: %w", lineNo, err)
-		}
-		cfg.SecretKey.ServiceName = parsed
+		cfg.Runtime.EntityName = parsed
 	case "instance_id":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].instance_id at line %d: %w", lineNo, err)
 		}
-		cfg.SecretKey.InstanceID = parsed
+		cfg.Runtime.InstanceID = parsed
 	case "instance_name":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].instance_name at line %d: %w", lineNo, err)
 		}
-		cfg.SecretKey.InstanceName = parsed
-	case "key_exchange_algorithm":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].key_exchange_algorithm at line %d: %w", lineNo, err)
-		}
-		cfg.SecretKey.KeyExchangeAlgorithm = parsed
-	case "signature_algorithm":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].signature_algorithm at line %d: %w", lineNo, err)
-		}
-		cfg.SecretKey.SignatureAlgorithm = parsed
-	case "public_key_ref":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].public_key_ref at line %d: %w", lineNo, err)
-		}
-		cfg.SecretKey.PublicKeyRef = parsed
-	case "private_key_ref":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].private_key_ref at line %d: %w", lineNo, err)
-		}
-		cfg.SecretKey.PrivateKeyRef = parsed
+		cfg.Runtime.InstanceName = parsed
+	case "enabled", "public_key_ref", "private_key_ref":
+		// legacy 兼容字段：新结构下不再使用。
+		return nil
 	}
 
 	return nil

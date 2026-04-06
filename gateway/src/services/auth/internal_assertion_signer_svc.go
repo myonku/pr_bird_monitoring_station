@@ -74,12 +74,14 @@ func (s *DefaultInternalAssertionSigner) BuildAssertion(
 		return "", &modelsystem.ErrKeyIDRequired
 	}
 
-	alg := strings.TrimSpace(string(privateRef.SignatureAlgorithm))
-	if alg == "" {
-		alg = strings.TrimSpace(string(s.DefaultSignatureAlgorithm))
-	}
+	alg := strings.TrimSpace(string(s.DefaultSignatureAlgorithm))
 	if alg == "" {
 		alg = string(commsecmodel.SignatureEd25519)
+	}
+	if publicKey, pubErr := s.SecretKeySvc.GetPublicKey(ctx); pubErr == nil {
+		if detected, detectErr := s.Crypto.DetectSignatureAlgorithmFromPublicPEM([]byte(publicKey.PublicKeyPEM)); detectErr == nil {
+			alg = string(detected)
+		}
 	}
 
 	now := time.Now().Unix()

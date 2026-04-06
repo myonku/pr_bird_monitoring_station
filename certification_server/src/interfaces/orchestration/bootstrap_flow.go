@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	authmodel "certification_server/src/models/auth"
+	commonmodel "certification_server/src/models/common"
 	commsecmodel "certification_server/src/models/commsec"
 	"context"
 )
@@ -40,5 +41,5 @@ type IBootstrapOrchestrator interface {
 	// FinishFlow 执行 bootstrap 完成编排：challenge 验签 + session/token + 可选 downstream grant。
 	FinishFlow(ctx context.Context, req *BootstrapFinishFlowRequest) (*BootstrapFlowResult, error)
 	// GetStage 返回指定实体当前 bootstrap 阶段。
-	GetStage(ctx context.Context, entityType authmodel.EntityType, entityID string) (authmodel.BootstrapStage, error)
+	GetStage(ctx context.Context, entityType commonmodel.EntityType, entityID string) (authmodel.BootstrapStage, error)
 }

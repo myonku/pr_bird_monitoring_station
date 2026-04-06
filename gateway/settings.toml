@@ -5,17 +5,12 @@ ttl_seconds = 10
 issuer = ""
 signature_algorithm = "ed25519"
 
-[secret_key]
-enabled = false
-secret_dir = "secret_keys"
-active_key_id = "gateway-local-key"
-owner_type = "gateway"
+[runtime]
 entity_type = "service"
 entity_id = "gateway"
 entity_name = "gateway"
-key_exchange_algorithm = "ecdhe_p256"
-signature_algorithm = "ed25519"
-# Relative to secret_dir when not absolute.
-public_key_ref = "public.pem"
-private_key_ref = "private.pem"
+
+[auth]
+secret_key_dir = "secret_keys"
+active_key_id = "gateway-local-key"
 

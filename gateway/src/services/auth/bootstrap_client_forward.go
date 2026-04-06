@@ -13,14 +13,14 @@ var _ authif.IBootstrapClient = (*ForwardBootstrapClient)(nil)
 
 // ForwardBootstrapClient 只负责把 bootstrap 请求转发给认证中心。
 type ForwardBootstrapClient struct {
-	Authority authif.IAuthGatewayAuthorityClient
+	Authority authif.IAuthAuthorityClient
 
 	EntityType authmodel.EntityType
 	EntityID   string
 }
 
 func NewForwardBootstrapClient(
-	authority authif.IAuthGatewayAuthorityClient,
+	authority authif.IAuthAuthorityClient,
 	entityType authmodel.EntityType,
 	entityID string,
 ) *ForwardBootstrapClient {

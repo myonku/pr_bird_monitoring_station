@@ -27,7 +27,6 @@ var _ interfaces.ICommSecurityService = (*CommSecurityService)(nil)
 type CommSecurityService struct {
 	mu sync.RWMutex
 
-	mysql *repo.MySQLClient
 	redis *repo.RedisClient
 
 	handshakes map[uuid.UUID]*commsecmodel.ECDHEHandshakeRecord
@@ -39,7 +38,7 @@ type CommSecurityService struct {
 
 // NewCommSecurityService 创建新的 CommSecurityService 实例。
 func NewCommSecurityService(
-	mysql *repo.MySQLClient, redis *repo.RedisClient,
+	redis *repo.RedisClient,
 	secretKeySvc interfaces.ISecretKeyService, crypto *utils.CryptoUtils,
 ) *CommSecurityService {
 
@@ -48,7 +47,6 @@ func NewCommSecurityService(
 	}
 
 	return &CommSecurityService{
-		mysql:        mysql,
 		redis:        redis,
 		handshakes:   make(map[uuid.UUID]*commsecmodel.ECDHEHandshakeRecord),
 		channels:     make(map[uuid.UUID]*commsecmodel.SecureChannelSession),
@@ -73,32 +71,23 @@ func (s *CommSecurityService) InitHandshake(
 	req.Initiator = req.Initiator.Normalized()
 	req.Responder = req.Responder.Normalized()
 
-	var initiatorKey *commsecmodel.ServicePublicKeyRecord
 	if s.secretKeySvc != nil {
-		if req.InitiatorKeyID != "" {
-			lookup, err := s.secretKeySvc.GetPublicKeyByKeyID(ctx, req.InitiatorKeyID)
-			if err != nil {
-				return nil, err
-			}
-			if lookup.Found {
-				initiatorKey = &lookup.Key
-			}
+		lookup, err := s.secretKeySvc.LookupPublicKey(ctx, &commsecmodel.PublicKeyLookupRequest{
+			KeyID:         req.InitiatorKeyID,
+			EntityID:      initiatorEntityID,
+			RequireActive: true,
+		})
+		if err != nil {
+			return nil, err
 		}
-		if initiatorKey == nil {
-			lookup, err := s.secretKeySvc.GetPublicKeyByEntityID(ctx, initiatorEntityID)
-			if err != nil {
-				return nil, err
-			}
-			if !lookup.Found {
-				return nil, &modelsystem.ErrInitiatorPublicKeyNotFound
-			}
-			initiatorKey = &lookup.Key
-			req.InitiatorKeyID = lookup.Key.KeyID
+		if !lookup.Found {
+			return nil, &modelsystem.ErrInitiatorPublicKeyNotFound
 		}
+		req.InitiatorKeyID = lookup.Key.KeyID
 	}
 
-	selectedKeyExchange := selectKeyExchange(req.SupportedKeyExchanges, initiatorKey)
-	selectedSig := selectSignature(req.SupportedSignatures, initiatorKey)
+	selectedKeyExchange := selectKeyExchange(req.SupportedKeyExchanges)
+	selectedSig := selectSignature(req.SupportedSignatures)
 	selectedCipher := selectCipher(req.SupportedCipherSuites)
 
 	ephemeral, err := s.crypto.DeriveRandomSymmetricKey(utils.KeySizeAES128)
@@ -147,7 +136,6 @@ func (s *CommSecurityService) InitHandshake(
 	s.handshakes[handshake.ID] = handshake
 	s.mu.Unlock()
 
-	_ = s.persistHandshake(ctx, handshake)
 	_ = s.cacheHandshake(ctx, handshake)
 
 	return &commsecmodel.ECDHEHandshakeInitResult{
@@ -188,12 +176,11 @@ func (s *CommSecurityService) CompleteHandshake(
 	handshake.ResponderNonce = req.ResponderNonce
 
 	if s.secretKeySvc != nil {
-		responderKey, keyErr := s.selectResponderPublicKey(ctx, handshake.Responder, handshake.SignatureAlgorithm)
+		responderKey, keyErr := s.selectResponderPublicKey(ctx, handshake.Responder)
 		if keyErr != nil {
 			handshake.Status = commsecmodel.HandshakeFailed
 			handshake.FailureReason = keyErr.Error()
 			s.mu.Unlock()
-			_ = s.persistHandshake(ctx, handshake)
 			_ = s.cacheHandshake(ctx, handshake)
 			return nil, keyErr
 		}
@@ -204,7 +191,6 @@ func (s *CommSecurityService) CompleteHandshake(
 			handshake.Status = commsecmodel.HandshakeFailed
 			handshake.FailureReason = "responder signature invalid"
 			s.mu.Unlock()
-			_ = s.persistHandshake(ctx, handshake)
 			_ = s.cacheHandshake(ctx, handshake)
 			return nil, fmt.Errorf("responder signature verification failed: %w", verifyErr)
 		}
@@ -244,9 +230,7 @@ func (s *CommSecurityService) CompleteHandshake(
 	s.channels[channel.ID] = channel
 	s.mu.Unlock()
 
-	_ = s.persistHandshake(ctx, handshake)
 	_ = s.cacheHandshake(ctx, handshake)
-	_ = s.persistChannel(ctx, channel)
 	_ = s.cacheChannel(ctx, channel)
 
 	return &commsecmodel.ECDHEHandshakeCompleteResult{
@@ -290,7 +274,6 @@ func (s *CommSecurityService) UpsertChannel(
 	s.channels[channel.ID] = channel
 	s.mu.Unlock()
 
-	_ = s.persistChannel(ctx, channel)
 	_ = s.cacheChannel(ctx, channel)
 
 	return cloneChannel(channel), nil
@@ -328,10 +311,10 @@ func (s *CommSecurityService) GetChannel(
 		if !matchBinding(req.Binding, channel.Binding) {
 			continue
 		}
-		if req.SourceServiceID != "" && channel.Source.ServiceID != req.SourceServiceID {
+		if req.SourceEntityID != "" && channel.Source.EffectiveEntityID() != req.SourceEntityID {
 			continue
 		}
-		if req.TargetServiceID != "" && channel.Target.ServiceID != req.TargetServiceID {
+		if req.TargetEntityID != "" && channel.Target.EffectiveEntityID() != req.TargetEntityID {
 			continue
 		}
 		s.mu.RUnlock()
@@ -357,7 +340,6 @@ func (s *CommSecurityService) RevokeChannel(
 		if channel != nil {
 			channel.Status = commsecmodel.SecureChannelRevoked
 			channel.RevokedAt = time.Now()
-			_ = s.persistChannel(ctx, channel)
 			_ = s.cacheChannel(ctx, channel)
 		}
 		s.mu.Unlock()
@@ -370,7 +352,6 @@ func (s *CommSecurityService) RevokeChannel(
 		}
 		channel.Status = commsecmodel.SecureChannelRevoked
 		channel.RevokedAt = time.Now()
-		_ = s.persistChannel(ctx, channel)
 		_ = s.cacheChannel(ctx, channel)
 	}
 	s.mu.Unlock()
@@ -419,7 +400,6 @@ func (s *CommSecurityService) EncryptByChannel(
 	}
 	s.mu.Unlock()
 
-	_ = s.persistChannel(ctx, channel)
 	_ = s.cacheChannel(ctx, channel)
 
 	meta := commsecmodel.EncryptedMessageMeta{
@@ -480,19 +460,8 @@ func (s *CommSecurityService) DecryptByChannel(
 	}
 	s.mu.Unlock()
 
-	_ = s.persistChannel(ctx, channel)
 	_ = s.cacheChannel(ctx, channel)
 	return plainText, nil
-}
-
-func (s *CommSecurityService) persistHandshake(
-	ctx context.Context, handshake *commsecmodel.ECDHEHandshakeRecord) error {
-
-	if handshake == nil {
-		return nil
-	}
-	_ = ctx
-	return nil
 }
 
 func (s *CommSecurityService) cacheHandshake(
@@ -510,16 +479,6 @@ func (s *CommSecurityService) cacheHandshake(
 		ttl = 30 * time.Second
 	}
 	return s.redis.Set(ctx, "auth:commsec:handshake:id:"+handshake.ID.String(), payload, ttl)
-}
-
-func (s *CommSecurityService) persistChannel(
-	ctx context.Context, channel *commsecmodel.SecureChannelSession) error {
-
-	if channel == nil {
-		return nil
-	}
-	_ = ctx
-	return nil
 }
 
 func (s *CommSecurityService) cacheChannel(ctx context.Context, channel *commsecmodel.SecureChannelSession) error {
@@ -555,33 +514,6 @@ func (s *CommSecurityService) loadChannelFromCache(ctx context.Context, id uuid.
 	return &channel, nil
 }
 
-func (s *CommSecurityService) loadChannelFromDB(
-	ctx context.Context, id uuid.UUID) (*commsecmodel.SecureChannelSession, error) {
-	_ = ctx
-	_ = id
-	return nil, nil
-}
-
-func (s *CommSecurityService) loadChannelByQueryFromDB(
-	ctx context.Context, req *commsecmodel.SecureChannelQuery) (*commsecmodel.SecureChannelSession, error) {
-	_ = ctx
-	_ = req
-	return nil, nil
-}
-
-func (s *CommSecurityService) revokeChannelInDB(ctx context.Context, id uuid.UUID) error {
-	_ = ctx
-	_ = id
-	return nil
-}
-
-func (s *CommSecurityService) revokeChannelByBindingInDB(
-	ctx context.Context, binding commsecmodel.SecureChannelBinding) error {
-	_ = ctx
-	_ = binding
-	return nil
-}
-
 func (s *CommSecurityService) trackChannel(channel *commsecmodel.SecureChannelSession) {
 	if channel == nil {
 		return
@@ -591,55 +523,7 @@ func (s *CommSecurityService) trackChannel(channel *commsecmodel.SecureChannelSe
 	s.mu.Unlock()
 }
 
-func mapChannelRow(row commsecmodel.ChannelRow) (*commsecmodel.SecureChannelSession, error) {
-	id, err := uuid.Parse(row.ID)
-	if err != nil {
-		return nil, err
-	}
-	handshakeID, _ := uuid.Parse(row.HandshakeID)
-	sessionID, _ := uuid.Parse(row.BindingSessionID.String)
-	tokenID, _ := uuid.Parse(row.BindingTokenID.String)
-	familyID, _ := uuid.Parse(row.BindingFamilyID.String)
-	return &commsecmodel.SecureChannelSession{
-		ID:          id,
-		HandshakeID: handshakeID,
-		Binding: commsecmodel.SecureChannelBinding{
-			BindingType:   commsecmodel.ChannelBindingType(row.BindingType),
-			SessionID:     sessionID,
-			TokenID:       tokenID,
-			TokenFamilyID: familyID,
-		},
-		Source: commsecmodel.ServiceKeyOwner{
-			OwnerType:    commsecmodel.CommKeyOwnerType(row.SourceOwnerType),
-			ServiceID:    row.SourceServiceID,
-			ServiceName:  row.SourceServiceName,
-			InstanceID:   row.SourceInstanceID,
-			InstanceName: row.SourceInstanceName,
-		},
-		Target: commsecmodel.ServiceKeyOwner{
-			OwnerType:    commsecmodel.CommKeyOwnerType(row.TargetOwnerType),
-			ServiceID:    row.TargetServiceID,
-			ServiceName:  row.TargetServiceName,
-			InstanceID:   row.TargetInstanceID,
-			InstanceName: row.TargetInstanceName,
-		},
-		LocalKeyID:    row.LocalKeyID,
-		PeerKeyID:     row.PeerKeyID,
-		CipherSuite:   commsecmodel.CipherSuite(row.CipherSuite),
-		Status:        commsecmodel.SecureChannelStatus(row.Status),
-		DerivedKeyRef: row.DerivedKeyRef,
-		Sequence:      row.Sequence,
-		EstablishedAt: row.EstablishedAt,
-		LastUsedAt:    row.LastUsedAt,
-		ExpiresAt:     row.ExpiresAt,
-		RevokedAt:     row.RevokedAt.Time,
-	}, nil
-}
-
-func selectKeyExchange(supported []commsecmodel.KeyExchangeAlgorithm, key *commsecmodel.ServicePublicKeyRecord) commsecmodel.KeyExchangeAlgorithm {
-	if key != nil && key.KeyExchangeAlgorithm != "" && containsKeyExchange(supported, key.KeyExchangeAlgorithm) {
-		return key.KeyExchangeAlgorithm
-	}
+func selectKeyExchange(supported []commsecmodel.KeyExchangeAlgorithm) commsecmodel.KeyExchangeAlgorithm {
 	if containsKeyExchange(supported, commsecmodel.KeyExchangeECDHEX25519) {
 		return commsecmodel.KeyExchangeECDHEX25519
 	}
@@ -655,10 +539,7 @@ func selectKeyExchange(supported []commsecmodel.KeyExchangeAlgorithm, key *comms
 	return commsecmodel.KeyExchangeECDHEX25519
 }
 
-func selectSignature(supported []commsecmodel.SignatureAlgorithm, key *commsecmodel.ServicePublicKeyRecord) commsecmodel.SignatureAlgorithm {
-	if key != nil && key.SignatureAlgorithm != "" && containsSignature(supported, key.SignatureAlgorithm) {
-		return key.SignatureAlgorithm
-	}
+func selectSignature(supported []commsecmodel.SignatureAlgorithm) commsecmodel.SignatureAlgorithm {
 	if containsSignature(supported, commsecmodel.SignatureEd25519) {
 		return commsecmodel.SignatureEd25519
 	}
@@ -720,25 +601,21 @@ func containsCipher(set []commsecmodel.CipherSuite, item commsecmodel.CipherSuit
 func (s *CommSecurityService) selectResponderPublicKey(
 	ctx context.Context,
 	owner commsecmodel.ServiceKeyOwner,
-	sig commsecmodel.SignatureAlgorithm,
 ) (*commsecmodel.ServicePublicKeyRecord, error) {
 	if s.secretKeySvc == nil {
 		return nil, &modelsystem.ErrSecretKeyServiceNotConfigured
 	}
-	keys, err := s.secretKeySvc.GetPublicKeysByOwner(ctx, owner)
+	lookup, err := s.secretKeySvc.LookupPublicKey(ctx, &commsecmodel.PublicKeyLookupRequest{
+		Owner:         &owner,
+		RequireActive: true,
+	})
 	if err != nil {
 		return nil, err
 	}
-	for _, key := range keys {
-		if key.Status != commsecmodel.CommKeyActive {
-			continue
-		}
-		if key.SignatureAlgorithm != "" && key.SignatureAlgorithm != sig {
-			continue
-		}
-		return &key, nil
+	if !lookup.Found {
+		return nil, &modelsystem.ErrNoResponderKeyMatchedSignature
 	}
-	return nil, &modelsystem.ErrNoResponderKeyMatchedSignature
+	return &lookup.Key, nil
 }
 
 func buildHandshakeSignPayload(h *commsecmodel.ECDHEHandshakeRecord) []byte {
@@ -815,18 +692,4 @@ func cloneChannel(c *commsecmodel.SecureChannelSession) *commsecmodel.SecureChan
 	}
 	out := *c
 	return &out
-}
-
-func nullableUUID(id uuid.UUID) any {
-	if id == uuid.Nil {
-		return nil
-	}
-	return id.String()
-}
-
-func nullableTime(t time.Time) any {
-	if t.IsZero() {
-		return nil
-	}
-	return t
 }

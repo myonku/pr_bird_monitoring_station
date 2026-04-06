@@ -3,6 +3,7 @@ package auth
 import (
 	"time"
 
+	commonmodel "certification_server/src/models/common"
 	commsec "certification_server/src/models/commsec"
 
 	"github.com/google/uuid"
@@ -19,7 +20,7 @@ const (
 
 // ChallengeRequest 表示实体请求认证中心签发一次性挑战的参数。
 type ChallengeRequest struct {
-	EntityType EntityType
+	EntityType commonmodel.EntityType
 	EntityID   string
 	KeyID      string
 
@@ -43,7 +44,7 @@ type ChallengePayload struct {
 	Issuer   string
 	Audience string
 
-	EntityType EntityType
+	EntityType commonmodel.EntityType
 	EntityID   string
 	KeyID      string
 

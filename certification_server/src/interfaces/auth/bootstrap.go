@@ -2,6 +2,7 @@ package auth
 
 import (
 	authmodel "certification_server/src/models/auth"
+	commonmodel "certification_server/src/models/common"
 	"context"
 )
 
@@ -12,5 +13,5 @@ type IBootstrapService interface {
 	// AuthenticateBootstrap 根据请求对象验证挑战信息，返回认证结果。
 	AuthenticateBootstrap(ctx context.Context, req *authmodel.BootstrapAuthRequest) (*authmodel.BootstrapAuthResult, error)
 	// GetBootstrapStage 返回实体 bootstrap 当前阶段。
-	GetBootstrapStage(ctx context.Context, entityType authmodel.EntityType, entityID string) (authmodel.BootstrapStage, error)
+	GetBootstrapStage(ctx context.Context, entityType commonmodel.EntityType, entityID string) (authmodel.BootstrapStage, error)
 }

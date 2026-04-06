@@ -124,7 +124,12 @@ class EdgeEventHttpUploadCoordinator(IEdgeEventUploadCoordinator):
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
         try:
-            return self._upload_once(data, headers=self._build_headers())
+            headers = self._build_headers()
+        except Exception:
+            return False
+
+        try:
+            return self._upload_once(data, headers=headers)
         except HTTPError as err:
             if self.auth_coordinator is None or err.code not in (401, 403):
                 return False
@@ -136,8 +141,9 @@ class EdgeEventHttpUploadCoordinator(IEdgeEventUploadCoordinator):
 
             try:
                 self.auth_coordinator.on_unauthorized(err.code, body_text)
-                return self._upload_once(data, headers=self._build_headers())
-            except (HTTPError, URLError, TimeoutError):
+                retry_headers = self._build_headers()
+                return self._upload_once(data, headers=retry_headers)
+            except (HTTPError, URLError, TimeoutError, ValueError):
                 return False
         except (URLError, TimeoutError):
             return False

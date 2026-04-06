@@ -9,6 +9,7 @@ import (
 
 	interfaces "certification_server/src/interfaces/auth"
 	authmodel "certification_server/src/models/auth"
+	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
 
@@ -369,8 +370,8 @@ func mapSessionRow(row sessionRow) (*authmodel.Session, error) {
 	_ = json.Unmarshal([]byte(row.ScopeSnapshot), &scopes)
 	session := &authmodel.Session{
 		ID:             id,
-		Principal:      authmodel.Principal{EntityType: authmodel.EntityType(row.EntityType), EntityID: row.EntityID},
-		EntityType:     authmodel.EntityType(row.EntityType),
+		Principal:      authmodel.Principal{EntityType: commonmodel.EntityType(row.EntityType), EntityID: row.EntityID},
+		EntityType:     commonmodel.EntityType(row.EntityType),
 		EntityID:       row.EntityID,
 		PrincipalID:    row.PrincipalID,
 		Status:         authmodel.SessionStatus(row.Status),

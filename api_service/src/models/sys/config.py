@@ -16,65 +16,77 @@ class ProjectConfig(Struct):
     mongo: MongoConfig | None = None
     etcd: EtcdConfig | None = None
     internal_assertion: InternalAssertionConfig | None = None
-    secret_key: SecretKeyConfig | None = None
+    runtime: RuntimeConfig | None = None
+    auth: AuthConfig | None = None
 
+    def build_secret_key_startup_params(
+        self,
+        default_entity_id: str = "",
+    ) -> SecretKeyStartupParams:
+        runtime_cfg = (
+            self.runtime.normalized(default_entity_id)
+            if self.runtime is not None
+            else RuntimeConfig().normalized(default_entity_id)
+        )
+        auth_cfg = self.auth.normalized() if self.auth is not None else AuthConfig().normalized()
 
-class SecretKeyConfig(Struct, kw_only=True):
-    """本地密钥装载配置。"""
+        return SecretKeyStartupParams(
+            secret_key_dir=auth_cfg.secret_key_dir,
+            active_key_id=auth_cfg.active_key_id,
+            entity_type=runtime_cfg.entity_type,
+            entity_id=runtime_cfg.entity_id,
+            entity_name=runtime_cfg.entity_name,
+            instance_id=runtime_cfg.instance_id,
+            instance_name=runtime_cfg.instance_name,
+        )
 
-    enabled: bool = False
-    secret_dir: str = "secret_keys"
-    active_key_id: str = ""
+class RuntimeConfig(Struct, kw_only=True):
+    """服务本体运行时标识配置。"""
 
-    owner_type: str = "service"
     entity_type: str = "service"
     entity_id: str = ""
     entity_name: str = ""
-    service_id: str = ""
-    service_name: str = ""
     instance_id: str = ""
     instance_name: str = ""
 
-    key_exchange_algorithm: str = "ecdhe_p256"
-    signature_algorithm: str = ""
-
-    public_key_ref: str = ""
-    private_key_ref: str = ""
-
-    def normalized(self, default_entity_id: str = "") -> "SecretKeyConfig":
-        secret_dir = self.secret_dir.strip() or "secret_keys"
-        active_key_id = self.active_key_id.strip()
-
-        owner_type = self.owner_type.strip().lower() or "service"
+    def normalized(self, default_entity_id: str = "") -> "RuntimeConfig":
         entity_type = self.entity_type.strip().lower() or "service"
         entity_id = self.entity_id.strip() or default_entity_id
         entity_name = self.entity_name.strip() or entity_id
 
-        service_id = self.service_id.strip() or entity_id
-        service_name = self.service_name.strip() or entity_name
-
-        key_exchange_algorithm = (
-            self.key_exchange_algorithm.strip().lower() or "ecdhe_p256"
-        )
-        signature_algorithm = self.signature_algorithm.strip().lower()
-
-        return SecretKeyConfig(
-            enabled=self.enabled,
-            secret_dir=secret_dir,
-            active_key_id=active_key_id,
-            owner_type=owner_type,
+        return RuntimeConfig(
             entity_type=entity_type,
             entity_id=entity_id,
             entity_name=entity_name,
-            service_id=service_id,
-            service_name=service_name,
             instance_id=self.instance_id.strip(),
             instance_name=self.instance_name.strip(),
-            key_exchange_algorithm=key_exchange_algorithm,
-            signature_algorithm=signature_algorithm,
-            public_key_ref=self.public_key_ref.strip(),
-            private_key_ref=self.private_key_ref.strip(),
         )
+
+
+class AuthConfig(Struct, kw_only=True):
+    """认证相关配置。"""
+
+    secret_key_dir: str = "secret_keys"
+    active_key_id: str = ""
+
+    def normalized(self) -> "AuthConfig":
+        return AuthConfig(
+            secret_key_dir=self.secret_key_dir.strip() or "secret_keys",
+            active_key_id=self.active_key_id.strip(),
+        )
+
+
+class SecretKeyStartupParams(Struct, kw_only=True):
+    """启动期传递给密钥服务的参数快照。"""
+
+    secret_key_dir: str = "secret_keys"
+    active_key_id: str = ""
+
+    entity_type: str = "service"
+    entity_id: str = ""
+    entity_name: str = ""
+    instance_id: str = ""
+    instance_name: str = ""
 
 
 class InternalAssertionConfig(Struct, kw_only=True):

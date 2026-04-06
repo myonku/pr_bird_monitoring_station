@@ -54,25 +54,25 @@ CREATE TABLE IF NOT EXISTS auth_token_claims (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS auth_entity_public_keys (
-  key_id VARCHAR(128) NOT NULL,
-  owner_type VARCHAR(32) NOT NULL,
+  key_id CHAR(36) NOT NULL,
   entity_type VARCHAR(32) NOT NULL,
-  entity_id VARCHAR(128) NOT NULL,
+  entity_id CHAR(36) NOT NULL,
   entity_name VARCHAR(128) NOT NULL,
-  instance_id VARCHAR(128) NULL,
+  instance_id CHAR(36) NULL,
   instance_name VARCHAR(128) NULL,
-  key_exchange_algorithm VARCHAR(64) NOT NULL,
-  signature_algorithm VARCHAR(64) NOT NULL,
   public_key_pem TEXT NOT NULL,
   fingerprint VARCHAR(256) NOT NULL,
   status VARCHAR(32) NOT NULL,
+  instance_scope VARCHAR(36) AS (IFNULL(instance_id, '')) STORED,
+  active_guard TINYINT AS (CASE WHEN status = 'active' THEN 1 ELSE NULL END) STORED,
   created_at DATETIME(3) NOT NULL,
   activated_at DATETIME(3) NOT NULL,
   expires_at DATETIME(3) NOT NULL,
   revoked_at DATETIME(3) NULL,
   PRIMARY KEY (key_id),
+  UNIQUE KEY uk_auth_pubkey_single_active (entity_type, entity_id, instance_scope, active_guard),
   KEY idx_auth_pubkey_entity (entity_type, entity_id, instance_id),
-  KEY idx_auth_pubkey_owner (owner_type, entity_id, instance_id),
-  KEY idx_auth_pubkey_status_exp (status, expires_at)
+  KEY idx_auth_pubkey_status_exp (status, expires_at),
+  KEY idx_auth_pubkey_entity_active (entity_type, entity_id, status, activated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

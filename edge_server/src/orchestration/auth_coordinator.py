@@ -8,7 +8,7 @@ from src.iface.auth_interface import (
     IEdgeGatewayAuthClient,
     ISecretKeyManager,
 )
-from src.models.auth.auth import EdgeSession, EdgeToken, EdgeTokenBundle
+from src.models.auth.auth import EdgeSession, EdgeToken, EdgeTokenBundle, SignatureAlgorithm
 from src.models.auth.auth_contract import (
     EdgeAuthHeaders,
     EdgeAuthState,
@@ -182,23 +182,40 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
 
         state = self._gateway_auth_client.submit_bootstrap_proof(proof)
 
-        normalized = EdgeAuthState(
+        normalized = self._normalize_bootstrap_state(state)
+        self._state_store.save(normalized)
+        return normalized
+
+    @staticmethod
+    def _normalize_bootstrap_state(state: EdgeAuthState) -> EdgeAuthState:
+        if state.stage != "ready":
+            reason = state.failure_reason or f"unexpected bootstrap stage: {state.stage}"
+            raise ValueError(reason)
+        if state.session is None:
+            raise ValueError("bootstrap response missing session")
+        if state.tokens is None:
+            raise ValueError("bootstrap response missing token bundle")
+        if state.tokens.access_token is None:
+            raise ValueError("bootstrap response missing access token")
+        if state.tokens.refresh_token is None:
+            raise ValueError("bootstrap response missing refresh token")
+
+        return EdgeAuthState(
             stage="ready",
             session=state.session,
             tokens=state.tokens,
             failure_reason="",
         )
-        self._state_store.save(normalized)
-        return normalized
 
     def _build_bootstrap_signature(
         self,
         *,
         challenge,
-        trust_material,
         challenge_key_id: str,
         entity_type: str,
         entity_id: str,
+        signature_algorithm: SignatureAlgorithm,
+        private_key_pem: bytes,
     ) -> str:
         payload = CryptoUtils.build_bootstrap_signature_payload(
             challenge,
@@ -207,9 +224,9 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
             entity_id=entity_id,
         )
         return CryptoUtils.sign_by_algorithm(
-            trust_material.signature_algorithm,
+            signature_algorithm,
             payload,
-            self._key_manager.get_private_key_pem(),
+            private_key_pem,
         )
 
     def _build_bootstrap_proof(
@@ -229,19 +246,24 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
 
         entity_type = challenge.entity_type or "device"
         entity_id = challenge.entity_id or trust_material.device_id
+        private_key_pem = self._key_manager.get_private_key_pem()
+        signature_algorithm = CryptoUtils.detect_signature_algorithm_from_private_key(
+            private_key_pem
+        )
         signature = self._build_bootstrap_signature(
             challenge=challenge,
-            trust_material=trust_material,
             challenge_key_id=challenge_key_id,
             entity_type=entity_type,
             entity_id=entity_id,
+            signature_algorithm=signature_algorithm,
+            private_key_pem=private_key_pem,
         )
         return SignedBootstrapProof(
             challenge_id=challenge.challenge_id,
             device_id=trust_material.device_id,
             key_id=challenge_key_id,
             signature=signature,
-            signature_algorithm=trust_material.signature_algorithm,
+            signature_algorithm=signature_algorithm,
             signed_at=now_ts,
         )
 

@@ -2,7 +2,8 @@ from typing import Literal
 
 from msgspec import Struct
 
-EntityType = Literal["user", "service", "device"]
+from src.models.common.entry import EntityType
+
 RateLimitSubjectType = Literal["ip", "entity", "session", "token", "client", "gateway", "route", "composite"]
 RateLimitScope = Literal["edge_inbound", "internal_grpc", "auth"]
 RateLimitAlgorithm = Literal["fixed_window", "sliding_window", "token_bucket"]

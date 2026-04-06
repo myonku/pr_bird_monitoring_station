@@ -3,8 +3,9 @@ from uuid import UUID
 
 from msgspec import Struct
 
-from src.models.auth.auth import EntityType, IdentityContext, Session, TokenBundle
-from src.models.commsec.commsec import ServicePublicKeyRecord
+from src.models.auth.auth import IdentityContext, Session, TokenBundle
+from src.models.common.entry import EntityType
+from src.models.commsec.commsec import SignatureAlgorithm
 
 
 BootstrapStage = Literal["uninitialized", "challenging", "authenticating", "ready"]
@@ -55,7 +56,7 @@ class SignedChallengeResponse(Struct, kw_only=True):
     challenge_id: UUID
     key_id: str
 
-    signature_algorithm: str
+    signature_algorithm: SignatureAlgorithm
     signature: str
 
     signed_at: float
@@ -70,27 +71,6 @@ class BootstrapAuthRequest(Struct, kw_only=True):
     scopes: list[str] = []
     role: str
     require_downstream_token: bool
-
-
-class PublicKeyLookupRequest(Struct, kw_only=True):
-    """公钥查询请求。
-
-    支持按 key_id 精确查询，也支持按关联 entity_id 查询当前可用公钥。
-    """
-
-    entity_type: str = ""
-    entity_id: str = ""
-    entity_name: str = ""
-    key_id: str = ""
-
-
-class PublicKeyLookupResult(Struct, kw_only=True):
-    """公钥查询结果，包括是否找到对应的公钥、查询到的公钥记录、查询失败的原因和查询的时间戳等信息。"""
-
-    found: bool
-    key: ServicePublicKeyRecord | None
-    failure_reason: str
-    checked_at: float
 
 
 class BootstrapAuthResult(Struct, kw_only=True):

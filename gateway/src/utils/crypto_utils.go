@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 
+	commsecmodel "gateway/src/models/commsec"
 	modelsystem "gateway/src/models/system"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -35,6 +36,32 @@ const (
 
 // 用于收纳常用的加密相关工具函数。
 type CryptoUtils struct {
+}
+
+// DetectSignatureAlgorithmFromPublicPEM 从 PEM 编码的公钥中检测签名算法类型。
+func (c *CryptoUtils) DetectSignatureAlgorithmFromPublicPEM(publicPEM []byte) (commsecmodel.SignatureAlgorithm, error) {
+	block, _ := pem.Decode(publicPEM)
+	if block == nil {
+		return "", &modelsystem.ErrInvalidPublicKeyPEM
+	}
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return "", err
+	}
+
+	switch pub := parsed.(type) {
+	case ed25519.PublicKey:
+		return commsecmodel.SignatureEd25519, nil
+	case *ecdsa.PublicKey:
+		if pub.Curve != nil && pub.Curve.Params().Name != "P-256" {
+			return "", &modelsystem.ErrUnsupportedSignatureAlgorithm
+		}
+		return commsecmodel.SignatureECDSAP256SHA256, nil
+	case *rsa.PublicKey:
+		return commsecmodel.SignatureRSAPSSSHA256, nil
+	default:
+		return "", &modelsystem.ErrUnsupportedPublicKeyType
+	}
 }
 
 // DeriveRandomSymmetricKey 生成一个确定长度的随机的 AES 对称密钥，返回 Base64 编码的字符串形式。
