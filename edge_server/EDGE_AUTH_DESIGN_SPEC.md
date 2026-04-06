@@ -23,6 +23,7 @@
 3. 认证通道与业务上传通道必须严格隔离。
 4. 全局标识、密钥与配置生命周期规则见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
 5. 认证接口 HTTP 契约细节见 `EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
+6. 边缘端到网关的服务端通信必须走加密信道；握手初始化优先在 bootstrap 完成后的 ensure_ready 阶段，未预热时在首次业务上传前完成。
 
 
 ## 3. 分层与隔离
@@ -74,6 +75,7 @@
 - get_auth_headers
 - on_unauthorized
 - logout
+- 约束：ensure_ready 需要覆盖“认证可用 + 安全通道可用”双检查，可在该阶段预热握手。
 
 
 ## 5. 数据契约
@@ -121,3 +123,4 @@
 - 全局统一约定见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
 - 边缘端到网关的接口路径、payload 与头部契约见 `EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
 - 本文档仅承载边缘认证模块内部架构定义。
+- 若安全通道未预热，必须在首次业务通信前完成握手；禁止明文上传回退。

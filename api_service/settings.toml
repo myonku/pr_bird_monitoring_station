@@ -1,21 +1,29 @@
 [internal_assertion]
 enabled = false
+required = false
 header_name = "x-internal-assertion"
-ttl_seconds = 10
-issuer = ""
-signature_algorithm = "ed25519"
+clock_skew_sec = 30
+replay_ttl_sec = 15
+enforce_path_binding = false
 
 [secret_key]
 enabled = false
 secret_dir = "secret_keys"
-active_key_id = "gateway-local-key"
-owner_type = "gateway"
+active_key_id = "api-local-key"
+owner_type = "service"
 entity_type = "service"
-entity_id = "gateway"
-entity_name = "gateway"
+entity_id = "api_service"
+entity_name = "api_service"
 key_exchange_algorithm = "ecdhe_p256"
 signature_algorithm = "ed25519"
 # Relative to secret_dir when not absolute.
 public_key_ref = "public.pem"
 private_key_ref = "private.pem"
 
+[redis]
+mode = "single"
+dialect = "redis"
+# host = "127.0.0.1"
+# port = 6379
+database = 0
+# password = ""

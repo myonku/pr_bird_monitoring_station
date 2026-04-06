@@ -19,7 +19,7 @@
 
 - 仅有一个入站协议：gRPC Server。
 - 核心职能：回应其他服务发来的认证请求、握手请求、信息鉴定请求。
-- 安全职责：认证签发、会话令牌管理、握手协商、通道状态管理、加解密与验签能力。
+- 安全职责：认证签发、会话令牌管理、握手协商、通道状态管理、加解密与验签能力，并作为后端模块间通道协商权威，不提供明文降级路径。
 
 ### 2.2 明确非目标
 
@@ -151,6 +151,7 @@
   - UpsertChannel / GetChannel / RevokeChannel
   - EncryptByChannel / DecryptByChannel
 - 职责：握手、通道、传输加解密核心能力。
+- 约束：供 gateway/api_service 在 bootstrap 后预热通道或首跳通信前握手；协商失败返回显式错误，不得回退明文。
 
 ### 4.3.2 ISecretKeyService
 
@@ -291,7 +292,7 @@
 1. gRPC Unary/Stream 请求进入。
 2. 限流拦截器与其他拦截器执行。
 3. Handler 将请求映射为 orchestration 请求。
-4. Orchestrator 串联 auth/commsec 服务。
+4. Orchestrator 串联 auth/commsec 服务（含握手与通道状态校验）。
 5. Service 完成状态更新与持久化。
 6. Handler 映射响应并返回。
 
@@ -313,6 +314,7 @@
 5. 限流规则匹配逻辑不允许放在拦截器本体。
 6. 签名验签与加解密行为不允许散落在 handler 层。
 7. 私钥原文不允许出本地安全边界。
+8. CommSec 握手/通道编排不允许输出“明文可继续”结果，失败必须阻断调用并返回错误码。
 
 ---
 

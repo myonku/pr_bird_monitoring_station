@@ -19,7 +19,8 @@
 
 - 普通业务服务模块代表。
 - 对外（对内网）提供 gRPC server 业务接口。
-- 在必要时可向认证中心请求校验与认证续期。
+- 内部转发默认消费网关断言并本地验签，运行期回源校验路径已下线。
+- 与其他后端模块通信必须走 commsec 加密信道；握手初始化优先在 readiness 预热，未预热时在首次出站调用前完成。
 - 可按业务需求调用其他内部服务（gRPC client 能力由统一 client hub 管理）。
 
 ### 2.2 明确非目标
@@ -102,6 +103,7 @@
   - 服务注册回调管理
   - 启动/停止骨架
   - 拦截器链容器
+  - 内部断言验签拦截器接入入口
 - 作用：承载普通服务模块的 gRPC 入站边界。
 
 ### 4.2.2 GrpcClientHub
@@ -140,6 +142,7 @@
 - 文件：src/usecase/ratelimit/enforce_inbound_uc.py
 - 依赖：DescriptorFactory, RateLimiterService
 - 作用：统一协议无关入站限流决策。
+- 约束：DescriptorFactory 的身份输入来源为验签后的 verified identity，上下文头仅用于补充 module/action/source_ip 等非身份元信息。
 
 ---
 
@@ -149,11 +152,16 @@
 
 - 文件：src/services/auth/*, src/services/commsec/*
 - 作用：认证相关能力统一转发认证中心，不在本地维护 challenge/session/token/grant 状态；通信安全能力由本地 commsec 模块承载。
+- 阶段5约束：运行期 `validate_session` / `verify_token` 回源路径已下线。
+- 告警指标：
+  - `internal_assertion_verify_failed_total`（断言验签失败量）
+  - `internal_assertion_replay_hit_total`（重放命中量）
 
 ### 4.4.2 OutboundInvokeService
 
 - 文件：src/services/communication/outbound_invoke_svc.py
 - 作用：统一发起对内 gRPC 出站调用，消费已准备好的安全上下文。
+- 约束：仅在已建立安全通道（或刚完成 EnsureChannel 握手）后发起调用，禁止明文回退。
 
 ---
 
@@ -183,8 +191,9 @@
 2. 初始化 repo 客户端。
 3. 初始化 GrpcClientHub 并注册下游服务 profile。
 4. 执行 ReadinessUsecase（必要时向认证中心完成 bootstrap）。
-5. 组装 gRPC server（注册 handler + 拦截器链）。
-6. 启动 gRPC server。
+5. 可选预热关键下游加密通道（EnsureChannel），建立可复用安全上下文。
+6. 组装 gRPC server（注册 handler + 拦截器链，默认启用内部断言验签）。
+7. 启动 gRPC server。
 
 ## 5.2 运行链（职能行为）
 
@@ -193,20 +202,25 @@
 调用链：
 
 1. gRPC 请求进入。
-2. 限流与鉴权拦截器执行。
-3. Handler 调用 HandleInboundGrpcUsecase。
-4. 业务需要跨服务调用时，调用 PrepareOutboundSecurityUsecase。
-5. OutboundInvokeService 通过 GrpcClientHub 发起调用。
-6. 返回业务响应。
+2. 内部断言拦截器完成验签并注入 verified identity。
+3. 限流与鉴权拦截器基于 verified identity 执行。
+4. Handler 调用 HandleInboundGrpcUsecase。
+5. 业务需要跨服务调用时，调用 PrepareOutboundSecurityUsecase。
+6. 出站前确保目标安全通道可用（预热复用或首跳握手）。
+7. OutboundInvokeService 通过 GrpcClientHub 发起调用。
+8. 返回业务响应。
 
 ## 5.3 限流链（普通服务）
 
 统一流程：
 
 1. 拦截器提取上下文。
-2. DescriptorFactory.Build -> RateLimitDescriptor。
-3. RateLimiterService.Decide -> RateLimitDecision。
-4. 若拒绝，返回 ResourceExhausted（gRPC）并附加 retry-after。
+2. 拦截器完成断言验签并注入 verified identity。
+3. DescriptorFactory.Build（identity-first） -> RateLimitDescriptor。
+4. RateLimiterService.Decide -> RateLimitDecision。
+5. 若拒绝，返回 ResourceExhausted（gRPC）并附加 retry-after。
+
+限流主体优先级：`principal_id` -> `gateway_id + route` -> `source_ip`。
 
 ---
 
@@ -218,8 +232,9 @@
 4. 出站调用必须消费统一安全上下文，禁止绕过安全编排。
 5. 限流规则匹配逻辑不允许放在拦截器本体。
 6. 认证校验续期逻辑不允许散落在业务 handler。
-7. 非认证中心模块不得本地管理认证凭证状态，只能转发认证中心并消费返回结果。
+7. 非认证中心模块不得本地管理认证凭证状态；内部转发校验采用本地断言验签单路径。
 8. 加密工具层不得主动发起网络调用。
+9. 后端模块间通信必须走加密信道，握手失败时快速失败，禁止明文降级。
 
 ---
 

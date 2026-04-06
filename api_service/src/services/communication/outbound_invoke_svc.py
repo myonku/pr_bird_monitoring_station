@@ -1,6 +1,14 @@
 from dataclasses import dataclass
 
 from src.adapters.grpc.client_hub import GrpcClientHub
+from src.models.auth.internal_header_keys import (
+    HEADER_DOWNSTREAM_PRINCIPAL,
+    HEADER_DOWNSTREAM_SESSION_ID,
+    HEADER_DOWNSTREAM_TOKEN_ID,
+    HEADER_GATEWAY_ID,
+    HEADER_SOURCE_SERVICE,
+    HEADER_TARGET_SERVICE,
+)
 from src.usecase.security.prepare_outbound_security_uc import OutboundSecurityContext
 
 
@@ -38,9 +46,12 @@ class OutboundInvokeService:
         client = await self.client_hub.get_client(req.target_service)
         headers = dict(req.headers)
         if security_ctx and security_ctx.grant:
-            headers["x-downstream-principal"] = security_ctx.grant.principal_id
-            headers["x-downstream-gateway"] = security_ctx.grant.gateway_id
-            headers["x-downstream-target"] = security_ctx.grant.target_service
+            headers[HEADER_DOWNSTREAM_PRINCIPAL] = security_ctx.grant.principal_id
+            headers[HEADER_DOWNSTREAM_SESSION_ID] = str(security_ctx.grant.session_id)
+            headers[HEADER_DOWNSTREAM_TOKEN_ID] = str(security_ctx.grant.token_id)
+            headers[HEADER_GATEWAY_ID] = security_ctx.grant.gateway_id
+            headers[HEADER_SOURCE_SERVICE] = security_ctx.grant.source_service
+            headers[HEADER_TARGET_SERVICE] = security_ctx.grant.target_service
         if security_ctx and security_ctx.channel:
             headers["x-secure-channel-id"] = str(security_ctx.channel.id)
             headers["x-cipher-suite"] = security_ctx.channel.cipher_suite

@@ -4,6 +4,8 @@ from typing import Literal
 from urllib.parse import quote_plus, urlencode
 from msgspec import Struct
 
+from src.models.auth.internal_header_keys import HEADER_INTERNAL_ASSERTION
+
 
 class ProjectConfig(Struct):
     """项目配置模型"""
@@ -13,6 +15,96 @@ class ProjectConfig(Struct):
     kafka: KafkaConfig | None = None
     mongo: MongoConfig | None = None
     etcd: EtcdConfig | None = None
+    internal_assertion: InternalAssertionConfig | None = None
+    secret_key: SecretKeyConfig | None = None
+
+
+class SecretKeyConfig(Struct, kw_only=True):
+    """本地密钥装载配置。"""
+
+    enabled: bool = False
+    secret_dir: str = "secret_keys"
+    active_key_id: str = ""
+
+    owner_type: str = "service"
+    entity_type: str = "service"
+    entity_id: str = ""
+    entity_name: str = ""
+    service_id: str = ""
+    service_name: str = ""
+    instance_id: str = ""
+    instance_name: str = ""
+
+    key_exchange_algorithm: str = "ecdhe_p256"
+    signature_algorithm: str = ""
+
+    public_key_ref: str = ""
+    private_key_ref: str = ""
+
+    def normalized(self, default_entity_id: str = "") -> "SecretKeyConfig":
+        secret_dir = self.secret_dir.strip() or "secret_keys"
+        active_key_id = self.active_key_id.strip()
+
+        owner_type = self.owner_type.strip().lower() or "service"
+        entity_type = self.entity_type.strip().lower() or "service"
+        entity_id = self.entity_id.strip() or default_entity_id
+        entity_name = self.entity_name.strip() or entity_id
+
+        service_id = self.service_id.strip() or entity_id
+        service_name = self.service_name.strip() or entity_name
+
+        key_exchange_algorithm = (
+            self.key_exchange_algorithm.strip().lower() or "ecdhe_p256"
+        )
+        signature_algorithm = self.signature_algorithm.strip().lower()
+
+        return SecretKeyConfig(
+            enabled=self.enabled,
+            secret_dir=secret_dir,
+            active_key_id=active_key_id,
+            owner_type=owner_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            entity_name=entity_name,
+            service_id=service_id,
+            service_name=service_name,
+            instance_id=self.instance_id.strip(),
+            instance_name=self.instance_name.strip(),
+            key_exchange_algorithm=key_exchange_algorithm,
+            signature_algorithm=signature_algorithm,
+            public_key_ref=self.public_key_ref.strip(),
+            private_key_ref=self.private_key_ref.strip(),
+        )
+
+
+class InternalAssertionConfig(Struct, kw_only=True):
+    """内部断言验签配置。"""
+
+    enabled: bool = False
+    required: bool = False
+    header_name: str = HEADER_INTERNAL_ASSERTION
+
+    clock_skew_sec: int = 30
+    replay_ttl_sec: int = 15
+
+    enforce_path_binding: bool = False
+
+    def normalized(self) -> "InternalAssertionConfig":
+        header_name = self.header_name.strip().lower() if self.header_name else ""
+        if not header_name:
+            header_name = HEADER_INTERNAL_ASSERTION
+
+        clock_skew_sec = self.clock_skew_sec if self.clock_skew_sec > 0 else 30
+        replay_ttl_sec = self.replay_ttl_sec if self.replay_ttl_sec > 0 else 15
+
+        return InternalAssertionConfig(
+            enabled=self.enabled,
+            required=self.required,
+            header_name=header_name,
+            clock_skew_sec=clock_skew_sec,
+            replay_ttl_sec=replay_ttl_sec,
+            enforce_path_binding=self.enforce_path_binding,
+        )
 
 
 class EtcdConfig(Struct, kw_only=True):

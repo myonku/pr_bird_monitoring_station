@@ -1,4 +1,4 @@
-from msgspec import Struct
+from msgspec import Struct, field
 from uuid import UUID
 
 
@@ -10,14 +10,14 @@ class ServiceInstance(Struct, frozen=True):
     name: str
     endpoint: str
 
-    heartbeat_at: float
-    zone: str | None
-    version: str | None
-    weight: int
-    tags: list[str]
+    heartbeat: int = 0
+    zone: str = ""
+    version: str = ""
+    weight: int = 1
+    tags: list[str] = field(default_factory=list)
 
-    active_comm_key_id: str | None
-    metadata: dict[str, str] = {}
+    active_comm_key_id: str = ""
+    metadata: dict[str, str] = field(default_factory=dict)
 
 
 class ServiceSnapshot(Struct, frozen=True):

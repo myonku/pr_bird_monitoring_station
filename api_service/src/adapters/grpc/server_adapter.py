@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.models.sys.config import InternalAssertionConfig
+    from src.services.auth.internal_assertion_verifier import IInternalAssertionVerifier
 
 
 @dataclass(slots=True)
@@ -54,6 +59,19 @@ class GrpcServerAdapter:
         self, interceptor: Callable[..., Awaitable[object]]
     ) -> None:
         self._interceptors.add(interceptor)
+
+    def add_internal_assertion_interceptor(
+        self,
+        verifier: "IInternalAssertionVerifier",
+        config: "InternalAssertionConfig | None" = None,
+    ) -> None:
+        from src.services.auth.internal_assertion_interceptor import (
+            InternalAssertionUnaryInterceptor,
+        )
+
+        self.add_unary_interceptor(
+            InternalAssertionUnaryInterceptor(verifier=verifier, config=config)
+        )
 
     async def start(self) -> None:
         if self._started:

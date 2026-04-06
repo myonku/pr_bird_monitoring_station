@@ -43,7 +43,7 @@ func (d *DiscoveryAdapter) ChooseEndpoint(
 		return nil, &modelsystem.ErrNilRegistryClient
 	}
 	if serviceName == "" {
-		return nil, &modelsystem.ErrNoAvaliableInstances
+		return nil, &modelsystem.ErrServiceNameRequired
 	}
 
 	instances, err := d.registry.GetServiceInstances(serviceName)

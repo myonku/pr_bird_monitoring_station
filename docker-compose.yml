@@ -1,0 +1,186 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # MySQL 8.4 单例
+  # ==========================================
+  mysql:
+    image: mysql:8.4
+    container_name: mysql-standalone
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: "YourRootPassword123!" # 连接MySQL 的 root 用户密码
+      MYSQL_DATABASE: "my_project_db" # 启动时自动创建的数据库名称
+      MYSQL_USER: "project_user" # 连接MySQL 的普通用户
+      MYSQL_PASSWORD: "YourUserPassword123!" # 连接MySQL 的普通用户密码
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./data/mysql:/var/lib/mysql # 可自定义义本地挂载目录
+    networks:
+      - project-network
+
+  # ==========================================
+  # MongoDB Atlas Local 8.0 单例
+  # ==========================================
+  mongodb:
+    image: mongodb/mongodb-atlas-local:8.0
+    container_name: mongo-standalone
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "mongoadmin" # 连接MongoDB 的管理员用户名
+      MONGO_INITDB_ROOT_PASSWORD: "YourMongoPassword123!" # 连接MongoDB 的管理员密码
+      MONGO_INITDB_DATABASE: "my_project_db" # 启动时自动创建的数据库名称
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./data/mongodb:/data/db # 可自定义义本地挂载目录
+    networks:
+      - project-network
+
+  # ==========================================
+  # Redis Cluster 8.6 (3主3从)
+  # ==========================================
+  redis-node-1: &redis-template
+    image: redis:8.6
+    command: >
+      redis-server 
+      --cluster-enabled yes 
+      --cluster-config-file nodes.conf 
+      --cluster-node-timeout 5000 
+      --appendonly yes 
+      --requirepass "YourRedisPassword123!"
+      --masterauth "YourRedisPassword123!"
+    volumes:
+      - ./data/redis/node-1:/data
+    networks:
+      - project-network
+  
+  redis-node-2:
+    <<: *redis-template
+    volumes:
+      - ./data/redis/node-2:/data
+  redis-node-3:
+    <<: *redis-template
+    volumes:
+      - ./data/redis/node-3:/data
+  redis-node-4:
+    <<: *redis-template
+    volumes:
+      - ./data/redis/node-4:/data
+  redis-node-5:
+    <<: *redis-template
+    volumes:
+      - ./data/redis/node-5:/data
+  redis-node-6:
+    <<: *redis-template
+    volumes:
+      - ./data/redis/node-6:/data
+
+  # 自动组建 Redis 集群的临时容器，在初始化后会自动退出
+  redis-cluster-init:
+    image: redis:8.6
+    container_name: redis-cluster-init
+    depends_on:
+      - redis-node-1
+      - redis-node-2
+      - redis-node-3
+      - redis-node-4
+      - redis-node-5
+      - redis-node-6
+    networks:
+      - project-network
+    # 需要确保 -a 参数中的密码与上方 redis-template 中的 requirepass 和 masterauth 保持一致
+    command: >
+      sh -c "sleep 5 && echo 'yes' | redis-cli -a 'YourRedisPassword123!' --cluster create 
+      redis-node-1:6379 redis-node-2:6379 redis-node-3:6379 
+      redis-node-4:6379 redis-node-5:6379 redis-node-6:6379 
+      --cluster-replicas 1"
+
+  # ==========================================
+  # etcd 3.6.0 集群 (3节点)
+  # ==========================================
+  etcd-1:
+    image: registry.k8s.io/etcd:3.6.0
+    container_name: etcd-1
+    command:
+      - etcd
+      - --name=etcd-1
+      - --initial-advertise-peer-urls=http://etcd-1:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd-1:2379
+      - --initial-cluster-token=etcd-cluster-token
+      - --initial-cluster=etcd-1=http://etcd-1:2380,etcd-2=http://etcd-2:2380,etcd-3=http://etcd-3:2380
+      - --initial-cluster-state=new
+      - --data-dir=/etcd-data
+    ports:
+      - "2379:2379"
+    volumes:
+      - ./data/etcd/node-1:/etcd-data
+    networks:
+      - project-network
+
+  etcd-2:
+    image: registry.k8s.io/etcd:3.6.0
+    container_name: etcd-2
+    command:
+      - etcd
+      - --name=etcd-2
+      - --initial-advertise-peer-urls=http://etcd-2:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd-2:2379
+      - --initial-cluster-token=etcd-cluster-token
+      - --initial-cluster=etcd-1=http://etcd-1:2380,etcd-2=http://etcd-2:2380,etcd-3=http://etcd-3:2380
+      - --initial-cluster-state=new
+      - --data-dir=/etcd-data
+    ports:
+      - "2381:2379" # 映射到不同的宿主机端口防止冲突
+    volumes:
+      - ./data/etcd/node-2:/etcd-data
+    networks:
+      - project-network
+
+  etcd-3:
+    image: registry.k8s.io/etcd:3.6.0
+    container_name: etcd-3
+    command:
+      - etcd
+      - --name=etcd-3
+      - --initial-advertise-peer-urls=http://etcd-3:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd-3:2379
+      - --initial-cluster-token=etcd-cluster-token
+      - --initial-cluster=etcd-1=http://etcd-1:2380,etcd-2=http://etcd-2:2380,etcd-3=http://etcd-3:2380
+      - --initial-cluster-state=new
+      - --data-dir=/etcd-data
+    ports:
+      - "2383:2379"
+    volumes:
+      - ./data/etcd/node-3:/etcd-data
+    networks:
+      - project-network
+
+  # 自动初始化 etcd 用户和权限的临时容器，在初始化后会自动退出
+  etcd-init-auth:
+    image: registry.k8s.io/etcd:3.6.0
+    container_name: etcd-init-auth
+    depends_on:
+      - etcd-1
+      - etcd-2
+      - etcd-3
+    networks:
+      - project-network
+    environment:
+      ETCDCTL_API: 3
+    # 需要自定义设置 root 用户密码，并确保与后续使用 etcdctl 连接时的密码一致
+    command: >
+      sh -c "sleep 5 &&
+      etcdctl --endpoints=http://etcd-1:2379 user add root:YourEtcdPassword123! --interactive=false &&
+      etcdctl --endpoints=http://etcd-1:2379 auth enable"
+
+networks:
+  project-network:
+    driver: bridge

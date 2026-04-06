@@ -36,7 +36,7 @@ func NewRegistryService(
 	etcdClient *repo.EtcdClient, keyRoot string, opTimeout time.Duration) registryif.IRegistry {
 
 	if keyRoot == "" {
-		keyRoot = "gateway/registry"
+		keyRoot = "bms/services"
 	}
 	if opTimeout <= 0 {
 		opTimeout = 3 * time.Second
@@ -61,6 +61,9 @@ func (r *RegistryService) Register(instance *registrymodel.ServiceInstance, ttl 
 	if instance.HeartBeat <= 0 {
 		instance.HeartBeat = time.Now().UnixMilli()
 	}
+	if instance.Weight <= 0 {
+		instance.Weight = 1
+	}
 
 	r.stopKeepAlive(instance.Name, instance.ID.String())
 
@@ -78,7 +81,7 @@ func (r *RegistryService) Register(instance *registrymodel.ServiceInstance, ttl 
 		if putErr != nil {
 			return putErr
 		}
-		r.startKeepAlive(instance.Name, instance.ID.String(), leaseID)
+		r.startKeepAlive(instance.Name, instance.ID.String(), leaseID, instance)
 		return nil
 	}
 
@@ -182,8 +185,18 @@ func (r *RegistryService) keepAliveKey(serviceName, instanceID string) string {
 	return serviceName + "::" + instanceID
 }
 
-func (r *RegistryService) startKeepAlive(serviceName, instanceID string, leaseID clientv3.LeaseID) {
+func (r *RegistryService) startKeepAlive(
+	serviceName,
+	instanceID string,
+	leaseID clientv3.LeaseID,
+	instance *registrymodel.ServiceInstance,
+) {
 	key := r.keepAliveKey(serviceName, instanceID)
+	instanceKey := r.instanceKey(serviceName, instanceID)
+	instanceTemplate := registrymodel.ServiceInstance{}
+	if instance != nil {
+		instanceTemplate = *instance
+	}
 
 	r.leaseMu.Lock()
 	if oldCancel, ok := r.leaseCancels[key]; ok {
@@ -206,6 +219,15 @@ func (r *RegistryService) startKeepAlive(serviceName, instanceID string, leaseID
 
 	go func(k string, c <-chan *clientv3.LeaseKeepAliveResponse) {
 		for range c {
+			if instanceTemplate.ID != uuid.Nil {
+				refresh := instanceTemplate
+				refresh.HeartBeat = time.Now().UnixMilli()
+				if payload, marshalErr := json.Marshal(&refresh); marshalErr == nil {
+					putCtx, putCancel := context.WithTimeout(context.Background(), r.opTimeout)
+					_, _ = r.etcd.Put(putCtx, instanceKey, string(payload), clientv3.WithLease(leaseID))
+					putCancel()
+				}
+			}
 		}
 		r.leaseMu.Lock()
 		delete(r.leaseIDs, k)

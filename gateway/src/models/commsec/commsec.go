@@ -36,6 +36,7 @@ const (
 const (
 	SignatureECDSAP256SHA256 SignatureAlgorithm = "ecdsa_p256_sha256"
 	SignatureEd25519         SignatureAlgorithm = "ed25519"
+	SignatureRSAPSSSHA256    SignatureAlgorithm = "rsa_pss_sha256"
 )
 
 const (

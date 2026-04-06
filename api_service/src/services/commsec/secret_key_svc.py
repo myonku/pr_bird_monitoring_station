@@ -1,11 +1,21 @@
+from __future__ import annotations
+
+import base64
+import hashlib
+from pathlib import Path
 from time import time
 from typing import Any, cast
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
+
 from src.models.auth.bootstrap import PublicKeyLookupResult
 from src.models.commsec.commsec import (
+    KeyExchangeAlgorithm,
     LocalPrivateKeyRef,
     ServiceKeyOwner,
     ServicePublicKeyRecord,
+    SignatureAlgorithm,
 )
 from src.repo.mysql_client import MySQLClient
 from src.repo.mysql_dao import ServicePublicKeysDAO
@@ -13,6 +23,125 @@ from src.repo.mysql_dao import ServicePublicKeysDAO
 
 class SecretKeyService:
     """密钥服务：本地私钥引用 + 全局公钥目录查询。"""
+
+    @classmethod
+    def from_secret_dir(
+        cls,
+        *,
+        owner: ServiceKeyOwner,
+        active_key_id: str,
+        secret_dir: str | Path,
+        key_exchange_algorithm: KeyExchangeAlgorithm = "ecdhe_p256",
+        signature_algorithm: SignatureAlgorithm | None = None,
+        public_key_ref: str = "",
+        private_key_ref: str = "",
+        catalog: list[ServicePublicKeyRecord] | None = None,
+        mysql_client: MySQLClient | None = None,
+    ) -> "SecretKeyService":
+        """从本地密钥目录构建后端密钥服务。
+
+        后端密钥服务同时承载两类职责：
+        - 本地私钥/公钥装载（用于签名、握手）
+        - 全局公钥目录查询（优先本地缓存，必要时回源 MySQL）
+        """
+        resolved_key_id = active_key_id.strip()
+        if not resolved_key_id:
+            raise ValueError("active_key_id is required")
+
+        secret_root = Path(secret_dir).expanduser().resolve()
+        if not secret_root.exists() or not secret_root.is_dir():
+            raise ValueError(f"secret dir does not exist: {secret_root}")
+
+        resolved_public_ref = public_key_ref.strip() or f"{resolved_key_id}.public.pem"
+        resolved_private_ref = (
+            private_key_ref.strip() or f"{resolved_key_id}.private.pem"
+        )
+
+        public_key_pem = cls.load_pem_bytes_from_ref(
+            resolved_public_ref,
+            base_dir=secret_root,
+        )
+        private_key_pem = cls.load_pem_bytes_from_ref(
+            resolved_private_ref,
+            base_dir=secret_root,
+        )
+
+        cls._ensure_spki_public_key_pem(public_key_pem)
+        detected_signature_algorithm = cls._detect_signature_algorithm(public_key_pem)
+        resolved_signature_algorithm = signature_algorithm or detected_signature_algorithm
+        if resolved_signature_algorithm != detected_signature_algorithm:
+            raise ValueError(
+                "signature algorithm mismatch for active key: "
+                f"configured={resolved_signature_algorithm} "
+                f"detected={detected_signature_algorithm}"
+            )
+
+        cls._ensure_pkcs8_private_key_pem(private_key_pem)
+        cls._ensure_private_key_matches_algorithm(
+            private_key_pem,
+            resolved_signature_algorithm,
+        )
+
+        normalized_owner = owner.normalized()
+        now = time()
+        local_public = ServicePublicKeyRecord(
+            key_id=resolved_key_id,
+            owner=normalized_owner,
+            key_exchange_algorithm=key_exchange_algorithm,
+            signature_algorithm=resolved_signature_algorithm,
+            public_key_pem=public_key_pem.decode("utf-8"),
+            fingerprint=cls._sha256_hex(public_key_pem),
+            status="active",
+            created_at=now,
+            activated_at=now,
+            expires_at=0.0,
+            revoked_at=0.0,
+        )
+        local_private = LocalPrivateKeyRef(
+            key_id=resolved_key_id,
+            owner=normalized_owner,
+            key_exchange_algorithm=key_exchange_algorithm,
+            signature_algorithm=resolved_signature_algorithm,
+            private_key_ref=private_key_pem.decode("utf-8"),
+            loaded_at=now,
+        )
+        return cls(
+            local_public_key=local_public,
+            local_private_key=local_private,
+            catalog=catalog,
+            mysql_client=mysql_client,
+        )
+
+    @staticmethod
+    def load_pem_bytes_from_ref(
+        material_ref: str | bytes,
+        *,
+        base_dir: str | Path | None = None,
+    ) -> bytes:
+        """支持内联 PEM、base64 文本和文件路径三种形式。"""
+        if isinstance(material_ref, bytes):
+            return material_ref
+
+        raw_value = material_ref.strip()
+        if not raw_value:
+            raise ValueError("empty key material reference")
+
+        if "-----BEGIN" in raw_value:
+            return raw_value.encode("utf-8")
+
+        if raw_value.startswith("base64:"):
+            encoded = raw_value[len("base64:") :].strip()
+            if not encoded:
+                raise ValueError("empty base64 key material")
+            return base64.b64decode(encoded)
+
+        file_path = raw_value[len("file://") :] if raw_value.startswith("file://") else raw_value
+        path = Path(file_path)
+        if base_dir is not None and not path.is_absolute():
+            path = Path(base_dir) / path
+        if not path.exists():
+            raise ValueError(f"key material path does not exist: {path}")
+        return path.read_bytes()
 
     def __init__(
         self,
@@ -34,11 +163,9 @@ class SecretKeyService:
             normalized = self._normalize_record(item)
             self._catalog_by_key_id[normalized.key_id] = normalized
 
-    # TODO: 后续根据实际需求，更新函数内部实现，支持从安全存储加载或定期刷新本地公钥信息。
     async def get_public_key(self) -> ServicePublicKeyRecord:
         return self._local_public_key
 
-    # TODO: 后续根据实际需求，更新函数内部实现，支持从安全存储加载或定期刷新本地私钥引用信息。
     async def get_private_key_ref(self) -> LocalPrivateKeyRef:
         return self._local_private_key
 
@@ -271,3 +398,59 @@ class SecretKeyService:
         if candidate.expires_at > current.expires_at:
             return True
         return False
+
+    @staticmethod
+    def _sha256_hex(content: bytes) -> str:
+        return hashlib.sha256(content).hexdigest()
+
+    @staticmethod
+    def _detect_signature_algorithm(public_key_pem: bytes) -> SignatureAlgorithm:
+        parsed = serialization.load_pem_public_key(public_key_pem)
+        if isinstance(parsed, ed25519.Ed25519PublicKey):
+            return cast(SignatureAlgorithm, "ed25519")
+        if isinstance(parsed, ec.EllipticCurvePublicKey):
+            if not isinstance(parsed.curve, ec.SECP256R1):
+                raise ValueError("unsupported ecdsa curve, only p256 is allowed")
+            return cast(SignatureAlgorithm, "ecdsa_p256_sha256")
+        if isinstance(parsed, rsa.RSAPublicKey):
+            return cast(SignatureAlgorithm, "rsa_pss_sha256")
+        raise ValueError("unsupported public key type")
+
+    @staticmethod
+    def _ensure_pkcs8_private_key_pem(private_key_pem: bytes) -> None:
+        text = private_key_pem.decode("utf-8", errors="ignore")
+        if "-----BEGIN PRIVATE KEY-----" not in text:
+            raise ValueError("private key must be unencrypted PKCS#8 PEM")
+        serialization.load_pem_private_key(private_key_pem, password=None)
+
+    @staticmethod
+    def _ensure_spki_public_key_pem(public_key_pem: bytes) -> None:
+        text = public_key_pem.decode("utf-8", errors="ignore")
+        if "-----BEGIN PUBLIC KEY-----" not in text:
+            raise ValueError("public key must be SPKI PEM")
+        serialization.load_pem_public_key(public_key_pem)
+
+    @staticmethod
+    def _ensure_private_key_matches_algorithm(
+        private_key_pem: bytes,
+        algorithm: SignatureAlgorithm,
+    ) -> None:
+        parsed = serialization.load_pem_private_key(private_key_pem, password=None)
+        if algorithm == "ed25519":
+            if not isinstance(parsed, ed25519.Ed25519PrivateKey):
+                raise ValueError("private key type does not match ed25519")
+            return
+
+        if algorithm == "ecdsa_p256_sha256":
+            if not isinstance(parsed, ec.EllipticCurvePrivateKey):
+                raise ValueError("private key type does not match ecdsa")
+            if not isinstance(parsed.curve, ec.SECP256R1):
+                raise ValueError("ecdsa private key must use p256 curve")
+            return
+
+        if algorithm == "rsa_pss_sha256":
+            if not isinstance(parsed, rsa.RSAPrivateKey):
+                raise ValueError("private key type does not match rsa")
+            return
+
+        raise ValueError(f"unsupported signature algorithm: {algorithm}")

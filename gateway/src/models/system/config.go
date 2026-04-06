@@ -2,6 +2,7 @@ package system
 
 import (
 	"crypto/tls"
+	"strings"
 	"time"
 
 	"github.com/segmentio/kafka-go"
@@ -17,7 +18,7 @@ const (
 
 // 加载全局配置的函数
 func LoadConfig(cfg_path string) (*ProjectConfig, error) {
-	return &ProjectConfig{}, nil
+	return loadProjectConfig(cfg_path)
 }
 
 // Config 定义了认证服务器的整体配置结构体。
@@ -26,6 +27,124 @@ type ProjectConfig struct {
 	Redis *RedisClientConfig
 	Etcd  *EtcdClientConfig
 	Kafka *KafkaClientConfig
+
+	InternalAssertion *InternalAssertionConfig
+	SecretKey         *SecretKeyConfig
+}
+
+// SecretKeyConfig 定义后端本地密钥装载配置。
+type SecretKeyConfig struct {
+	Enabled bool
+
+	SecretDir   string
+	ActiveKeyID string
+
+	OwnerType    string
+	EntityType   string
+	EntityID     string
+	EntityName   string
+	ServiceID    string
+	ServiceName  string
+	InstanceID   string
+	InstanceName string
+
+	KeyExchangeAlgorithm string
+	SignatureAlgorithm   string
+
+	PublicKeyRef  string
+	PrivateKeyRef string
+}
+
+// Normalized 返回包含默认值的密钥装载配置快照。
+func (c *SecretKeyConfig) Normalized(defaultEntityID string) SecretKeyConfig {
+	if c == nil {
+		entityID := strings.TrimSpace(defaultEntityID)
+		return SecretKeyConfig{
+			Enabled:              false,
+			SecretDir:            "secret_keys",
+			OwnerType:            "service",
+			EntityType:           "service",
+			EntityID:             entityID,
+			EntityName:           entityID,
+			ServiceID:            entityID,
+			ServiceName:          entityID,
+			KeyExchangeAlgorithm: "ecdhe_p256",
+		}
+	}
+
+	normalized := *c
+	normalized.SecretDir = strings.TrimSpace(normalized.SecretDir)
+	if normalized.SecretDir == "" {
+		normalized.SecretDir = "secret_keys"
+	}
+	normalized.ActiveKeyID = strings.TrimSpace(normalized.ActiveKeyID)
+	normalized.OwnerType = strings.ToLower(strings.TrimSpace(normalized.OwnerType))
+	if normalized.OwnerType == "" {
+		normalized.OwnerType = "service"
+	}
+	normalized.EntityType = strings.ToLower(strings.TrimSpace(normalized.EntityType))
+	if normalized.EntityType == "" {
+		normalized.EntityType = "service"
+	}
+	normalized.EntityID = strings.TrimSpace(normalized.EntityID)
+	if normalized.EntityID == "" {
+		normalized.EntityID = strings.TrimSpace(defaultEntityID)
+	}
+	normalized.EntityName = strings.TrimSpace(normalized.EntityName)
+	if normalized.EntityName == "" {
+		normalized.EntityName = normalized.EntityID
+	}
+	normalized.ServiceID = strings.TrimSpace(normalized.ServiceID)
+	if normalized.ServiceID == "" {
+		normalized.ServiceID = normalized.EntityID
+	}
+	normalized.ServiceName = strings.TrimSpace(normalized.ServiceName)
+	if normalized.ServiceName == "" {
+		normalized.ServiceName = normalized.EntityName
+	}
+	normalized.InstanceID = strings.TrimSpace(normalized.InstanceID)
+	normalized.InstanceName = strings.TrimSpace(normalized.InstanceName)
+	normalized.KeyExchangeAlgorithm = strings.ToLower(strings.TrimSpace(normalized.KeyExchangeAlgorithm))
+	if normalized.KeyExchangeAlgorithm == "" {
+		normalized.KeyExchangeAlgorithm = "ecdhe_p256"
+	}
+	normalized.SignatureAlgorithm = strings.ToLower(strings.TrimSpace(normalized.SignatureAlgorithm))
+	normalized.PublicKeyRef = strings.TrimSpace(normalized.PublicKeyRef)
+	normalized.PrivateKeyRef = strings.TrimSpace(normalized.PrivateKeyRef)
+
+	return normalized
+}
+
+// InternalAssertionConfig 定义网关内部断言签发与注入配置。
+type InternalAssertionConfig struct {
+	Enabled bool
+
+	HeaderName string
+	TTLSeconds int64
+
+	Issuer             string
+	SignatureAlgorithm string
+}
+
+// Normalized 返回包含默认值的配置快照。
+func (c *InternalAssertionConfig) Normalized() InternalAssertionConfig {
+	if c == nil {
+		return InternalAssertionConfig{
+			Enabled:    false,
+			HeaderName: "x-internal-assertion",
+			TTLSeconds: 10,
+		}
+	}
+
+	normalized := *c
+	if normalized.HeaderName == "" {
+		normalized.HeaderName = "x-internal-assertion"
+	}
+	if normalized.TTLSeconds <= 0 {
+		normalized.TTLSeconds = 10
+	}
+
+	return normalized
 }
 
 // MySQLConfig 定义 MySQL 基础客户端连接参数。

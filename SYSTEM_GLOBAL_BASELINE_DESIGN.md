@@ -88,8 +88,8 @@
 
 - 系统内所有需要记录公钥的非客户端实体（service/device/gateway/worker 等）统一使用同一张公钥目录表结构，不按模块拆分多套结构。
 - 公钥校验查询支持两种入口：
-	- 按 `key_id` 精确查询。
-	- 按关联 `entity_id` 查询当前可用公钥（用于 `key_id` 缺失或不确定场景）。
+  - 按 `key_id` 精确查询。
+  - 按关联 `entity_id` 查询当前可用公钥（用于 `key_id` 缺失或不确定场景）。
 - 模块配置文件至少应包含一个可用键（active key），并可由认证中心通过 `entity_id` 反查到对应公钥记录。
 
 ---
@@ -118,14 +118,52 @@
 
 ---
 
-## 6. 链路文档引用
+## 6. 内部断言机制（内部转发）
+
+统一约定：
+
+- 内部转发链路默认由 Gateway 在转发前签发短时断言，并通过 `x-internal-assertion` 传递。
+- 断言最小校验集必须覆盖：`aud/target_service`、`iat/exp`、`method/path`、`body_sha256`、`jti`。
+- 目标模块必须基于本地公钥目录完成验签，不得仅凭明文转发头建立信任。
+- 重放防护使用 `jti + TTL`（优先 Redis，异常时可降级内存窗口）。
+- 运行期认证中心回源校验路径已下线。
+
+实现边界：
+
+- 认证中心仍是签发权威与公钥目录权威。
+- 服务发现/注册信息仅用于存活与路由筛选，不作为身份可信证明。
+
+---
+
+## 7. 后端模块间加密信道约束（强制）
+
+适用范围：
+
+- 后端模块间调用（gateway、certification_server、api_service、data_worker）。
+
+统一约定：
+
+- 后端模块间业务请求必须运行在 commsec 安全通道上，不得以明文请求直连作为运行期兜底。
+- 安全通道握手初始化优先在 bootstrap/readiness 阶段完成预热；若未预热，必须在首次业务通信前由主动方执行 EnsureChannel 并完成握手。
+- 仅允许在“握手成功 + 通道有效”状态发送业务 payload；握手失败必须快速失败并返回显式错误。
+- 允许复用存量有效通道，但在通道过期、撤销或协商参数失配时必须重新握手，禁止绕过通道状态检查。
+
+运行期观测最小集：
+
+- `secure_channel_handshake_attempt_total`
+- `secure_channel_handshake_failed_total`
+- `secure_channel_reuse_total`
+
+---
+
+## 8. 链路文档引用
 
 - 按模块认证链路与启动链路见 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
 - 边缘端认证通道与上传通道的接口契约见 `edge_server/EDGE_GATEWAY_CHANNEL_INTERFACE_CONTRACT.md`。
 
 ---
 
-## 7. 跨模块职责边界（摘要）
+## 9. 跨模块职责边界（摘要）
 
 - Gateway：公共入口与协议映射，认证相关操作统一转发认证中心，不本地管理 challenge/session/token/grant 状态。
 - Certification Server：认证签发、会话/令牌/通道安全控制中心。
@@ -133,10 +171,29 @@
 - Edge Server：本地采集/推理/上传与边缘认证协调，不直接调用认证中心。
 - Client：仅走用户名密码链路，不参与密钥 bootstrap。
 - 非认证中心模块仅可消费认证结果进行限流和访问控制，不得本地签发、刷新、撤销或缓存认证凭证状态。
+- 内部限流描述符主体来源统一为“验签后身份上下文”（verified identity），不再以原始转发头作为主依据。
+- 会话与令牌标识统一使用 `x-verified-session-id` / `x-verified-token-id` 与 `x-downstream-*-id` 规范键，避免 `-id` 与非 `-id` 分裂。
+- API Service 运行期会话/令牌回源校验路径已下线。
+- 运行期告警指标至少覆盖：断言验签失败量、重放命中量。
+- 后端模块出站侧必须先确保安全通道可用（预热复用或首跳握手），之后才允许发送业务 payload。
 
 ---
 
-## 8. 模块文档引用关系
+## 10. 服务发现/注册简要约定（gateway、certification_server、api_service）
+
+本节仅定义后续推进所需的最小统一约定，不代表已接入完整运行链路。
+
+- 注册键路径统一为：`/bms/services/{service_name}/{instance_id}`。
+- 服务实例模型统一最小字段：`id`、`service_id`、`name`、`endpoint`、`heartbeat`、`weight`、`tags`、`active_comm_key_id`、`metadata`。
+- `heartbeat` 统一使用 Unix 毫秒时间戳；实例存活窗口默认 30 秒。
+- 注册时 `weight` 必须大于等于 1；发现阶段在标签过滤后优先走亲和选择，其次走权重随机，最后回退轮询。
+- `service_name` 为空时应直接返回参数错误，不进入发现选择。
+- 当使用租约注册时，续约周期内必须同步刷新 `heartbeat`，避免误判实例过期。
+- 服务发现/注册只提供“存活与路由筛选”能力，不作为运行期身份可信证明。
+
+---
+
+## 11. 模块文档引用关系
 
 模块架构文档（仅保留层级/结构/接口）：
 
@@ -155,7 +212,7 @@
 
 ---
 
-## 9. 变更治理
+## 12. 变更治理
 
 - 新增全局约定时，先更新本文件，再更新相关模块文档中的引用。
 - 若模块文档出现与本文件冲突，以本文件为准。

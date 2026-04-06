@@ -20,6 +20,8 @@
 - 仅有一个入站协议：HTTP Server。
 - 核心职能：将外部请求转发到内部服务。
 - 安全职责：在转发前完成认证授权与应用层安全通道准备。
+- 对内转发必须绑定有效 commsec 安全通道，未建立通道时先握手再转发。
+- 内部转发职责：按配置签发内部断言并注入下游请求，供目标模块本地验签。
 
 ### 2.2 明确非目标
 
@@ -116,7 +118,14 @@
   - IssueDownstreamGrant
 - 职责：获取下游访问授权（grant）。
 
-### 4.2.4 IAuthGatewayAuthorityClient
+### 4.2.4 IInternalAssertionSigner
+
+- 文件：src/interfaces/auth/internal_assertion_signer.go
+- 方法：
+  - BuildAssertion
+- 职责：在转发前构建短时内部断言（aud/method/path/body 摘要/iat/exp/jti）。
+
+### 4.2.5 IAuthGatewayAuthorityClient
 
 - 文件：src/interfaces/auth/auth_gateway_authority.go
 - 职责：统一定义网关到认证中心的远端鉴权门面调用（bootstrap、用户认证、token/session 校验、downstream grant）。
@@ -219,12 +228,14 @@
   - 解析 RPCMethod/Method
   - 从 Endpoint 获取连接
   - 构造 metadata（grant/channel/encrypted 信息）
+  - 按配置注入 `x-internal-assertion`
+  - 仅在 OutboundSecurityContext 含有效 channel（或刚完成 EnsureChannel 握手）时执行调用
   - 调用 conn.Invoke
 - 备注：为“最小可用骨架”，具体 proto 映射由 codec 实现。
 
 ### 4.6.2 RegistryService + DiscoveryAdapter
 
-- 文件：src/services/registry/registry_svc.go, src/services/registry/dscovery_adapter.go
+- 文件：src/services/registry/registry_svc.go, src/services/registry/discovery_adapter.go
 - 作用：
   - RegistryService：注册/注销/快照读取（基于 etcd）。
   - DiscoveryAdapter：实例选择（标签过滤、亲和、轮询）。
@@ -282,7 +293,7 @@
 2. 初始化 repo 客户端（mysql/redis/etcd/kafka）
 3. 组装 registry/discovery/adapters
 4. 执行 ReadinessUsecase（bootstrap）
-5. 可选：预热关键下游通道（EnsureChannel）
+5. 预热关键下游通道（EnsureChannel）；未预热时首跳请求前必须先握手完成
 6. 注册网关服务实例
 7. 启动 HTTP Server
 
@@ -295,9 +306,10 @@
 1. HTTP Handler 接收请求并标准化为 ForwardExternalRequest
 2. ForwardExternalRequestUsecase.Execute
 3. Resolver.Resolve 得到 ServiceName/Endpoint/Timeout
-4. SecurityPreparer.Prepare 得到 Grant/Channel/CipherText
-5. OutboundForwarder.Forward 执行 gRPC 调用
-6. 返回 OutboundForwardResponse 并映射 HTTP 响应
+4. SecurityPreparer.Prepare 得到 Grant/Channel/CipherText（若无可用 channel 则先握手）
+5. InternalAssertionSigner.BuildAssertion 生成内部断言
+6. OutboundForwarder.Forward 注入 metadata（含 assertion）并执行 gRPC 调用
+7. 返回 OutboundForwardResponse 并映射 HTTP 响应
 
 ## 5.3 限流链（跨协议统一）
 
@@ -321,6 +333,8 @@ HTTP middleware 与 gRPC interceptor 共用：
 5. DescriptorFactory 不允许依赖网络/存储层。
 6. 限流规则匹配逻辑不允许放在 middleware/interceptor。
 7. 加密工具层不得主动发起网络调用。
+8. 内部断言启用时，forwarder 不得绕过 signer；缺失 signer 必须快速失败。
+9. 后端模块间通信必须走加密信道，握手失败时快速失败，禁止明文降级。
 
 ---
 

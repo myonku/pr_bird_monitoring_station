@@ -3,12 +3,25 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 
 	grpcadapter "certification_server/src/adapters/grpc"
 	"certification_server/src/app"
+	modelsystem "certification_server/src/models/system"
+	commsecsvc "certification_server/src/services/commsec"
 )
 
 func main() {
+	settingsPath := os.Getenv("CERTIFICATION_SETTINGS_PATH")
+	cfg, err := modelsystem.LoadConfig(settingsPath)
+	if err != nil {
+		panic(err)
+	}
+
+	if _, err = commsecsvc.NewSecretKeyServiceFromConfig(cfg.SecretKey, nil, nil); err != nil {
+		panic(err)
+	}
+
 	grpcServer, err := grpcadapter.NewServer(grpcadapter.ServerOptions{Address: ":50051"})
 	if err != nil {
 		panic(err)
