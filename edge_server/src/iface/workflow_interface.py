@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from typing import Any
 
 from src.models.workflow.workflow import (
     CaptureContext,
@@ -12,6 +13,32 @@ from src.models.workflow.workflow import (
     ModelPackLocator,
     TwoStageInferenceResult,
 )
+
+
+class IMotionSensor(ABC):
+    """触发传感器抽象；负责等待触发并提供传感器快照。"""
+
+    @abstractmethod
+    def wait_for_motion(self, timeout_sec: float | None = None) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def snapshot(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        """可选关闭钩子。"""
+
+
+class ICameraController(ABC):
+    """相机控制抽象；负责抓拍并返回图像字节与尺寸。"""
+
+    @abstractmethod
+    def capture(self, image_format: str) -> tuple[bytes, int, int]:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        """可选关闭钩子。"""
 
 
 class ICaptureModule(ABC):

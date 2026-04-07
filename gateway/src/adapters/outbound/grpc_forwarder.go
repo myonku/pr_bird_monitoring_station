@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
-	authif "gateway/src/interfaces/auth"
 	commif "gateway/src/interfaces/communication"
 	authmodel "gateway/src/models/auth"
 	modelsystem "gateway/src/models/system"
@@ -34,10 +32,6 @@ type IGRPCPayloadCodec interface {
 type GRPCOutboundForwarder struct {
 	ConnProvider IGRPCConnProvider
 	Codec        IGRPCPayloadCodec
-
-	InternalAssertionSigner authif.IInternalAssertionSigner
-	EnableInternalAssertion bool
-	InternalAssertionHeader string
 }
 
 // Forward 使用 gRPC 客户端调用内部服务。
@@ -110,6 +104,22 @@ func (f *GRPCOutboundForwarder) attachSecurityMetadata(
 		md.Set(authmodel.HeaderDownstreamTokenID, security.Grant.TokenID.String())
 		md.Set(authmodel.HeaderDownstreamSessionID, security.Grant.SessionID.String())
 		md.Set(authmodel.HeaderDownstreamPrincipal, security.Grant.PrincipalID)
+		if security.Grant.SourceService != "" {
+			md.Set(authmodel.HeaderDownstreamSourceService, security.Grant.SourceService)
+		}
+		if security.Grant.TargetService != "" {
+			md.Set(authmodel.HeaderDownstreamTargetService, security.Grant.TargetService)
+		}
+		if security.Grant.BindingType != "" {
+			md.Set(authmodel.HeaderDownstreamBindingType, string(security.Grant.BindingType))
+		}
+		if !security.Grant.IssuedAt.IsZero() {
+			md.Set(authmodel.HeaderDownstreamGrantIssuedAt, strconv.FormatInt(security.Grant.IssuedAt.Unix(), 10))
+		}
+		if !security.Grant.ExpiresAt.IsZero() {
+			md.Set(authmodel.HeaderDownstreamGrantExpiresAt, strconv.FormatInt(security.Grant.ExpiresAt.Unix(), 10))
+		}
+		md.Set(authmodel.HeaderDownstreamAuthVerifyMode, authmodel.DownstreamAuthVerifyModeAuthorityDoubleCheck)
 	}
 	if security != nil && security.Channel != nil {
 		md.Set("x-secure-channel-id", security.Channel.ID.String())
@@ -120,93 +130,7 @@ func (f *GRPCOutboundForwarder) attachSecurityMetadata(
 		md.Set("x-encrypted-nonce", security.EncryptedMeta.Nonce)
 	}
 
-	if f != nil && f.EnableInternalAssertion {
-		if f.InternalAssertionSigner == nil {
-			return nil, &modelsystem.ErrInternalAssertionSignerRequired
-		}
-
-		assertion, err := f.InternalAssertionSigner.BuildAssertion(ctx, buildInternalAssertionRequest(req, security))
-		if err != nil {
-			return nil, err
-		}
-
-		headerKey := f.InternalAssertionHeader
-		if headerKey == "" {
-			headerKey = authmodel.HeaderInternalAssertion
-		}
-		md.Set(strings.ToLower(headerKey), assertion)
-	}
-
 	return metadata.NewOutgoingContext(ctx, md), nil
-}
-
-func buildInternalAssertionRequest(
-	req *commif.OutboundForwardRequest,
-	security *commif.OutboundSecurityContext,
-) *authmodel.InternalAssertionBuildRequest {
-	method := req.RPCMethod
-	if method == "" {
-		method = req.Method
-	}
-
-	assertReq := &authmodel.InternalAssertionBuildRequest{
-		TargetService: req.TargetService,
-		Method:        method,
-		Path:          req.Path,
-		Query:         req.Query,
-		Body:          req.Body,
-		TraceID:       pickHeaderValue(req.Headers, "x-trace-id", "trace-id"),
-		RequestID:     pickHeaderValue(req.Headers, "x-request-id", "request-id"),
-	}
-
-	if security == nil {
-		return assertReq
-	}
-
-	assertReq.Grant = security.Grant
-	if security.Channel != nil {
-		assertReq.SecureChannelID = security.Channel.ID.String()
-	}
-
-	if security.Grant != nil {
-		assertReq.Identity = &authmodel.IdentityContext{
-			PrincipalID:   security.Grant.PrincipalID,
-			SessionID:     security.Grant.SessionID,
-			TokenID:       security.Grant.TokenID,
-			GatewayID:     security.Grant.GatewayID,
-			SourceService: security.Grant.SourceService,
-			TargetService: security.Grant.TargetService,
-			Scopes:        append([]string(nil), security.Grant.Scopes...),
-		}
-	}
-
-	return assertReq
-}
-
-func pickHeaderValue(headers map[string]string, keys ...string) string {
-	if len(headers) == 0 || len(keys) == 0 {
-		return ""
-	}
-
-	for _, k := range keys {
-		if v, ok := headers[k]; ok && v != "" {
-			return v
-		}
-	}
-
-	for hk, hv := range headers {
-		if hv == "" {
-			continue
-		}
-		lowerHK := strings.ToLower(hk)
-		for _, k := range keys {
-			if lowerHK == strings.ToLower(k) {
-				return hv
-			}
-		}
-	}
-
-	return ""
 }
 
 func flattenMetadata(md metadata.MD) map[string]string {

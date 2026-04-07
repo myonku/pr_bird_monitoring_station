@@ -59,6 +59,16 @@ func (h *AuthGatewayHandler) AuthenticateByPassword(
 	return h.Orchestrator.AuthenticateByPassword(ctx, req)
 }
 
+func (h *AuthGatewayHandler) RefreshModuleToken(
+	ctx context.Context,
+	req *authmodel.TokenRefreshRequest,
+) (*authmodel.TokenBundle, error) {
+	if h == nil || h.Orchestrator == nil {
+		return nil, &modelsystem.ErrAuthGatewayOrchestratorDepsRequired
+	}
+	return h.Orchestrator.RefreshModuleToken(ctx, req)
+}
+
 func (h *AuthGatewayHandler) RefreshByUserSession(
 	ctx context.Context,
 	req *authmodel.TokenRefreshRequest,
@@ -97,6 +107,16 @@ func (h *AuthGatewayHandler) RevokeUserSession(
 		return &modelsystem.ErrAuthGatewayOrchestratorDepsRequired
 	}
 	return h.Orchestrator.RevokeUserSession(ctx, req)
+}
+
+func (h *AuthGatewayHandler) RevokeModuleSession(
+	ctx context.Context,
+	req *authmodel.SessionRevokeRequest,
+) error {
+	if h == nil || h.Orchestrator == nil {
+		return &modelsystem.ErrAuthGatewayOrchestratorDepsRequired
+	}
+	return h.Orchestrator.RevokeModuleSession(ctx, req)
 }
 
 func (h *AuthGatewayHandler) ValidateSession(

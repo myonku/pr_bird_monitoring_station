@@ -13,6 +13,10 @@ type IAuthAuthorityClient interface {
 	GetBootstrapStage(ctx context.Context, entityType authmodel.EntityType, entityID string) (authmodel.BootstrapStage, error)
 
 	AuthenticateByPassword(ctx context.Context, req *authmodel.UserPasswordAuthRequest) (*authmodel.UserPasswordAuthResult, error)
+	RefreshModuleToken(ctx context.Context, req *authmodel.TokenRefreshRequest) (*authmodel.TokenBundle, error)
+	RevokeModuleSession(ctx context.Context, req *authmodel.SessionRevokeRequest) error
+
+	// 历史兼容：客户端用户会话续期。
 	RefreshByUserSession(ctx context.Context, req *authmodel.TokenRefreshRequest) (*authmodel.TokenBundle, error)
 	VerifyToken(ctx context.Context, req *authmodel.TokenVerifyRequest) (*authmodel.TokenVerificationResult, error)
 	RevokeToken(ctx context.Context, req *authmodel.TokenRevokeRequest) error

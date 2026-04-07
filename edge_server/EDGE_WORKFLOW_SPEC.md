@@ -20,6 +20,8 @@
 
 1. 采集阶段：
 - 触发源为 PIR（生产）或 mock 采集（开发）。
+- 抓拍编排在 `SensorCameraCaptureModule` 中完成：先等待 sensor 触发，再调用 camera 抓拍。
+- 抓拍进入主流程前应用窗口限频（每窗口最多 N 张），超限时阻塞等待下个窗口。
 - 采集模块输出 `CaptureContext` 与 `ImagePayload`。
 
 2. 推理前决策阶段：
@@ -39,7 +41,7 @@
 4. 投递阶段：
 - 业务 payload 始终走单一 HTTP 上传通道。
 - 认证流程与业务 pipeline 隔离，不嵌入业务编排逻辑。
-- 上传前必须具备可用安全通道（优先 bootstrap 后预热，未预热则首跳上传前握手），禁止明文回退。
+- 上传前必须具备可用认证头并通过传输层加密（HTTPS/TLS）发送，禁止明文回退。
 
 5. 离线缓冲阶段：
 - 若策略跳过上传或上传失败，事件写入 SQLite spool。
@@ -60,8 +62,15 @@
 - 运行主 pipeline 循环与周期性补传。
 
 - `src/ignitor/capture_module.py`
+- `SensorCameraCaptureModule`：捕获主流程编排（sensor 与 camera 仅在此交互）。
 - `MockCaptureModule`：开发/测试采集源。
 - `PIRCameraCaptureModule`：树莓派 PIR 触发抓拍。
+
+- `src/ignitor/sensor_module.py`
+- 触发传感器适配层（mock / PIR）。
+
+- `src/ignitor/camera_module.py`
+- 相机控制适配层（mock / PiCamera2）。
 
 - `src/orchestration/decision_engine.py`
 - 基于运行时状态与推理输出执行策略决策。
@@ -90,17 +99,39 @@
 - 业务模块只调用 uploader 接口。
 - 认证模型与接口保持在认证子模块下。
 - 边缘业务 pipeline 中不嵌入认证编排逻辑。
-- 业务 uploader 必须消费认证模块输出的可用安全通道状态，通道不可用时先握手再上传。
+- 业务 uploader 必须消费认证模块输出的认证头；认证不可用时先走认证恢复（refresh/bootstrap）再上传。
 
 ## 5. 配置基线
 
 `settings.toml` 预期关键配置段：
 - `[runtime]`
+- `runtime.run_mode`: `development` / `production`
 - `[capture]`
+- `capture_rate_window_sec`, `capture_rate_max_images`
 - `[decision_policy]`
 - `[upload_http]`
+- `[runtime_log]`
 - `[model_pack]`
 - `[[model_pack_lightweight_candidates]]`
+
+### 5.2 运行日志观测
+
+- 通过 `runtime_log` 配置控制关键节点终端打印。
+- 推荐至少开启：`startup`、`capture`、`delivery`、`sync`，便于部署初期观测端到端是否打通。
+- 若终端噪音过高，可仅保留 `startup` + `delivery` + `auth`。
+
+## 5.1 运行模式协同约束
+
+- `development` 模式：
+	- 不初始化认证模块；
+	- 决策输入中的 `network_ready` 固定为 `false`，由决策引擎统一决定不上传；
+	- 本地推理与落盘逻辑保持正常；
+	- 不执行补传 worker 的对外上传尝试。
+
+- `production` 模式：
+	- 启动前必须通过认证门禁，至少持有可用长期凭证（refresh token）；
+	- 若长期凭证缺失/过期，则在启动阶段执行 bootstrap 重新获取；
+	- 断网时可继续本地流程直至长期凭证到期；到期后需恢复联网并重新 bootstrap 才可继续主流程。
 
 ## 6. 演进规则
 

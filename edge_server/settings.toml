@@ -1,11 +1,14 @@
 [runtime]
 device_id = "edge_device_001"
+# development: 开发联调（禁用认证与外发）；production: 正常运行（启用认证启动门禁）
+run_mode = "development"
 spool_db_path = "data/edge_spool.sqlite3"
 sync_interval_sec = 3.0
 sync_batch_size = 20
 
 [auth]
 secret_key_dir = "secret_keys"
+# 可选：为空时由后端按 runtime.device_id 回查公钥，边缘端从 secret_key_dir 自动解析本地密钥对
 active_key_id = ""
 auth_state_db_path = "data/edge_auth.sqlite3"
 
@@ -15,6 +18,9 @@ mode = "mock"
 pir_gpio_pin = 17
 pir_wait_timeout_sec = 10.0
 capture_cooldown_sec = 0.1
+# 窗口限频：每 10 秒最多放行 3 次抓拍（设为 0 表示关闭）
+capture_rate_window_sec = 10.0
+capture_rate_max_images = 3
 image_format = "jpg"
 image_width = 1920
 image_height = 1080
@@ -32,6 +38,12 @@ confidence_threshold = 0.60
 high_load_skip_inference = false
 cpu_high_watermark = 0.85
 memory_high_watermark = 0.90
+
+[runtime_log]
+enabled = true
+include_timestamp = true
+# 可选: startup,capture,decision,inference,delivery,sync,auth,all
+stages = ["startup", "capture", "decision", "inference", "delivery", "sync", "auth"]
 
 [model_pack]
 # 边缘端本地模型目录；每个 task 子目录内必须且仅保留一个模型文件。

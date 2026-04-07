@@ -24,7 +24,6 @@ from src.models.auth.internal_header_keys import (
     HEADER_VERIFIED_ENTITY_ID,
     HEADER_VERIFIED_ENTITY_TYPE,
     HEADER_VERIFIED_GATEWAY_ID,
-    HEADER_VERIFIED_JTI,
     HEADER_VERIFIED_PRINCIPAL_ID,
     HEADER_VERIFIED_REQUEST_ID,
     HEADER_VERIFIED_SCOPES,
@@ -60,7 +59,6 @@ class VerifiedRateLimitIdentity:
 
     trace_id: str = ""
     request_id: str = ""
-    assertion_jti: str = ""
 
 
 class RateLimiterService:
@@ -222,7 +220,6 @@ def resolve_verified_identity(headers: Mapping[str, str]) -> VerifiedRateLimitId
             HEADER_VERIFIED_REQUEST_ID,
             HEADER_REQUEST_ID,
         ),
-        assertion_jti=_first_nonempty(headers, HEADER_VERIFIED_JTI),
     )
 
 
@@ -266,8 +263,6 @@ def _build_trace_tags(identity: VerifiedRateLimitIdentity) -> dict[str, str]:
         tags["trace_id"] = identity.trace_id
     if identity.request_id:
         tags["request_id"] = identity.request_id
-    if identity.assertion_jti:
-        tags["assertion_jti"] = identity.assertion_jti
     return tags
 
 

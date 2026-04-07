@@ -1,7 +1,5 @@
 from src.iface.workflow_interface import ICaptureModule
-from src.models.sys.config import CaptureConfig
 from src.ignitor.capture_module import MockCaptureModule, PIRCameraCaptureModule
-from src.iface.workflow_interface import ICaptureModule
 from src.models.sys.config import CaptureConfig
 
 
@@ -20,6 +18,8 @@ def build_capture_module(
             image_height=capture_cfg.image_height,
             capture_cooldown_sec=capture_cfg.capture_cooldown_sec,
             pir_wait_timeout_sec=capture_cfg.pir_wait_timeout_sec,
+            capture_rate_window_sec=capture_cfg.capture_rate_window_sec,
+            capture_rate_max_images=capture_cfg.capture_rate_max_images,
         )
 
     return MockCaptureModule(
@@ -27,4 +27,6 @@ def build_capture_module(
         image_format=capture_cfg.image_format,
         image_width=capture_cfg.image_width,
         image_height=capture_cfg.image_height,
+        capture_rate_window_sec=capture_cfg.capture_rate_window_sec,
+        capture_rate_max_images=capture_cfg.capture_rate_max_images,
     )

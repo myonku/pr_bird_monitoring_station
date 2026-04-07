@@ -1,9 +1,8 @@
-"""Internal assertion and downstream context header keys.
+"""Forwarded-auth and downstream context header keys.
 
 These constants keep key names stable across interceptor, usecase, and outbound code.
 """
 
-HEADER_INTERNAL_ASSERTION = "x-internal-assertion"
 HEADER_AUTH_VERIFIED = "x-auth-verified"
 HEADER_TRUE = "1"
 
@@ -18,12 +17,17 @@ HEADER_VERIFIED_ENTITY_ID = "x-verified-entity-id"
 HEADER_VERIFIED_SCOPES = "x-verified-scopes"
 HEADER_VERIFIED_TRACE_ID = "x-verified-trace-id"
 HEADER_VERIFIED_REQUEST_ID = "x-verified-request-id"
-HEADER_VERIFIED_JTI = "x-verified-jti"
-HEADER_VERIFIED_KEY_ID = "x-verified-key-id"
 
 HEADER_DOWNSTREAM_PRINCIPAL = "x-downstream-principal"
 HEADER_DOWNSTREAM_SESSION_ID = "x-downstream-session-id"
 HEADER_DOWNSTREAM_TOKEN_ID = "x-downstream-token-id"
+HEADER_DOWNSTREAM_SOURCE_SERVICE = "x-downstream-source-service"
+HEADER_DOWNSTREAM_TARGET_SERVICE = "x-downstream-target-service"
+HEADER_DOWNSTREAM_BINDING_TYPE = "x-downstream-binding-type"
+HEADER_DOWNSTREAM_GRANT_ISSUED_AT = "x-downstream-grant-issued-at"
+HEADER_DOWNSTREAM_GRANT_EXPIRES_AT = "x-downstream-grant-expires-at"
+HEADER_DOWNSTREAM_AUTH_VERIFY_MODE = "x-downstream-auth-verify-mode"
+DOWNSTREAM_AUTH_VERIFY_MODE_AUTHORITY_DOUBLE_CHECK = "authority-double-check"
 
 HEADER_GATEWAY_ID = "x-gateway-id"
 HEADER_SOURCE_SERVICE = "x-source-service"

@@ -7,6 +7,8 @@ import (
 	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"
 	"context"
+
+	"github.com/google/uuid"
 )
 
 var _ orchestrationif.IAuthGatewayOrchestrator = (*AuthGatewayUsecase)(nil)
@@ -61,6 +63,16 @@ func (u *AuthGatewayUsecase) AuthenticateByPassword(
 	return u.UserCredential.AuthenticateByPassword(ctx, req)
 }
 
+func (u *AuthGatewayUsecase) RefreshModuleToken(
+	ctx context.Context,
+	req *authmodel.TokenRefreshRequest,
+) (*authmodel.TokenBundle, error) {
+	if u == nil || u.Token == nil {
+		return nil, &modelsystem.ErrAuthGatewayOrchestratorDepsRequired
+	}
+	return u.Token.RefreshTokenBundle(ctx, req)
+}
+
 func (u *AuthGatewayUsecase) RefreshByUserSession(
 	ctx context.Context,
 	req *authmodel.TokenRefreshRequest,
@@ -99,6 +111,33 @@ func (u *AuthGatewayUsecase) RevokeUserSession(
 		return &modelsystem.ErrAuthGatewayOrchestratorDepsRequired
 	}
 	return u.UserCredential.RevokeUserSession(ctx, req)
+}
+
+func (u *AuthGatewayUsecase) RevokeModuleSession(
+	ctx context.Context,
+	req *authmodel.SessionRevokeRequest,
+) error {
+	if u == nil || u.Session == nil {
+		return &modelsystem.ErrAuthGatewayOrchestratorDepsRequired
+	}
+
+	var familyID uuid.UUID
+	if req != nil && req.SessionID != uuid.Nil {
+		session, err := u.Session.GetSession(ctx, req.SessionID.String())
+		if err == nil && session != nil {
+			familyID = session.TokenFamilyID
+		}
+	}
+
+	if err := u.Session.RevokeSession(ctx, req); err != nil {
+		return err
+	}
+
+	if u.Token != nil && familyID != uuid.Nil {
+		return u.Token.RevokeTokenFamily(ctx, familyID.String(), req.RevokedBy)
+	}
+
+	return nil
 }
 
 func (u *AuthGatewayUsecase) ValidateSession(

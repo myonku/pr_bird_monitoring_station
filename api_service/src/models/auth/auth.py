@@ -208,28 +208,6 @@ class TokenVerificationResult(Struct, kw_only=True):
     failure_reason: str
 
 
-class DownstreamAccessGrant(Struct, kw_only=True):
-    """描述网关向内部服务转发请求时，基于原始令牌生成的下游访问授权信息，包括授权的主体信息、作用域、绑定信息和时间戳等。"""
-
-    gateway_id: str
-    source_service: str
-    target_service: str
-
-    session_id: UUID
-    token_id: UUID
-    principal_id: str
-    binding_type: str
-
-    scopes: list[str]
-
-    encryption_required: bool = False
-    secure_channel_id: UUID
-    cipher_suite: str
-
-    issued_at: float
-    expires_at: float
-
-
 class SessionTouchMeta(Struct, kw_only=True):
     """更新会话时使用的元信息，包括请求的来源IP、用户代理、客户端ID、网关ID、请求的路由和方法等。"""
 

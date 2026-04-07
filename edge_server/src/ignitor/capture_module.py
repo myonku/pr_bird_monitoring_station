@@ -1,17 +1,138 @@
 import hashlib
-import importlib
-import io
 import time
+from collections import deque
 from typing import Any
 
-from PIL import Image
-
-from src.iface.workflow_interface import ICaptureModule
+from src.iface.workflow_interface import ICaptureModule, IMotionSensor
+from src.ignitor.camera_module import (
+    ICameraController,
+    MockCameraController,
+    PiCameraController,
+)
+from src.ignitor.sensor_module import MockMotionSensor, PIRMotionSensor
 from src.models.workflow.workflow import CaptureContext, ImagePayload
 
 
-class MockCaptureModule(ICaptureModule):
-    """开发模式捕拍模块：生成灰度测试图，便于本地联调。"""
+class CaptureRateLimiter:
+    """固定窗口限频：每个窗口期最多放行指定数量的抓拍。"""
+
+    def __init__(self, window_sec: float, max_images: int) -> None:
+        self.window_sec = max(float(window_sec), 0.0)
+        self.max_images = int(max_images)
+        self._history: deque[float] = deque()
+
+    @property
+    def enabled(self) -> bool:
+        return self.window_sec > 0 and self.max_images > 0
+
+    def _evict_expired(self, now: float) -> None:
+        if not self.enabled:
+            self._history.clear()
+            return
+        while self._history and (now - self._history[0]) >= self.window_sec:
+            self._history.popleft()
+
+    def acquire(self) -> None:
+        if not self.enabled:
+            return
+
+        while True:
+            now = time.monotonic()
+            self._evict_expired(now)
+
+            if len(self._history) < self.max_images:
+                self._history.append(now)
+                return
+
+            wait_sec = self.window_sec - (now - self._history[0])
+            if wait_sec <= 0:
+                continue
+            time.sleep(wait_sec)
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "window_sec": self.window_sec,
+            "max_images": self.max_images if self.enabled else 0,
+        }
+
+
+class SensorCameraCaptureModule(ICaptureModule):
+    """捕拍编排器：仅在此处协同 sensor 与 camera。"""
+
+    def __init__(
+        self,
+        device_id: str,
+        sensor: IMotionSensor,
+        camera: ICameraController,
+        image_format: str = "jpg",
+        capture_cooldown_sec: float = 0.0,
+        sensor_wait_timeout_sec: float | None = None,
+        capture_rate_window_sec: float = 0.0,
+        capture_rate_max_images: int = 0,
+    ) -> None:
+        self.device_id = device_id
+        self._sensor = sensor
+        self._camera = camera
+        self.image_format = image_format
+        self.capture_cooldown_sec = capture_cooldown_sec
+        self.sensor_wait_timeout_sec = sensor_wait_timeout_sec
+        self._rate_limiter = CaptureRateLimiter(
+            window_sec=capture_rate_window_sec,
+            max_images=capture_rate_max_images,
+        )
+
+    def close(self) -> None:
+        for component in (self._camera, self._sensor):
+            close_fn = getattr(component, "close", None)
+            if callable(close_fn):
+                try:
+                    close_fn()
+                except Exception:
+                    pass
+
+    def __del__(self) -> None:
+        self.close()
+
+    def wait_and_capture(
+        self,
+        timeout_sec: float | None = None,
+    ) -> tuple[CaptureContext, ImagePayload]:
+        wait_timeout = (
+            timeout_sec if timeout_sec is not None else self.sensor_wait_timeout_sec
+        )
+        motion_detected = self._sensor.wait_for_motion(timeout_sec=wait_timeout)
+        if not motion_detected:
+            raise TimeoutError("capture_wait_timeout")
+
+        self._rate_limiter.acquire()
+
+        image_bytes, width, height = self._camera.capture(self.image_format)
+
+        if self.capture_cooldown_sec > 0:
+            time.sleep(self.capture_cooldown_sec)
+
+        sensor_snapshot = dict(self._sensor.snapshot())
+        sensor_snapshot["rate_limit"] = self._rate_limiter.snapshot()
+
+        context = CaptureContext(
+            device_id=self.device_id,
+            trigger_type="motion",
+            sensor_snapshot=sensor_snapshot,
+        )
+        payload = ImagePayload(
+            image_id=f"img-{int(time.time() * 1000)}",
+            bytes_data=image_bytes,
+            format=self.image_format,
+            width=width,
+            height=height,
+            checksum_sha256=hashlib.sha256(image_bytes).hexdigest(),
+        )
+        return context, payload
+
+
+class MockCaptureModule(SensorCameraCaptureModule):
+    """开发模式捕拍模块：mock sensor + mock camera。"""
 
     def __init__(
         self,
@@ -19,42 +140,25 @@ class MockCaptureModule(ICaptureModule):
         image_format: str = "jpg",
         image_width: int = 1920,
         image_height: int = 1080,
+        capture_rate_window_sec: float = 0.0,
+        capture_rate_max_images: int = 0,
     ) -> None:
-        self.device_id = device_id
-        self.image_format = image_format
-        self.image_width = image_width
-        self.image_height = image_height
-
-    def wait_and_capture(
-        self,
-        timeout_sec: float | None = None,
-    ) -> tuple[CaptureContext, ImagePayload]:
-        if timeout_sec is not None and timeout_sec > 0:
-            time.sleep(min(timeout_sec, 0.05))
-
-        image = Image.new("RGB", (self.image_width, self.image_height), (128, 128, 128))
-        output = io.BytesIO()
-        save_format = "JPEG" if self.image_format.lower() in {"jpg", "jpeg"} else "PNG"
-        image.save(output, format=save_format)
-        image_bytes = output.getvalue()
-
-        context = CaptureContext(
-            device_id=self.device_id,
-            trigger_type="motion",
-            sensor_snapshot={"capture_mode": "mock"},
+        super().__init__(
+            device_id=device_id,
+            sensor=MockMotionSensor(),
+            camera=MockCameraController(
+                image_width=image_width,
+                image_height=image_height,
+            ),
+            image_format=image_format,
+            capture_cooldown_sec=0.0,
+            sensor_wait_timeout_sec=None,
+            capture_rate_window_sec=capture_rate_window_sec,
+            capture_rate_max_images=capture_rate_max_images,
         )
-        payload = ImagePayload(
-            image_id=f"img-{int(time.time() * 1000)}",
-            bytes_data=image_bytes,
-            format=self.image_format,
-            width=self.image_width,
-            height=self.image_height,
-            checksum_sha256=hashlib.sha256(image_bytes).hexdigest(),
-        )
-        return context, payload
 
 
-class PIRCameraCaptureModule(ICaptureModule):
+class PIRCameraCaptureModule(SensorCameraCaptureModule):
     """树莓派模式捕拍模块：PIR 触发 + 相机抓拍。"""
 
     def __init__(
@@ -66,76 +170,19 @@ class PIRCameraCaptureModule(ICaptureModule):
         image_height: int = 1080,
         capture_cooldown_sec: float = 0.1,
         pir_wait_timeout_sec: float | None = None,
+        capture_rate_window_sec: float = 0.0,
+        capture_rate_max_images: int = 0,
     ) -> None:
-        self.device_id = device_id
-        self.pir_gpio_pin = pir_gpio_pin
-        self.image_format = image_format
-        self.image_width = image_width
-        self.image_height = image_height
-        self.capture_cooldown_sec = capture_cooldown_sec
-        self.pir_wait_timeout_sec = pir_wait_timeout_sec
-
-        try:
-            MotionSensor = getattr(importlib.import_module("gpiozero"), "MotionSensor")
-            Picamera2 = getattr(importlib.import_module("picamera2"), "Picamera2")
-        except ImportError as exc:
-            raise ModuleNotFoundError(
-                "PIR capture mode requires gpiozero and picamera2 on Raspberry Pi"
-            ) from exc
-
-        self._sensor: Any = MotionSensor(self.pir_gpio_pin)
-        self._camera: Any = Picamera2()
-        camera_cfg = self._camera.create_still_configuration(
-            main={"size": (self.image_width, self.image_height)}
+        super().__init__(
+            device_id=device_id,
+            sensor=PIRMotionSensor(pir_gpio_pin=pir_gpio_pin),
+            camera=PiCameraController(
+                image_width=image_width,
+                image_height=image_height,
+            ),
+            image_format=image_format,
+            capture_cooldown_sec=capture_cooldown_sec,
+            sensor_wait_timeout_sec=pir_wait_timeout_sec,
+            capture_rate_window_sec=capture_rate_window_sec,
+            capture_rate_max_images=capture_rate_max_images,
         )
-        self._camera.configure(camera_cfg)
-        self._camera.start()
-
-    def close(self) -> None:
-        if hasattr(self, "_camera") and self._camera is not None:
-            try:
-                self._camera.close()
-            except Exception:
-                pass
-
-    def __del__(self) -> None:
-        self.close()
-
-    def wait_and_capture(
-        self,
-        timeout_sec: float | None = None,
-    ) -> tuple[CaptureContext, ImagePayload]:
-        wait_timeout = timeout_sec if timeout_sec is not None else self.pir_wait_timeout_sec
-        self._sensor.wait_for_motion(timeout=wait_timeout)
-
-        if not self._sensor.motion_detected:
-            raise TimeoutError("pir_wait_timeout")
-
-        output = io.BytesIO()
-        save_format = "JPEG" if self.image_format.lower() in {"jpg", "jpeg"} else "PNG"
-        self._camera.capture_file(output, format=save_format)
-        image_bytes = output.getvalue()
-
-        with Image.open(io.BytesIO(image_bytes)) as image:
-            width, height = image.size
-
-        if self.capture_cooldown_sec > 0:
-            time.sleep(self.capture_cooldown_sec)
-
-        context = CaptureContext(
-            device_id=self.device_id,
-            trigger_type="motion",
-            sensor_snapshot={
-                "capture_mode": "pir",
-                "pir_gpio_pin": self.pir_gpio_pin,
-            },
-        )
-        payload = ImagePayload(
-            image_id=f"img-{int(time.time() * 1000)}",
-            bytes_data=image_bytes,
-            format=self.image_format,
-            width=width,
-            height=height,
-            checksum_sha256=hashlib.sha256(image_bytes).hexdigest(),
-        )
-        return context, payload

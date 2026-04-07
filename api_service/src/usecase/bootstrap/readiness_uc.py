@@ -1,3 +1,4 @@
+from copy import deepcopy
 from time import time
 
 from src.models.auth.bootstrap import (
@@ -14,6 +15,7 @@ class ReadinessUsecase:
 
     def __init__(self, bootstrap_client: BootstrapClient):
         self.bootstrap_client = bootstrap_client
+        self._last_ready: BootstrapAuthResult | None = None
 
     async def execute(
         self, challenge_req: ChallengeRequest
@@ -23,16 +25,8 @@ class ReadinessUsecase:
             {"principal_id": principal_id}
         )
         if stage == "ready":
-            now = time()
-            return BootstrapAuthResult(
-                stage="ready",
-                identity=None,
-                session=None,
-                tokens=None,
-                active_comm_key_id=challenge_req.key_id,
-                issued_at=now,
-                expires_at=now,
-            )
+            if self._last_ready is not None and self._last_ready.tokens is not None:
+                return deepcopy(self._last_ready)
 
         challenge = await self.bootstrap_client.init_challenge(challenge_req)
         signed = SignedChallengeResponse(
@@ -42,12 +36,15 @@ class ReadinessUsecase:
             signature="memory-signed",
             signed_at=time(),
         )
-        return await self.bootstrap_client.authenticate_bootstrap(
+        result = await self.bootstrap_client.authenticate_bootstrap(
             BootstrapAuthRequest(
                 challenge=challenge,
                 signed=signed,
                 scopes=["internal.invoke"],
                 role="service",
-                require_downstream_token=True,
+                require_downstream_token=False,
             )
         )
+        if result is not None and result.stage == "ready" and result.tokens is not None:
+            self._last_ready = deepcopy(result)
+        return result

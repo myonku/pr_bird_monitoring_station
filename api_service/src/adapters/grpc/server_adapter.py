@@ -5,8 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.models.sys.config import InternalAssertionConfig
-    from src.services.auth.internal_assertion_verifier import IInternalAssertionVerifier
+    from src.services.auth.forwarded_auth_verifier import IForwardedAuthVerifier
 
 
 @dataclass(slots=True)
@@ -60,18 +59,15 @@ class GrpcServerAdapter:
     ) -> None:
         self._interceptors.add(interceptor)
 
-    def add_internal_assertion_interceptor(
+    def add_forwarded_auth_interceptor(
         self,
-        verifier: "IInternalAssertionVerifier",
-        config: "InternalAssertionConfig | None" = None,
+        verifier: "IForwardedAuthVerifier",
     ) -> None:
-        from src.services.auth.internal_assertion_interceptor import (
-            InternalAssertionUnaryInterceptor,
+        from src.services.auth.forwarded_auth_interceptor import (
+            ForwardedAuthUnaryInterceptor,
         )
 
-        self.add_unary_interceptor(
-            InternalAssertionUnaryInterceptor(verifier=verifier, config=config)
-        )
+        self.add_unary_interceptor(ForwardedAuthUnaryInterceptor(verifier=verifier))
 
     async def start(self) -> None:
         if self._started:

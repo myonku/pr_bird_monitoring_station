@@ -56,10 +56,6 @@ func parseProjectConfigFromTOML(content string, cfg *ProjectConfig) error {
 		}
 
 		switch section {
-		case "internal_assertion":
-			if err := assignInternalAssertionField(cfg, key, value, lineNo); err != nil {
-				return err
-			}
 		case "runtime":
 			if err := assignRuntimeField(cfg, key, value, lineNo); err != nil {
 				return err
@@ -78,47 +74,6 @@ func parseProjectConfigFromTOML(content string, cfg *ProjectConfig) error {
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("scan config failed: %w", err)
 	}
-	return nil
-}
-
-func assignInternalAssertionField(cfg *ProjectConfig, key, value string, lineNo int) error {
-	if cfg.InternalAssertion == nil {
-		cfg.InternalAssertion = &InternalAssertionConfig{}
-	}
-
-	switch key {
-	case "enabled":
-		parsed, err := parseTOMLBool(value)
-		if err != nil {
-			return fmt.Errorf("invalid [internal_assertion].enabled at line %d: %w", lineNo, err)
-		}
-		cfg.InternalAssertion.Enabled = parsed
-	case "header_name":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [internal_assertion].header_name at line %d: %w", lineNo, err)
-		}
-		cfg.InternalAssertion.HeaderName = parsed
-	case "ttl_seconds":
-		parsed, err := parseTOMLInt64(value)
-		if err != nil {
-			return fmt.Errorf("invalid [internal_assertion].ttl_seconds at line %d: %w", lineNo, err)
-		}
-		cfg.InternalAssertion.TTLSeconds = parsed
-	case "issuer":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [internal_assertion].issuer at line %d: %w", lineNo, err)
-		}
-		cfg.InternalAssertion.Issuer = parsed
-	case "signature_algorithm":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [internal_assertion].signature_algorithm at line %d: %w", lineNo, err)
-		}
-		cfg.InternalAssertion.SignatureAlgorithm = parsed
-	}
-
 	return nil
 }
 

@@ -1,13 +1,12 @@
 from typing import Protocol
 
 from src.models.auth.auth import (
-    DownstreamAccessGrant,
     Session,
     TokenBundle,
     TokenVerificationResult,
 )
 from src.models.auth.auth_contract import (
-    DownstreamGrantRequest,
+    SessionRevokeRequest,
     SessionValidateRequest,
     TokenRefreshRequest,
     TokenRevokeRequest,
@@ -38,11 +37,15 @@ class IAuthAuthorityClient(Protocol):
     ) -> BootstrapStage:
         ...
 
-    async def issue_downstream_grant(
-        self, req: DownstreamGrantRequest
-    ) -> DownstreamAccessGrant:
+    async def refresh_module_token(
+        self, req: TokenRefreshRequest
+    ) -> TokenBundle | None:
         ...
 
+    async def revoke_module_session(self, req: SessionRevokeRequest) -> None:
+        ...
+
+    # 历史兼容：客户端用户会话续期。
     async def refresh_by_user_session(
         self, req: TokenRefreshRequest
     ) -> TokenBundle | None:

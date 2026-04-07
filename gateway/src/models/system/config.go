@@ -28,9 +28,8 @@ type ProjectConfig struct {
 	Etcd  *EtcdClientConfig
 	Kafka *KafkaClientConfig
 
-	InternalAssertion *InternalAssertionConfig
-	Runtime           *RuntimeConfig
-	Auth              *AuthConfig
+	Runtime *RuntimeConfig
+	Auth    *AuthConfig
 }
 
 // RuntimeConfig 定义服务本体运行时标识配置。
@@ -129,38 +128,6 @@ func (c *ProjectConfig) BuildSecretKeyStartupParams(defaultEntityID string) Secr
 		InstanceID:   runtime.InstanceID,
 		InstanceName: runtime.InstanceName,
 	}
-}
-
-// InternalAssertionConfig 定义网关内部断言签发与注入配置。
-type InternalAssertionConfig struct {
-	Enabled bool
-
-	HeaderName string
-	TTLSeconds int64
-
-	Issuer             string
-	SignatureAlgorithm string
-}
-
-// Normalized 返回包含默认值的配置快照。
-func (c *InternalAssertionConfig) Normalized() InternalAssertionConfig {
-	if c == nil {
-		return InternalAssertionConfig{
-			Enabled:    false,
-			HeaderName: "x-internal-assertion",
-			TTLSeconds: 10,
-		}
-	}
-
-	normalized := *c
-	if normalized.HeaderName == "" {
-		normalized.HeaderName = "x-internal-assertion"
-	}
-	if normalized.TTLSeconds <= 0 {
-		normalized.TTLSeconds = 10
-	}
-
-	return normalized
 }
 
 // MySQLConfig 定义 MySQL 基础客户端连接参数。

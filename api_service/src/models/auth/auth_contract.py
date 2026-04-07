@@ -3,11 +3,9 @@ from uuid import UUID
 
 from src.models.auth.auth import (
     AuthMethod,
-    IdentityContext,
     Principal,
     TokenType,
 )
-from src.models.commsec.commsec import ChannelBindingType
 
 
 class TokenIssueRequest(Struct, kw_only=True):
@@ -114,15 +112,3 @@ class SessionRevokeRequest(Struct, kw_only=True):
 
     request_id: str
     trace_id: str
-
-
-class DownstreamGrantRequest(Struct, kw_only=True):
-    """表示网关申请下游服务授权参数。"""
-
-    identity: IdentityContext
-
-    target_service: str
-    binding_type: ChannelBindingType
-
-    require_encryption: bool
-    ttl_sec: int

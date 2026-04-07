@@ -19,7 +19,7 @@
 
 - 普通业务服务模块代表。
 - 对外（对内网）提供 gRPC server 业务接口。
-- 内部转发默认消费网关断言并本地验签，运行期回源校验路径已下线。
+- 内部转发默认消费网关下游认证上下文，并向认证中心执行再次校验。
 - 与其他后端模块通信必须走 commsec 加密信道；握手初始化优先在 readiness 预热，未预热时在首次出站调用前完成。
 - 可按业务需求调用其他内部服务（gRPC client 能力由统一 client hub 管理）。
 
@@ -103,17 +103,8 @@
   - 服务注册回调管理
   - 启动/停止骨架
   - 拦截器链容器
-  - 内部断言验签拦截器接入入口
+  - 认证中心回源校验拦截器接入入口
 - 作用：承载普通服务模块的 gRPC 入站边界。
-
-### 4.2.2 GrpcClientHub
-
-- 文件：src/adapters/grpc/client_hub.py
-- 能力：
-  - 按服务名维护 profile
-  - 统一获取和复用 client
-  - 连接预热与关闭
-- 作用：统一管理各层出站 gRPC client，避免在业务层散落连接管理。
 
 ---
 
@@ -125,19 +116,13 @@
 - 依赖：BootstrapClient
 - 作用：服务冷启动阶段 bootstrap 就绪编排。
 
-### 4.3.2 PrepareOutboundSecurityUsecase
-
-- 文件：src/usecase/security/prepare_outbound_security_uc.py
-- 依赖：DownstreamGrantService, CommSecurityService
-- 作用：出站前统一构建 grant/channel/encrypt 安全上下文。
-
-### 4.3.3 HandleInboundGrpcUsecase
+### 4.3.2 HandleInboundGrpcUsecase
 
 - 文件：src/usecase/business/handle_inbound_grpc_uc.py
-- 依赖：PrepareOutboundSecurityUsecase
-- 作用：统一入站业务编排与跨服务调用决策。
+- 作用：统一入站业务编排。
+- 约束：检测到横向调用目标（x-outbound-target / x-outbound-method）时直接拒绝。
 
-### 4.3.4 EnforceInboundUsecase（限流）
+### 4.3.3 EnforceInboundUsecase（限流）
 
 - 文件：src/usecase/ratelimit/enforce_inbound_uc.py
 - 依赖：DescriptorFactory, RateLimiterService
@@ -151,17 +136,11 @@
 ### 4.4.1 认证与通信安全服务
 
 - 文件：src/services/auth/*, src/services/commsec/*
-- 作用：认证相关能力统一转发认证中心，不在本地维护 challenge/session/token/grant 状态；通信安全能力由本地 commsec 模块承载。
-- 阶段5约束：运行期 `validate_session` / `verify_token` 回源路径已下线。
+- 作用：认证中心负责权威签发/校验/撤销能力；api_service 仅负责本模块认证信息生命周期（持有、续期、注销），不承担权威职责。
+- 阶段5约束：内部转发该跳校验必须回源认证中心，最小校验集为会话有效性 + 主体一致性。
 - 告警指标：
-  - `internal_assertion_verify_failed_total`（断言验签失败量）
-  - `internal_assertion_replay_hit_total`（重放命中量）
-
-### 4.4.2 OutboundInvokeService
-
-- 文件：src/services/communication/outbound_invoke_svc.py
-- 作用：统一发起对内 gRPC 出站调用，消费已准备好的安全上下文。
-- 约束：仅在已建立安全通道（或刚完成 EnsureChannel 握手）后发起调用，禁止明文回退。
+  - `authority_verify_failed_total`（回源认证校验失败量）
+  - `authority_verify_timeout_total`（回源认证校验超时量）
 
 ---
 
@@ -190,34 +169,29 @@
 1. 加载配置。
   - 配置分区约束：模块本体标识放 `runtime`；密钥装载信息放 `auth`，且仅保留 `secret_key_dir` 与 `active_key_id`。
   - 生命周期约束：配置只在启动期读取一次，后续链路按参数快照传递，禁止运行期重复读取 settings。
-2. 初始化 repo 客户端。
-3. 初始化 GrpcClientHub 并注册下游服务 profile。
-4. 执行 ReadinessUsecase（必要时向认证中心完成 bootstrap）。
-5. 可选预热关键下游加密通道（EnsureChannel），建立可复用安全上下文。
-6. 组装 gRPC server（注册 handler + 拦截器链，默认启用内部断言验签）。
-7. 启动 gRPC server。
+2. 初始化运行期依赖（secret key service、可选 Redis）。
+3. 组装 gRPC server（注册 handler + 拦截器链，默认启用认证中心回源校验）。
+4. 启动 gRPC server。
 
 ## 5.2 运行链（职能行为）
 
-目标：处理网关转发来的业务请求，并在必要时发起跨服务调用。
+目标：处理网关转发来的业务请求，保持无横向调用模型。
 
 调用链：
 
 1. gRPC 请求进入。
-2. 内部断言拦截器完成验签并注入 verified identity。
+2. 回源认证拦截器基于下游认证上下文调用认证中心并注入 verified identity。
 3. 限流与鉴权拦截器基于 verified identity 执行。
 4. Handler 调用 HandleInboundGrpcUsecase。
-5. 业务需要跨服务调用时，调用 PrepareOutboundSecurityUsecase。
-6. 出站前确保目标安全通道可用（预热复用或首跳握手）。
-7. OutboundInvokeService 通过 GrpcClientHub 发起调用。
-8. 返回业务响应。
+5. 若检测到横向调用请求头，按策略直接拒绝。
+6. 返回业务响应。
 
 ## 5.3 限流链（普通服务）
 
 统一流程：
 
 1. 拦截器提取上下文。
-2. 拦截器完成断言验签并注入 verified identity。
+2. 拦截器完成回源认证校验并注入 verified identity。
 3. DescriptorFactory.Build（identity-first） -> RateLimitDescriptor。
 4. RateLimiterService.Decide -> RateLimitDecision。
 5. 若拒绝，返回 ResourceExhausted（gRPC）并附加 retry-after。
@@ -230,13 +204,12 @@
 
 1. Handler 不允许直接操作 repo 客户端。
 2. Handler 不允许直接管理 gRPC client 连接。
-3. GrpcClientHub 以服务名为唯一入口，禁止业务代码自行维护 channel。
-4. 出站调用必须消费统一安全上下文，禁止绕过安全编排。
-5. 限流规则匹配逻辑不允许放在拦截器本体。
-6. 认证校验续期逻辑不允许散落在业务 handler。
-7. 非认证中心模块不得本地管理认证凭证状态；内部转发校验采用本地断言验签单路径。
-8. 加密工具层不得主动发起网络调用。
-9. 后端模块间通信必须走加密信道，握手失败时快速失败，禁止明文降级。
+3. api_service 默认不装配横向调用链路，禁止业务代码通过请求头触发跨服务转发。
+4. 限流规则匹配逻辑不允许放在拦截器本体。
+5. 认证校验续期逻辑不允许散落在业务 handler。
+6. 非认证中心模块不承担权威签发/校验，但必须管理本模块认证信息生命周期；内部转发校验采用“回源认证中心”默认路径。
+7. 加密工具层不得主动发起网络调用。
+8. 如未来启用后端模块间通信，必须走加密信道，握手失败时快速失败，禁止明文降级。
 
 ---
 

@@ -75,6 +75,11 @@ class IEdgeAuthCoordinator(ABC):
     认证协调器负责管理认证状态、处理认证事件，并与网关进行交互以完成认证和授权流程。"""
 
     @abstractmethod
+    def ensure_startup_ready(self, now_ts: float | None = None) -> EdgeAuthState:
+        """Ensure long-lived credential is available for runtime startup gate."""
+        raise NotImplementedError
+
+    @abstractmethod
     def ensure_ready(self, now_ts: float | None = None) -> EdgeAuthState:
         """Ensure edge side has a valid session + access token pair."""
         raise NotImplementedError

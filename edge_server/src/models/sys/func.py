@@ -14,6 +14,9 @@ from src.models.sys.config import (
     CaptureConfig,
     DecisionPolicyConfig,
     EdgeServerConfig,
+    RuntimeLogConfig,
+    RuntimeLogStage,
+    RuntimeMode,
     RuntimeConfig,
     UploadHttpConfig,
 )
@@ -121,6 +124,51 @@ def _normalize_http_path(value: str | None, *, default: str) -> str:
     return raw
 
 
+def _parse_runtime_log_stages(payload: Any) -> list[RuntimeLogStage]:
+    default_stages: list[RuntimeLogStage] = [
+        "startup",
+        "capture",
+        "decision",
+        "inference",
+        "delivery",
+        "sync",
+        "auth",
+    ]
+
+    if payload is None:
+        return default_stages
+
+    raw_items: list[str]
+    if isinstance(payload, str):
+        raw_items = [part.strip().lower() for part in payload.split(",")]
+    elif isinstance(payload, list):
+        raw_items = [str(item).strip().lower() for item in payload]
+    else:
+        return default_stages
+
+    allowed = {
+        "startup",
+        "capture",
+        "decision",
+        "inference",
+        "delivery",
+        "sync",
+        "auth",
+        "all",
+    }
+    stages: list[RuntimeLogStage] = []
+    for item in raw_items:
+        if not item:
+            continue
+        if item not in allowed:
+            raise ValueError(f"unsupported runtime_log stage: {item}")
+        stages.append(cast(RuntimeLogStage, item))
+
+    if not stages:
+        return default_stages
+    return stages
+
+
 def load_edge_config(
     config_data: dict[str, Any],
     *,
@@ -135,6 +183,7 @@ def load_edge_config(
     runtime_tbl = data.get("runtime", {})
     auth_tbl = data.get("auth", {})
     capture_tbl = data.get("capture", {})
+    runtime_log_tbl = data.get("runtime_log", {})
     upload_tbl = data.get("upload_http", {})
     decision_tbl = data.get("decision_policy", {})
     model_pack_tbl = data.get("model_pack", {})
@@ -142,9 +191,17 @@ def load_edge_config(
 
     legacy_spool_dir = str(runtime_tbl.get("spool_dir", "data"))
     default_spool_db_path = str(Path(legacy_spool_dir) / "edge_spool.sqlite3")
+    run_mode_raw = str(runtime_tbl.get("run_mode", "production")).strip().lower()
+    if run_mode_raw in {"prod", "live"}:
+        run_mode_raw = "production"
+    if run_mode_raw in {"dev", "local", "test"}:
+        run_mode_raw = "development"
+    if run_mode_raw not in {"production", "development"}:
+        raise ValueError(f"unsupported runtime run_mode: {run_mode_raw}")
 
     runtime = RuntimeConfig(
         device_id=str(runtime_tbl.get("device_id", "edge_device_001")),
+        run_mode=cast(RuntimeMode, run_mode_raw),
         spool_db_path=_resolve_path(
             base_dir,
             str(runtime_tbl.get("spool_db_path", default_spool_db_path)),
@@ -170,6 +227,13 @@ def load_edge_config(
         raise ValueError(f"unsupported capture mode: {capture_mode}")
 
     pir_wait_timeout_raw = capture_tbl.get("pir_wait_timeout_sec")
+    capture_rate_window_sec = float(capture_tbl.get("capture_rate_window_sec", 0.0))
+    capture_rate_max_images = int(capture_tbl.get("capture_rate_max_images", 0))
+    if capture_rate_window_sec < 0:
+        raise ValueError("capture_rate_window_sec must be >= 0")
+    if capture_rate_max_images < 0:
+        raise ValueError("capture_rate_max_images must be >= 0")
+
     capture = CaptureConfig(
         mode=cast(Literal["mock", "pir"], capture_mode),
         pir_gpio_pin=int(capture_tbl.get("pir_gpio_pin", 17)),
@@ -177,6 +241,8 @@ def load_edge_config(
             float(pir_wait_timeout_raw) if pir_wait_timeout_raw is not None else None
         ),
         capture_cooldown_sec=float(capture_tbl.get("capture_cooldown_sec", 0.1)),
+        capture_rate_window_sec=capture_rate_window_sec,
+        capture_rate_max_images=capture_rate_max_images,
         image_format=str(capture_tbl.get("image_format", "jpg")).strip().lower(),
         image_width=int(capture_tbl.get("image_width", 1920)),
         image_height=int(capture_tbl.get("image_height", 1080)),
@@ -217,6 +283,12 @@ def load_edge_config(
         ),
         cpu_high_watermark=cpu_high_watermark,
         memory_high_watermark=memory_high_watermark,
+    )
+
+    runtime_log = RuntimeLogConfig(
+        enabled=bool(runtime_log_tbl.get("enabled", True)),
+        include_timestamp=bool(runtime_log_tbl.get("include_timestamp", True)),
+        stages=_parse_runtime_log_stages(runtime_log_tbl.get("stages")),
     )
 
     root_dir = _resolve_path(
@@ -302,5 +374,6 @@ def load_edge_config(
         capture=capture,
         upload_http=upload,
         decision_policy=decision,
+        runtime_log=runtime_log,
         model_pack=model_pack,
     )

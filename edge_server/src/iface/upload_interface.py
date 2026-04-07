@@ -12,6 +12,6 @@ class IEdgeEventUploadCoordinator(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def is_upload_channel_ready(self) -> bool:
+    def is_upload_endpoint_ready(self) -> bool:
         """上行通道健康检查。"""
         raise NotImplementedError

@@ -46,19 +46,17 @@ class SecretKeyUtils(ISecretKeyManager):
         if not secret_root.exists() or not secret_root.is_dir():
             raise ValueError(f"secret dir does not exist: {secret_root}")
 
-        public_path = secret_root / f"{active_key_id}.public.pem"
-        private_path = secret_root / f"{active_key_id}.private.pem"
-        if not public_path.exists():
-            raise ValueError(f"public key does not exist: {public_path}")
-        if not private_path.exists():
-            raise ValueError(f"private key does not exist: {private_path}")
+        selected_key_id, private_path, public_path = cls._select_key_pair_paths(
+            secret_root=secret_root,
+            active_key_id=active_key_id,
+        )
 
         public_pem = public_path.read_bytes()
         cls._ensure_spki_public_key_pem(public_pem)
 
         material = LocalTrustMaterial(
             device_id=device_id,
-            key_id=active_key_id,
+            key_id=selected_key_id,
             private_key_ref=str(private_path),
             public_key_pem=str(public_path),
             fingerprint=cls._sha256_hex(public_pem),
@@ -67,6 +65,43 @@ class SecretKeyUtils(ISecretKeyManager):
             local_trust_material=material,
             base_dir=secret_root,
             signature_algorithm=signature_algorithm,
+        )
+
+    @staticmethod
+    def _select_key_pair_paths(
+        *,
+        secret_root: Path,
+        active_key_id: str,
+    ) -> tuple[str, Path, Path]:
+        key_id = active_key_id.strip()
+        if key_id:
+            public_path = secret_root / f"{key_id}.public.pem"
+            private_path = secret_root / f"{key_id}.private.pem"
+            if not public_path.exists():
+                raise ValueError(f"public key does not exist: {public_path}")
+            if not private_path.exists():
+                raise ValueError(f"private key does not exist: {private_path}")
+            return key_id, private_path, public_path
+
+        default_public = secret_root / "public.pem"
+        default_private = secret_root / "private.pem"
+        if default_public.exists() and default_private.exists():
+            return "", default_private, default_public
+
+        private_candidates = sorted(secret_root.glob("*.private.pem"))
+        public_candidates = sorted(secret_root.glob("*.public.pem"))
+        if len(private_candidates) == 1 and len(public_candidates) == 1:
+            private_path = private_candidates[0]
+            public_path = public_candidates[0]
+            inferred_key_id = private_path.name.removesuffix(".private.pem")
+            if inferred_key_id and public_path.name != f"{inferred_key_id}.public.pem":
+                raise ValueError(
+                    "secret dir contains unmatched single key pair files"
+                )
+            return inferred_key_id, private_path, public_path
+
+        raise ValueError(
+            "active_key_id is empty and key pair cannot be uniquely resolved in secret dir"
         )
 
     @staticmethod

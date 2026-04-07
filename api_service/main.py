@@ -14,20 +14,20 @@ from src.adapters.grpc.server_adapter import (
     InMemoryGrpcResponse,
 )
 from src.app.app import ServiceApp
+from src.app.forwarded_auth_assembly import wire_forwarded_auth_revalidation
 from src.app.lifecycle import HookLifecycle
-from src.app.internal_assertion_assembly import wire_internal_assertion_verification
-from src.models.auth.internal_header_keys import HEADER_INTERNAL_ASSERTION
-from src.models.commsec.commsec import ServiceKeyOwner
 from src.models.sys.config import (
     AuthConfig,
-    InternalAssertionConfig,
     ProjectConfig,
     RedisConfig,
     RuntimeConfig,
-    SecretKeyStartupParams,
 )
 from src.repo.redis_store import RedisManager
-from src.services.commsec.secret_key_svc import SecretKeyService
+from src.services.auth.auth_authority import IAuthAuthorityClient
+from src.services.auth.forwarded_auth_verifier import IForwardedAuthVerifier
+from src.services.auth.forwarded_auth_verifier_svc import (
+    AuthorityBackedForwardedAuthVerifier,
+)
 from src.services.auth.runtime_metrics import AuthRuntimeMetrics
 
 
@@ -42,16 +42,6 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw.strip())
-    except ValueError:
-        return default
 
 
 def _to_bool(raw: Any, default: bool) -> bool:
@@ -220,82 +210,17 @@ def _build_auth_config(
 
 
 def _build_project_config(settings: dict[str, Any]) -> ProjectConfig:
-    internal_section = _as_dict(settings.get("internal_assertion"))
     runtime_section = _as_dict(settings.get("runtime"))
     auth_section = _as_dict(settings.get("auth"))
     legacy_secret_key_section = _as_dict(settings.get("secret_key"))
-
-    internal_cfg = InternalAssertionConfig(
-        enabled=_to_bool(internal_section.get("enabled"), False),
-        required=_to_bool(internal_section.get("required"), False),
-        header_name=_to_str(
-            internal_section.get("header_name"),
-            HEADER_INTERNAL_ASSERTION,
-        ),
-        clock_skew_sec=_to_int(internal_section.get("clock_skew_sec"), 30),
-        replay_ttl_sec=_to_int(internal_section.get("replay_ttl_sec"), 15),
-        enforce_path_binding=_to_bool(
-            internal_section.get("enforce_path_binding"),
-            False,
-        ),
-    )
-
-    # 环境变量优先覆盖，便于部署时按实例开关策略切换。
-    internal_cfg = InternalAssertionConfig(
-        enabled=_env_bool("API_INTERNAL_ASSERTION_ENABLED", internal_cfg.enabled),
-        required=_env_bool("API_INTERNAL_ASSERTION_REQUIRED", internal_cfg.required),
-        header_name=os.getenv("API_INTERNAL_ASSERTION_HEADER", internal_cfg.header_name),
-        clock_skew_sec=_env_int(
-            "API_INTERNAL_ASSERTION_CLOCK_SKEW_SEC",
-            internal_cfg.clock_skew_sec,
-        ),
-        replay_ttl_sec=_env_int(
-            "API_INTERNAL_ASSERTION_REPLAY_TTL_SEC",
-            internal_cfg.replay_ttl_sec,
-        ),
-        enforce_path_binding=_env_bool(
-            "API_INTERNAL_ASSERTION_ENFORCE_PATH",
-            internal_cfg.enforce_path_binding,
-        ),
-    )
 
     runtime_cfg = _build_runtime_config(runtime_section, legacy_secret_key_section)
     auth_cfg = _build_auth_config(auth_section, legacy_secret_key_section)
 
     return ProjectConfig(
         redis=_build_redis_config(_as_dict(settings.get("redis"))),
-        internal_assertion=internal_cfg,
         runtime=runtime_cfg,
         auth=auth_cfg,
-    )
-
-
-def _build_secret_key_service(
-    project_root: Path,
-    params: SecretKeyStartupParams,
-) -> SecretKeyService | None:
-    active_key_id = params.active_key_id.strip()
-    if not active_key_id:
-        return None
-
-    secret_dir = Path(params.secret_key_dir)
-    if not secret_dir.is_absolute():
-        secret_dir = project_root / secret_dir
-
-    owner = ServiceKeyOwner(
-        entity_type=params.entity_type,
-        entity_id=params.entity_id,
-        entity_name=params.entity_name,
-        instance_id=params.instance_id,
-        instance_name=params.instance_name,
-    ).normalized()
-
-    return SecretKeyService.from_secret_dir(
-        owner=owner,
-        active_key_id=active_key_id,
-        secret_dir=secret_dir,
-        catalog=None,
-        mysql_client=None,
     )
 
 
@@ -320,30 +245,46 @@ def _build_redis_manager(cfg: ProjectConfig) -> RedisManager | None:
     return RedisManager(cfg)
 
 
-async def run_service(settings_path: Path) -> None:
-    project_root = Path(__file__).resolve().parent
+def _build_forwarded_auth_verifier(
+    settings: dict[str, Any],
+    authority_client: IAuthAuthorityClient | None,
+    service_name: str,
+) -> IForwardedAuthVerifier | None:
+    section = _as_dict(settings.get("forwarded_auth"))
+    enabled = _env_bool(
+        "API_FORWARDED_AUTH_ENABLED",
+        _to_bool(section.get("enabled"), False),
+    )
+    if not enabled:
+        return None
+
+    if authority_client is None:
+        raise ValueError(
+            "forwarded_auth.enabled=true requires a provided authority client instance"
+        )
+
+    return AuthorityBackedForwardedAuthVerifier(
+        authority_client=authority_client,
+        service_name=service_name,
+    )
+
+
+async def run_service(
+    settings_path: Path,
+    authority_client: IAuthAuthorityClient | None = None,
+) -> None:
     settings = _read_settings_file(settings_path)
     cfg = _build_project_config(settings)
-    secret_key_params = cfg.build_secret_key_startup_params(default_entity_id="api_service")
 
     grpc_server = GrpcServerAdapter(address="0.0.0.0:50052", service_name="api_service")
     grpc_server.add_unary_handler("/api_service.v1.Internal/Echo", _default_echo_handler)
-
-    assertion_cfg = (
-        cfg.internal_assertion.normalized()
-        if cfg.internal_assertion is not None
-        else InternalAssertionConfig().normalized()
-    )
-    if assertion_cfg.enabled and not secret_key_params.active_key_id:
-        raise ValueError("auth.active_key_id is required when internal assertion is enabled")
-
-    secret_key_service = (
-        _build_secret_key_service(project_root, secret_key_params)
-        if assertion_cfg.enabled
-        else None
-    )
     redis_manager = _build_redis_manager(cfg)
     runtime_metrics = AuthRuntimeMetrics()
+    forwarded_auth_verifier = _build_forwarded_auth_verifier(
+        settings=settings,
+        authority_client=authority_client,
+        service_name=grpc_server.service_name,
+    )
 
     async def _on_boot() -> None:
         if redis_manager is None:
@@ -353,7 +294,7 @@ async def run_service(settings_path: Path) -> None:
             print("api_service redis connected")
         except Exception as exc:  # noqa: BLE001
             print(
-                "api_service redis init failed, replay protection falls back to memory",
+                "api_service redis init failed",
                 {"error": str(exc)},
             )
 
@@ -363,13 +304,9 @@ async def run_service(settings_path: Path) -> None:
         with contextlib.suppress(Exception):
             await redis_manager.disconnect()
 
-    # 在启动前装配断言验签链路，确保服务启动即具备入站验证能力。
-    wire_internal_assertion_verification(
+    wire_forwarded_auth_revalidation(
         grpc_server=grpc_server,
-        secret_key_service=secret_key_service,
-        cfg=cfg,
-        redis_manager=redis_manager,
-        runtime_metrics=runtime_metrics,
+        verifier=forwarded_auth_verifier,
     )
 
     app = ServiceApp(
@@ -382,10 +319,10 @@ async def run_service(settings_path: Path) -> None:
         "api_service started",
         {
             "address": grpc_server.address,
-            "internal_assertion_enabled": assertion_cfg.enabled,
-            "internal_assertion_required": assertion_cfg.required,
-            "internal_assertion_header": assertion_cfg.header_name,
-            "secret_key_enabled": bool(secret_key_params.active_key_id),
+            "forwarded_auth_enabled": forwarded_auth_verifier is not None,
+            "forwarded_auth_mode": (
+                "authority_backed" if forwarded_auth_verifier is not None else "disabled"
+            ),
         },
     )
 

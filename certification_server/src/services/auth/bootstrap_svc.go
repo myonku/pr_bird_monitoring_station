@@ -30,7 +30,6 @@ type BootstrapService struct {
 	challenges map[uuid.UUID]*authmodel.ChallengePayload
 	stages     map[string]authmodel.BootstrapStage
 
-	mysql *repo.MySQLClient
 	redis *repo.RedisClient
 
 	sessionSvc interfaces.ISessionService
@@ -41,7 +40,6 @@ type BootstrapService struct {
 
 // NewBootstrapService 创建冷启动认证服务实例。
 func NewBootstrapService(
-	mysql *repo.MySQLClient,
 	redis *repo.RedisClient,
 	sessionSvc interfaces.ISessionService,
 	tokenSvc interfaces.ITokenService,
@@ -54,7 +52,6 @@ func NewBootstrapService(
 	return &BootstrapService{
 		challenges: make(map[uuid.UUID]*authmodel.ChallengePayload),
 		stages:     make(map[string]authmodel.BootstrapStage),
-		mysql:      mysql,
 		redis:      redis,
 		sessionSvc: sessionSvc,
 		tokenSvc:   tokenSvc,
@@ -348,12 +345,6 @@ func (s *BootstrapService) loadChallengeFromCache(ctx context.Context, challenge
 	return &payload, nil
 }
 
-func (s *BootstrapService) loadChallengeFromDB(ctx context.Context, challengeID uuid.UUID) (*authmodel.ChallengePayload, error) {
-	_ = ctx
-	_ = challengeID
-	return nil, nil
-}
-
 func (s *BootstrapService) deleteChallenge(ctx context.Context, challengeID uuid.UUID) error {
 	if s.redis != nil {
 		_, _ = s.redis.Del(ctx, "auth:bootstrap:challenge:"+challengeID.String())
@@ -383,12 +374,6 @@ func (s *BootstrapService) loadStageFromCache(ctx context.Context, principalID s
 		return "", err
 	}
 	return authmodel.BootstrapStage(raw), nil
-}
-
-func (s *BootstrapService) loadStageFromDB(ctx context.Context, principalID string) (authmodel.BootstrapStage, error) {
-	_ = ctx
-	_ = principalID
-	return "", nil
 }
 
 // buildBootstrapSignaturePayload 构建挑战签名的原始载荷，供调用方签名使用。

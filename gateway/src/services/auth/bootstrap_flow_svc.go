@@ -2,8 +2,9 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	authif "gateway/src/interfaces/auth"
@@ -21,6 +22,9 @@ type BootstrapFlowCoordinator struct {
 	KeyService      commsecif.ISecretKeyService
 
 	Crypto *utils.CryptoUtils
+
+	mu        sync.RWMutex
+	lastReady *authmodel.BootstrapAuthResult
 }
 
 func (c *BootstrapFlowCoordinator) EnsureReady(
@@ -42,12 +46,9 @@ func (c *BootstrapFlowCoordinator) EnsureReady(
 		return nil, err
 	}
 	if stage == authmodel.BootstrapStageReady {
-		now := time.Now()
-		return &authmodel.BootstrapAuthResult{
-			Stage:     authmodel.BootstrapStageReady,
-			IssuedAt:  now,
-			ExpiresAt: now,
-		}, nil
+		if cached := c.snapshotReady(); cached != nil {
+			return cached, nil
+		}
 	}
 
 	challenge, err := c.BootstrapClient.InitChallenge(ctx, req.ChallengeRequest)
@@ -71,6 +72,7 @@ func (c *BootstrapFlowCoordinator) EnsureReady(
 		return nil, err
 	}
 
+	c.setReady(result)
 	return result, nil
 }
 
@@ -98,26 +100,7 @@ func (c *BootstrapFlowCoordinator) signChallenge(
 		return nil, err
 	}
 
-	payload, err := json.Marshal(struct {
-		ChallengeID string               `json:"challenge_id"`
-		EntityType  authmodel.EntityType `json:"entity_type"`
-		EntityID    string               `json:"entity_id"`
-		KeyID       string               `json:"key_id"`
-		Nonce       string               `json:"nonce"`
-		IssuedAt    int64                `json:"issued_at"`
-		ExpiresAt   int64                `json:"expires_at"`
-	}{
-		ChallengeID: challenge.ChallengeID.String(),
-		EntityType:  challenge.EntityType,
-		EntityID:    challenge.EntityID,
-		KeyID:       challenge.KeyID,
-		Nonce:       challenge.Nonce,
-		IssuedAt:    challenge.IssuedAt.Unix(),
-		ExpiresAt:   challenge.ExpiresAt.Unix(),
-	})
-	if err != nil {
-		return nil, err
-	}
+	payload := []byte(buildBootstrapSignaturePayload(challenge))
 
 	sig, err := c.Crypto.SignByAlgorithm(string(sigAlg), payload, []byte(privateRef.PrivateKeyRef))
 	if err != nil {
@@ -131,4 +114,69 @@ func (c *BootstrapFlowCoordinator) signChallenge(
 		Signature:          sig,
 		SignedAt:           time.Now(),
 	}, nil
+}
+
+func (c *BootstrapFlowCoordinator) snapshotReady() *authmodel.BootstrapAuthResult {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return cloneBootstrapResult(c.lastReady)
+}
+
+func (c *BootstrapFlowCoordinator) setReady(result *authmodel.BootstrapAuthResult) {
+	if result == nil {
+		return
+	}
+	c.mu.Lock()
+	c.lastReady = cloneBootstrapResult(result)
+	c.mu.Unlock()
+}
+
+func cloneBootstrapResult(in *authmodel.BootstrapAuthResult) *authmodel.BootstrapAuthResult {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Identity != nil {
+		identity := *in.Identity
+		identity.Scopes = append([]string(nil), in.Identity.Scopes...)
+		out.Identity = &identity
+	}
+	if in.Session != nil {
+		session := *in.Session
+		session.ScopeSnapshot = append([]string(nil), in.Session.ScopeSnapshot...)
+		out.Session = &session
+	}
+	out.Tokens = authmodel.TokenBundle{
+		AccessToken:     cloneIssuedToken(in.Tokens.AccessToken),
+		RefreshToken:    cloneIssuedToken(in.Tokens.RefreshToken),
+		DownstreamToken: cloneIssuedToken(in.Tokens.DownstreamToken),
+	}
+	return &out
+}
+
+func cloneIssuedToken(in *authmodel.IssuedToken) *authmodel.IssuedToken {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Claims.Scopes = append([]string(nil), in.Claims.Scopes...)
+	return &out
+}
+
+func buildBootstrapSignaturePayload(challenge *authmodel.ChallengePayload) string {
+	if challenge == nil {
+		return ""
+	}
+	parts := []string{
+		challenge.ChallengeID.String(),
+		challenge.Issuer,
+		challenge.Audience,
+		string(challenge.EntityType),
+		challenge.EntityID,
+		challenge.KeyID,
+		challenge.Nonce,
+		challenge.IssuedAt.UTC().Format(time.RFC3339Nano),
+		challenge.ExpiresAt.UTC().Format(time.RFC3339Nano),
+	}
+	return strings.Join(parts, "|")
 }

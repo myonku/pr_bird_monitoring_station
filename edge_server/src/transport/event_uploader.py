@@ -148,7 +148,7 @@ class EdgeEventHttpUploadCoordinator(IEdgeEventUploadCoordinator):
         except (URLError, TimeoutError):
             return False
 
-    def is_upload_channel_ready(self) -> bool:
+    def is_upload_endpoint_ready(self) -> bool:
         try:
             headers = self._resolve_auth_headers()
         except Exception:

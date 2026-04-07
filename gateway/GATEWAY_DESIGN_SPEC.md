@@ -21,7 +21,7 @@
 - 核心职能：将外部请求转发到内部服务。
 - 安全职责：在转发前完成认证授权与应用层安全通道准备。
 - 对内转发必须绑定有效 commsec 安全通道，未建立通道时先握手再转发。
-- 内部转发职责：按配置签发内部断言并注入下游请求，供目标模块本地验签。
+- 内部转发职责：注入下游认证上下文，要求目标模块对认证中心执行再次校验。
 
 ### 2.2 明确非目标
 
@@ -118,14 +118,7 @@
   - IssueDownstreamGrant
 - 职责：获取下游访问授权（grant）。
 
-### 4.2.4 IInternalAssertionSigner
-
-- 文件：src/interfaces/auth/internal_assertion_signer.go
-- 方法：
-  - BuildAssertion
-- 职责：在转发前构建短时内部断言（aud/method/path/body 摘要/iat/exp/jti）。
-
-### 4.2.5 IAuthAuthorityClient
+### 4.2.4 IAuthAuthorityClient
 
 - 文件：src/interfaces/auth/auth_authority_client.go
 - 职责：统一定义模块直连认证中心的远端鉴权门面调用（bootstrap、用户认证、token/session 校验、downstream grant），不承载“内部模块经网关中转”的语义。
@@ -227,8 +220,7 @@
 - 行为：
   - 解析 RPCMethod/Method
   - 从 Endpoint 获取连接
-  - 构造 metadata（grant/channel/encrypted 信息）
-  - 按配置注入 `x-internal-assertion`
+  - 构造 metadata（grant/channel/encrypted 信息 + 下游认证上下文）
   - 仅在 OutboundSecurityContext 含有效 channel（或刚完成 EnsureChannel 握手）时执行调用
   - 调用 conn.Invoke
 - 备注：为“最小可用骨架”，具体 proto 映射由 codec 实现。
@@ -309,8 +301,8 @@
 2. ForwardExternalRequestUsecase.Execute
 3. Resolver.Resolve 得到 ServiceName/Endpoint/Timeout
 4. SecurityPreparer.Prepare 得到 Grant/Channel/CipherText（若无可用 channel 则先握手）
-5. InternalAssertionSigner.BuildAssertion 生成内部断言
-6. OutboundForwarder.Forward 注入 metadata（含 assertion）并执行 gRPC 调用
+5. OutboundForwarder.Forward 注入 metadata（含下游认证上下文）并执行 gRPC 调用
+6. 目标模块基于下游认证上下文向认证中心执行再次校验后再进入业务处理
 7. 返回 OutboundForwardResponse 并映射 HTTP 响应
 
 ## 5.3 限流链（跨协议统一）
@@ -335,7 +327,7 @@ HTTP middleware 与 gRPC interceptor 共用：
 5. DescriptorFactory 不允许依赖网络/存储层。
 6. 限流规则匹配逻辑不允许放在 middleware/interceptor。
 7. 加密工具层不得主动发起网络调用。
-8. 内部断言启用时，forwarder 不得绕过 signer；缺失 signer 必须快速失败。
+8. 内部转发必须依赖“网关注入下游上下文 + 目标模块回源认证中心再次校验”路径，禁止引入本地放行分支。
 9. 后端模块间通信必须走加密信道，握手失败时快速失败，禁止明文降级。
 
 ---

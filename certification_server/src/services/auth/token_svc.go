@@ -201,19 +201,12 @@ func (s *TokenService) RefreshTokenBundle(
 			ok = true
 		}
 	}
-	if (!ok || record == nil) && s.mysql != nil {
+	if (!ok || record == nil) && s.mysql != nil && shouldTryTokenDBByRaw(req.RefreshToken) {
 		dbRecord, _, dbErr := s.loadTokenFromDB(ctx, req.RefreshToken)
 		if dbErr == nil && dbRecord != nil {
 			record = dbRecord
 			ok = true
-			s.mu.Lock()
-			s.byRaw[req.RefreshToken] = dbRecord
-			s.byToken[dbRecord.ID] = dbRecord
-			if s.byFamily[dbRecord.FamilyID] == nil {
-				s.byFamily[dbRecord.FamilyID] = make(map[uuid.UUID]*authmodel.TokenRecord)
-			}
-			s.byFamily[dbRecord.FamilyID][dbRecord.ID] = dbRecord
-			s.mu.Unlock()
+			s.trackToken(req.RefreshToken, dbRecord)
 		}
 	}
 	if !ok || record == nil {
@@ -257,7 +250,7 @@ func (s *TokenService) RefreshTokenBundle(
 	record.RevokedAt = time.Now()
 	s.mu.Unlock()
 
-	_ = s.updateTokenStatus(ctx, record.ID, authmodel.TokenStatusRotated)
+	_ = s.updateTokenStatus(ctx, record, authmodel.TokenStatusRotated)
 	_ = s.cacheToken(ctx, req.RefreshToken, record, nil)
 
 	return &authmodel.TokenBundle{AccessToken: access, RefreshToken: newRefresh}, nil
@@ -289,14 +282,7 @@ func (s *TokenService) VerifyToken(
 			record = dbRecord
 			claims = dbClaims
 			ok = true
-			s.mu.Lock()
-			s.byRaw[req.RawToken] = dbRecord
-			s.byToken[dbRecord.ID] = dbRecord
-			if s.byFamily[dbRecord.FamilyID] == nil {
-				s.byFamily[dbRecord.FamilyID] = make(map[uuid.UUID]*authmodel.TokenRecord)
-			}
-			s.byFamily[dbRecord.FamilyID][dbRecord.ID] = dbRecord
-			s.mu.Unlock()
+			s.trackToken(req.RawToken, dbRecord)
 			_ = s.cacheToken(ctx, req.RawToken, dbRecord, dbClaims)
 		}
 	}
@@ -364,15 +350,16 @@ func (s *TokenService) RevokeToken(ctx context.Context, req *authmodel.TokenRevo
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	record, ok := s.byToken[req.TokenID]
 	if !ok || record == nil {
+		s.mu.Unlock()
 		return nil
 	}
 	record.Status = authmodel.TokenStatusRevoked
 	record.RevokedAt = time.Now()
-	_ = s.updateTokenStatus(ctx, req.TokenID, authmodel.TokenStatusRevoked)
+	s.mu.Unlock()
+
+	_ = s.updateTokenStatus(ctx, record, authmodel.TokenStatusRevoked)
 
 	return nil
 }
@@ -389,13 +376,17 @@ func (s *TokenService) RevokeTokenFamily(ctx context.Context, familyID string, r
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	family := s.byFamily[parsed]
+	revoked := make([]*authmodel.TokenRecord, 0, len(family))
 	for _, token := range family {
 		token.Status = authmodel.TokenStatusRevoked
 		token.RevokedAt = time.Now()
-		_ = s.updateTokenStatus(ctx, token.ID, authmodel.TokenStatusRevoked)
+		revoked = append(revoked, token)
+	}
+	s.mu.Unlock()
+
+	for _, token := range revoked {
+		_ = s.updateTokenStatus(ctx, token, authmodel.TokenStatusRevoked)
 	}
 
 	return nil
@@ -491,12 +482,33 @@ ON DUPLICATE KEY UPDATE
 	return err
 }
 
-func (s *TokenService) updateTokenStatus(ctx context.Context, tokenID uuid.UUID, status authmodel.TokenStatus) error {
-	if s.mysql == nil || tokenID == uuid.Nil {
+func (s *TokenService) updateTokenStatus(
+	ctx context.Context,
+	record *authmodel.TokenRecord,
+	status authmodel.TokenStatus,
+) error {
+	if s.mysql == nil || record == nil || record.ID == uuid.Nil {
 		return nil
 	}
-	_, err := s.mysql.Exec(ctx, `UPDATE auth_token_records SET status=?, revoked_at=? WHERE id=?`, string(status), time.Now(), tokenID.String())
+	if !shouldPersistTokenToDB(record.Type) {
+		return nil
+	}
+	_, err := s.mysql.Exec(ctx, `UPDATE auth_token_records SET status=?, revoked_at=? WHERE id=?`, string(status), time.Now(), record.ID.String())
 	return err
+}
+
+func (s *TokenService) trackToken(raw string, record *authmodel.TokenRecord) {
+	if raw == "" || record == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.byRaw[raw] = record
+	s.byToken[record.ID] = record
+	if s.byFamily[record.FamilyID] == nil {
+		s.byFamily[record.FamilyID] = make(map[uuid.UUID]*authmodel.TokenRecord)
+	}
+	s.byFamily[record.FamilyID][record.ID] = record
 }
 
 func (s *TokenService) cacheToken(ctx context.Context, raw string, record *authmodel.TokenRecord, claims *authmodel.TokenClaims) error {

@@ -5,10 +5,8 @@ import (
 	"errors"
 	"os"
 
-	outbound "gateway/src/adapters/outbound"
 	"gateway/src/app"
 	modelsystem "gateway/src/models/system"
-	commsecsvc "gateway/src/services/commsec"
 )
 
 type noopHTTPServer struct{}
@@ -24,19 +22,8 @@ func (s *noopHTTPServer) Stop(ctx context.Context) error {
 
 func main() {
 	settingsPath := os.Getenv("GATEWAY_SETTINGS_PATH")
-	cfg, err := modelsystem.LoadConfig(settingsPath)
+	_, err := modelsystem.LoadConfig(settingsPath)
 	if err != nil {
-		panic(err)
-	}
-	secretKeyParams := cfg.BuildSecretKeyStartupParams("gateway")
-
-	secretKeySvc, err := commsecsvc.NewSecretKeyServiceFromStartupParams(secretKeyParams, nil, nil)
-	if err != nil {
-		panic(err)
-	}
-
-	forwarder := &outbound.GRPCOutboundForwarder{}
-	if err = app.WireInternalAssertion(forwarder, secretKeySvc, cfg); err != nil {
 		panic(err)
 	}
 

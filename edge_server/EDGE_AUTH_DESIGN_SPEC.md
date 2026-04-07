@@ -23,7 +23,11 @@
 3. 认证通道与业务上传通道必须严格隔离。
 4. 全局标识、密钥与配置生命周期规则见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
 5. 认证接口 HTTP 契约独立文档待重建（当前暂时下线），实现以本模块代码与全局基线约束为准。
-6. 边缘端到网关的服务端通信必须走加密信道；握手初始化优先在 bootstrap 完成后的 ensure_ready 阶段，未预热时在首次业务上传前完成。
+6. 边缘端到网关通信必须使用传输层加密（HTTPS/TLS）；边缘端认证模块不承担 commsec/EnsureChannel 握手编排。
+7. 运行模式约束：
+	- development：认证模块不初始化，仅保留业务本地流程；
+	- production：启动前必须确保长期凭证可用（refresh token）；若缺失则先 bootstrap，失败则拒绝启动。
+8. `auth.active_key_id` 可为空：challenge 初始化阶段允许后端按 `runtime.device_id` 回查当前生效公钥；边缘端本地需能解析对应私钥完成签名。
 
 
 ## 3. 分层与隔离
@@ -71,10 +75,12 @@
 - 面向业务模块的认证编排入口。
 - 对外能力：
 - ensure_ready
+- ensure_startup_ready
 - get_auth_headers
 - on_unauthorized
 - logout
-- 约束：ensure_ready 需要覆盖“认证可用 + 安全通道可用”双检查，可在该阶段预热握手。
+- 约束：ensure_ready 仅覆盖“边缘端自身认证可用”检查（session/token 可用），不承担网关与内部服务通道建立职责。
+- 约束：ensure_startup_ready 作为 production 启动门禁，至少保证长期凭证可用；长期凭证不可用时必须先 bootstrap。
 
 
 ## 5. 数据契约
@@ -124,4 +130,4 @@
 - 全局统一约定见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
 - 边缘端到网关的接口契约文档待重建（当前暂时下线）。
 - 本文档仅承载边缘认证模块内部架构定义。
-- 若安全通道未预热，必须在首次业务通信前完成握手；禁止明文上传回退。
+- 边缘端上传链路仅要求传输层加密（HTTPS/TLS），不引入 commsec 握手流程；禁止明文上传回退。

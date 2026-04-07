@@ -10,6 +10,7 @@ from src.iface.upload_interface import IEdgeEventUploadCoordinator
 from src.models.workflow.workflow import EdgeEvent
 from src.orchestration.decision_engine import DecisionEngine
 from src.models.workflow.runtime import RuntimeStatus
+from src.utils.runtime_logger import RuntimeEventLogger
 
 class EdgePipeline:
     """边缘端核心流程：捕拍 -> 决策 -> （可选本地推理）-> 上传/入库
@@ -27,6 +28,7 @@ class EdgePipeline:
         spool: ISpoolStorage,
         decision_engine: DecisionEngine,
         runtime_status_provider: Callable[[], RuntimeStatus],
+        event_logger: RuntimeEventLogger | None = None,
     ):
         self.capture = capture
         self.model_loader = model_loader
@@ -35,11 +37,27 @@ class EdgePipeline:
         self.spool = spool
         self.decision_engine = decision_engine
         self.runtime_status_provider = runtime_status_provider
+        self.event_logger = event_logger
+
+    def _log(self, stage: str, event: str, details: dict | None = None) -> None:
+        if self.event_logger is not None:
+            self.event_logger.emit(stage=stage, event=event, details=details)
 
     def run_once(self) -> None:
         """执行一次完整的边缘事件处理流程"""
         ctx, image = self.capture.wait_and_capture()
         event = EdgeEvent.new(ctx, image)
+        self._log(
+            stage="capture",
+            event="captured",
+            details={
+                "event_id": event.event_id,
+                "image_id": image.image_id,
+                "trigger": ctx.trigger_type,
+                "width": image.width,
+                "height": image.height,
+            },
+        )
 
         runtime_status = self.runtime_status_provider()
         event.metadata["runtime_status"] = {
@@ -53,6 +71,17 @@ class EdgePipeline:
 
         decision = self.decision_engine.decide_before_infer(runtime_status)
         event.metadata["decision_before_infer_reason"] = decision.reason
+        self._log(
+            stage="decision",
+            event="before_infer_decision",
+            details={
+                "event_id": event.event_id,
+                "do_local_infer": decision.do_local_infer,
+                "upload_event": decision.upload_event,
+                "server_assist": decision.mark_server_assist,
+                "reason": decision.reason,
+            },
+        )
 
         if decision.do_local_infer:
             models = self.model_loader.current_bundle()
@@ -62,19 +91,70 @@ class EdgePipeline:
             event.metadata["edge_model_package_version"] = models.contract.package_version
             decision = self.decision_engine.decide_after_infer(result, decision)
             event.metadata["decision_after_infer_reason"] = decision.reason
+            self._log(
+                stage="inference",
+                event="local_inference_finished",
+                details={
+                    "event_id": event.event_id,
+                    "success": result.success,
+                    "stage": result.stage,
+                    "reason": result.reason,
+                    "server_assist": decision.mark_server_assist,
+                },
+            )
         else:
             event.metadata["decision_after_infer_reason"] = "local_inference_skipped"
+            self._log(
+                stage="inference",
+                event="local_inference_skipped",
+                details={
+                    "event_id": event.event_id,
+                    "reason": decision.reason,
+                },
+            )
 
         event.requires_server_assist = decision.mark_server_assist
 
         if decision.upload_event:
             event.metadata["delivery_result"] = "upload_attempted"
+            self._log(
+                stage="delivery",
+                event="upload_attempt",
+                details={
+                    "event_id": event.event_id,
+                    "server_assist": event.requires_server_assist,
+                },
+            )
             ok = self.upload_coordinator.upload_event(event)
             if not ok:
                 event.metadata["delivery_result"] = "upload_failed_spooled"
-                self.spool.put(event)
+                record_id = self.spool.put(event)
+                self._log(
+                    stage="delivery",
+                    event="upload_failed_spooled",
+                    details={
+                        "event_id": event.event_id,
+                        "record_id": record_id,
+                    },
+                )
             else:
                 event.metadata["delivery_result"] = "uploaded"
+                self._log(
+                    stage="delivery",
+                    event="upload_succeeded",
+                    details={
+                        "event_id": event.event_id,
+                    },
+                )
         else:
             event.metadata["delivery_result"] = "spooled_by_policy"
-            self.spool.put(event)
+            record_id = self.spool.put(event)
+            self._log(
+                stage="delivery",
+                event="spooled_by_policy",
+                details={
+                    "event_id": event.event_id,
+                    "record_id": record_id,
+                    "reason": decision.reason,
+                },
+            )

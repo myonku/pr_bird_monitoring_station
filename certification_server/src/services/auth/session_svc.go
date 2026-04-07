@@ -2,14 +2,12 @@ package auth
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"sync"
 	"time"
 
 	interfaces "certification_server/src/interfaces/auth"
 	authmodel "certification_server/src/models/auth"
-	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
 
@@ -23,7 +21,6 @@ var _ interfaces.ISessionService = (*SessionService)(nil)
 type SessionService struct {
 	mu sync.RWMutex
 
-	mysql *repo.MySQLClient
 	redis *repo.RedisClient
 
 	byID        map[uuid.UUID]*authmodel.Session
@@ -31,9 +28,8 @@ type SessionService struct {
 }
 
 // NewSessionService 创建会话服务实例。
-func NewSessionService(mysql *repo.MySQLClient, redis *repo.RedisClient) *SessionService {
+func NewSessionService(redis *repo.RedisClient) *SessionService {
 	return &SessionService{
-		mysql:       mysql,
 		redis:       redis,
 		byID:        make(map[uuid.UUID]*authmodel.Session),
 		byPrincipal: make(map[string]map[uuid.UUID]*authmodel.Session),
@@ -255,58 +251,6 @@ func cloneSession(s *authmodel.Session) *authmodel.Session {
 	return &out
 }
 
-type sessionRow struct {
-	ID            string       `db:"id"`
-	EntityType    string       `db:"entity_type"`
-	EntityID      string       `db:"entity_id"`
-	PrincipalID   string       `db:"principal_id"`
-	Status        string       `db:"status"`
-	AuthMethod    string       `db:"auth_method"`
-	CreatedByIP   string       `db:"created_by_ip"`
-	LastSeenIP    string       `db:"last_seen_ip"`
-	UserAgent     string       `db:"user_agent"`
-	ClientID      string       `db:"client_id"`
-	GatewayID     string       `db:"gateway_id"`
-	ScopeSnapshot string       `db:"scope_snapshot"`
-	RoleSnapshot  string       `db:"role_snapshot"`
-	TokenFamilyID string       `db:"token_family_id"`
-	CreatedAt     time.Time    `db:"created_at"`
-	UpdatedAt     time.Time    `db:"updated_at"`
-	LastSeenAt    time.Time    `db:"last_seen_at"`
-	LastVerifyAt  sql.NullTime `db:"last_verified_at"`
-	NextRefreshAt time.Time    `db:"next_refresh_at"`
-	ExpiresAt     time.Time    `db:"expires_at"`
-	RevokedAt     sql.NullTime `db:"revoked_at"`
-	Version       int64        `db:"version"`
-}
-
-func (s *SessionService) persistSession(ctx context.Context, session *authmodel.Session) error {
-	if s.mysql == nil || session == nil {
-		return nil
-	}
-	scopesJSON, _ := json.Marshal(session.ScopeSnapshot)
-	_, err := s.mysql.Exec(ctx, `
-INSERT INTO auth_sessions(
-  id, entity_type, entity_id, principal_id, status, auth_method,
-  created_by_ip, last_seen_ip, user_agent, client_id, gateway_id,
-  scope_snapshot, role_snapshot, token_family_id,
-  created_at, updated_at, last_seen_at, last_verified_at, next_refresh_at, expires_at, revoked_at, version
-) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-ON DUPLICATE KEY UPDATE
-  status=VALUES(status), auth_method=VALUES(auth_method), last_seen_ip=VALUES(last_seen_ip),
-  user_agent=VALUES(user_agent), client_id=VALUES(client_id), gateway_id=VALUES(gateway_id),
-  scope_snapshot=VALUES(scope_snapshot), role_snapshot=VALUES(role_snapshot), token_family_id=VALUES(token_family_id),
-  updated_at=VALUES(updated_at), last_seen_at=VALUES(last_seen_at), last_verified_at=VALUES(last_verified_at),
-  next_refresh_at=VALUES(next_refresh_at), expires_at=VALUES(expires_at), revoked_at=VALUES(revoked_at), version=VALUES(version)
-`,
-		session.ID.String(), string(session.EntityType), session.EntityID, session.PrincipalID, string(session.Status), string(session.AuthMethod),
-		session.CreatedByIP, session.LastSeenIP, session.UserAgent, session.ClientID, session.GatewayID,
-		string(scopesJSON), session.RoleSnapshot, session.TokenFamilyID.String(),
-		session.CreatedAt, session.UpdatedAt, session.LastSeenAt, nullableTime(session.LastVerifiedAt), session.NextRefreshAt, session.ExpiresAt, nullableTime(session.RevokedAt), session.Version,
-	)
-	return err
-}
-
 func (s *SessionService) cacheSession(ctx context.Context, session *authmodel.Session) error {
 	if s.redis == nil || session == nil {
 		return nil
@@ -338,62 +282,6 @@ func (s *SessionService) loadSessionFromCache(ctx context.Context, id uuid.UUID)
 		return nil, err
 	}
 	return &session, nil
-}
-
-func (s *SessionService) loadSessionFromDB(ctx context.Context, id uuid.UUID) (*authmodel.Session, error) {
-	if s.mysql == nil {
-		return nil, &modelsystem.ErrMySQLNotConfigured
-	}
-	var row sessionRow
-	err := s.mysql.Get(ctx, &row, `
-SELECT id, entity_type, entity_id, principal_id, status, auth_method, created_by_ip, last_seen_ip,
-       user_agent, client_id, gateway_id, scope_snapshot, role_snapshot, token_family_id,
-       created_at, updated_at, last_seen_at, last_verified_at, next_refresh_at, expires_at, revoked_at, version
-FROM auth_sessions WHERE id = ? LIMIT 1
-`, id.String())
-	if err != nil {
-		if repo.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return mapSessionRow(row)
-}
-
-func mapSessionRow(row sessionRow) (*authmodel.Session, error) {
-	id, err := uuid.Parse(row.ID)
-	if err != nil {
-		return nil, err
-	}
-	familyID, _ := uuid.Parse(row.TokenFamilyID)
-	var scopes []string
-	_ = json.Unmarshal([]byte(row.ScopeSnapshot), &scopes)
-	session := &authmodel.Session{
-		ID:             id,
-		Principal:      authmodel.Principal{EntityType: commonmodel.EntityType(row.EntityType), EntityID: row.EntityID},
-		EntityType:     commonmodel.EntityType(row.EntityType),
-		EntityID:       row.EntityID,
-		PrincipalID:    row.PrincipalID,
-		Status:         authmodel.SessionStatus(row.Status),
-		AuthMethod:     authmodel.AuthMethod(row.AuthMethod),
-		CreatedByIP:    row.CreatedByIP,
-		LastSeenIP:     row.LastSeenIP,
-		UserAgent:      row.UserAgent,
-		ClientID:       row.ClientID,
-		GatewayID:      row.GatewayID,
-		ScopeSnapshot:  scopes,
-		RoleSnapshot:   row.RoleSnapshot,
-		TokenFamilyID:  familyID,
-		CreatedAt:      row.CreatedAt,
-		UpdatedAt:      row.UpdatedAt,
-		LastSeenAt:     row.LastSeenAt,
-		LastVerifiedAt: row.LastVerifyAt.Time,
-		NextRefreshAt:  row.NextRefreshAt,
-		ExpiresAt:      row.ExpiresAt,
-		RevokedAt:      row.RevokedAt.Time,
-		Version:        row.Version,
-	}
-	return session, nil
 }
 
 func (s *SessionService) trackSession(session *authmodel.Session) {

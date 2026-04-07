@@ -16,6 +16,10 @@ type IAuthGatewayOrchestrator interface {
 
 	// 用户认证与令牌能力。
 	AuthenticateByPassword(ctx context.Context, req *authmodel.UserPasswordAuthRequest) (*authmodel.UserPasswordAuthResult, error)
+	RefreshModuleToken(ctx context.Context, req *authmodel.TokenRefreshRequest) (*authmodel.TokenBundle, error)
+	RevokeModuleSession(ctx context.Context, req *authmodel.SessionRevokeRequest) error
+
+	// 历史兼容：客户端用户会话续期。
 	RefreshByUserSession(ctx context.Context, req *authmodel.TokenRefreshRequest) (*authmodel.TokenBundle, error)
 	VerifyToken(ctx context.Context, req *authmodel.TokenVerifyRequest) (*authmodel.TokenVerificationResult, error)
 	RevokeToken(ctx context.Context, req *authmodel.TokenRevokeRequest) error

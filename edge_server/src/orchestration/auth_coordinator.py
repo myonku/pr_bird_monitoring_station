@@ -16,6 +16,7 @@ from src.models.auth.auth_contract import (
 )
 from src.models.auth.bootstrap import SignedBootstrapProof
 from src.utils.crypto_utils import CryptoUtils
+from src.utils.runtime_logger import RuntimeEventLogger
 
 
 class EdgeAuthCoordinator(IEdgeAuthCoordinator):
@@ -39,6 +40,7 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
         state_store: IEdgeAuthStateStore,
         access_token_skew_sec: int = 30,
         refresh_request_builder: Callable[[str], RefreshTokenRequest] | None = None,
+        event_logger: RuntimeEventLogger | None = None,
     ) -> None:
         self._key_manager = key_manager
         self._gateway_auth_client = gateway_auth_client
@@ -47,6 +49,11 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
         self._refresh_request_builder = (
             refresh_request_builder or self._default_refresh_request
         )
+        self._event_logger = event_logger
+
+    def _log(self, event: str, details: dict | None = None) -> None:
+        if self._event_logger is not None:
+            self._event_logger.emit(stage="auth", event=event, details=details)
 
     @staticmethod
     def _now(now_ts: float | None = None) -> float:
@@ -76,6 +83,13 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
             now_ts,
             self._access_token_skew_sec,
         )
+
+    def _is_long_lived_ready(self, state: EdgeAuthState | None, now_ts: float) -> bool:
+        if state is None or state.tokens is None:
+            return False
+        if not self._is_session_active(state.session, now_ts):
+            return False
+        return self._is_token_usable(state.tokens.refresh_token, now_ts, skew_sec=0)
 
     @staticmethod
     def _default_refresh_request(refresh_token: str) -> RefreshTokenRequest:
@@ -154,8 +168,10 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
                 request_payload
             )
         except Exception:
+            self._log("refresh_failed")
             return None
         if refreshed_bundle is None or refreshed_bundle.access_token is None:
+            self._log("refresh_empty_result")
             return None
 
         refreshed_state = self._build_refreshed_state(
@@ -164,6 +180,7 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
             now_ts=now_ts,
         )
         self._state_store.save(refreshed_state)
+        self._log("refresh_succeeded")
         return refreshed_state
 
     def _bootstrap(self, now_ts: float) -> EdgeAuthState:
@@ -184,6 +201,13 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
 
         normalized = self._normalize_bootstrap_state(state)
         self._state_store.save(normalized)
+        self._log(
+            "bootstrap_succeeded",
+            {
+                "session_id": normalized.session.session_id if normalized.session else "",
+                "stage": normalized.stage,
+            },
+        )
         return normalized
 
     @staticmethod
@@ -238,7 +262,7 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
     ) -> SignedBootstrapProof:
 
         challenge_key_id = challenge.key_id or trust_material.key_id
-        if challenge_key_id != trust_material.key_id:
+        if trust_material.key_id and challenge_key_id != trust_material.key_id:
             raise ValueError(
                 "challenge key_id does not match local key material: "
                 f"challenge={challenge_key_id}, local={trust_material.key_id}"
@@ -282,6 +306,17 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
 
         return self._bootstrap(ts)
 
+    def ensure_startup_ready(self, now_ts: float | None = None) -> EdgeAuthState:
+        """生产模式启动门禁：至少确保长期令牌可用；缺失时执行 bootstrap。"""
+
+        ts = self._now(now_ts)
+        state = self._state_store.load()
+        if self._is_long_lived_ready(state, ts):
+            self._log("startup_gate_ready")
+            return state
+        self._log("startup_gate_bootstrap_required")
+        return self._bootstrap(ts)
+
     def get_auth_headers(self, now_ts: float | None = None) -> EdgeAuthHeaders:
         state = self.ensure_ready(now_ts=now_ts)
         if (
@@ -311,6 +346,13 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
         if status_code not in (401, 403):
             return self.ensure_ready(now_ts=ts)
 
+        self._log(
+            "unauthorized_received",
+            {
+                "status_code": status_code,
+            },
+        )
+
         if state is not None:
             refreshed = self._try_refresh(state=state, now_ts=ts)
             if refreshed is not None and self._is_state_ready(refreshed, ts):
@@ -320,6 +362,7 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
         if response_text:
             reason = f"{reason}: {response_text}"
         self._state_store.clear(reason=reason)
+        self._log("unauthorized_rebootstrap", {"reason": reason})
         return self._bootstrap(ts)
 
     def logout(self, reason: str = "") -> None:

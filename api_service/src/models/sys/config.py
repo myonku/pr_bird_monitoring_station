@@ -4,8 +4,6 @@ from typing import Literal
 from urllib.parse import quote_plus, urlencode
 from msgspec import Struct
 
-from src.models.auth.internal_header_keys import HEADER_INTERNAL_ASSERTION
-
 
 class ProjectConfig(Struct):
     """项目配置模型"""
@@ -15,7 +13,6 @@ class ProjectConfig(Struct):
     kafka: KafkaConfig | None = None
     mongo: MongoConfig | None = None
     etcd: EtcdConfig | None = None
-    internal_assertion: InternalAssertionConfig | None = None
     runtime: RuntimeConfig | None = None
     auth: AuthConfig | None = None
 
@@ -87,36 +84,6 @@ class SecretKeyStartupParams(Struct, kw_only=True):
     entity_name: str = ""
     instance_id: str = ""
     instance_name: str = ""
-
-
-class InternalAssertionConfig(Struct, kw_only=True):
-    """内部断言验签配置。"""
-
-    enabled: bool = False
-    required: bool = False
-    header_name: str = HEADER_INTERNAL_ASSERTION
-
-    clock_skew_sec: int = 30
-    replay_ttl_sec: int = 15
-
-    enforce_path_binding: bool = False
-
-    def normalized(self) -> "InternalAssertionConfig":
-        header_name = self.header_name.strip().lower() if self.header_name else ""
-        if not header_name:
-            header_name = HEADER_INTERNAL_ASSERTION
-
-        clock_skew_sec = self.clock_skew_sec if self.clock_skew_sec > 0 else 30
-        replay_ttl_sec = self.replay_ttl_sec if self.replay_ttl_sec > 0 else 15
-
-        return InternalAssertionConfig(
-            enabled=self.enabled,
-            required=self.required,
-            header_name=header_name,
-            clock_skew_sec=clock_skew_sec,
-            replay_ttl_sec=replay_ttl_sec,
-            enforce_path_binding=self.enforce_path_binding,
-        )
 
 
 class EtcdConfig(Struct, kw_only=True):
