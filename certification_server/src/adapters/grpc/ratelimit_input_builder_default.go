@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	ratelimitif "certification_server/src/interfaces/ratelimit"
+	ratelimitif "certification_server/src/iface/ratelimit"
 	authmodel "certification_server/src/models/auth"
 
 	"google.golang.org/grpc/metadata"

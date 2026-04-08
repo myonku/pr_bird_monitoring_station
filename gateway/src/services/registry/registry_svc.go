@@ -7,12 +7,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	registryif "gateway/src/interfaces/registry"
+	registryif "gateway/src/iface/registry"
 	registrymodel "gateway/src/models/registry"
 	modelsystem "gateway/src/models/system"
 	"gateway/src/repo"
+	"gateway/src/utils"
 
 	"github.com/google/uuid"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -29,6 +31,8 @@ type RegistryService struct {
 	leaseMu      sync.Mutex
 	leaseIDs     map[string]clientv3.LeaseID
 	leaseCancels map[string]context.CancelFunc
+	counter      atomic.Uint64
+	maxStale     time.Duration
 }
 
 // NewRegistryService 创建注册服务。
@@ -171,6 +175,62 @@ func (r *RegistryService) GetServiceSnapShot(serviceName string) (*registrymodel
 		Instances: instances,
 		Revision:  resp.Header.Revision,
 	}, nil
+}
+
+// ChooseEndpoint 选择服务实例。
+func (d *RegistryService) ChooseEndpoint(
+	serviceName string, affinityKey string, requireTags []string) (*registrymodel.ServiceInstance, error) {
+
+	if serviceName == "" {
+		return nil, &modelsystem.ErrServiceNameRequired
+	}
+
+	instances, err := d.GetServiceInstances(serviceName)
+	if err != nil {
+		return nil, err
+	}
+	if len(instances) == 0 {
+		return nil, &modelsystem.ErrNoAvaliableInstances
+	}
+
+	nowMS := time.Now().UnixMilli()
+	alive := make([]*registrymodel.ServiceInstance, 0, len(instances))
+	for i := range instances {
+		inst := instances[i]
+		if inst == nil {
+			continue
+		}
+		if inst.HeartBeat > 0 && d.maxStale > 0 {
+			if nowMS-inst.HeartBeat > d.maxStale.Milliseconds() {
+				continue
+			}
+		}
+		alive = append(alive, inst)
+	}
+	if len(alive) == 0 {
+		return nil, &modelsystem.ErrNoAvaliableInstances
+	}
+
+	filtered := utils.FilterByTags(alive, requireTags)
+	if len(filtered) == 0 {
+		return nil, &modelsystem.ErrNoMatchingTags
+	}
+
+	var selected *registrymodel.ServiceInstance
+	if affinityKey != "" {
+		selected = utils.PickHashAffinity(filtered, affinityKey)
+	} else {
+		selected = utils.RandomWeighted(filtered)
+		if selected == nil {
+			idx := int(d.counter.Add(1) - 1)
+			selected = utils.PickRoundRobin(filtered, idx)
+		}
+	}
+
+	if selected == nil || selected.Endpoint == "" {
+		return nil, &modelsystem.ErrInvalidInstance
+	}
+	return selected, nil
 }
 
 func (r *RegistryService) servicePrefix(serviceName string) string {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	interfaces "certification_server/src/interfaces/auth"
+	iface "certification_server/src/iface/auth"
 	authmodel "certification_server/src/models/auth"
 	commsecmodel "certification_server/src/models/commsec"
 	modelsystem "certification_server/src/models/system"
@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var _ interfaces.IDownstreamGrantService = (*DownstreamGrantService)(nil)
+var _ iface.IDownstreamGrantService = (*DownstreamGrantService)(nil)
 
 // DownstreamGrantService 负责根据认证上下文签发服务间下游访问授权。
 type DownstreamGrantService struct{}

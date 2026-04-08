@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	commsecif "gateway/src/interfaces/commsec"
+	commsecif "gateway/src/iface/commsec"
 	commsecmodel "gateway/src/models/commsec"
 	modelsystem "gateway/src/models/system"
 	"gateway/src/repo"

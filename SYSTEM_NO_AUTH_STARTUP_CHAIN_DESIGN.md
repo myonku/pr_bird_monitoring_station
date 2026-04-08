@@ -9,7 +9,7 @@
 
 本说明覆盖：
 
-- 后端模块 no-auth 启动链路（gateway、api_service、certification_server、data_worker）。
+- 后端模块 no-auth 启动链路（gateway、certification_server、data_worker）。
 - 边缘端 no-auth 与孤岛模式（island）对照。
 - 每个模块在 no-auth 下的启用行为与禁用行为。
 
@@ -31,7 +31,6 @@
 适用模块：
 
 - gateway
-- api_service
 - certification_server
 - data_worker
 - edge_server

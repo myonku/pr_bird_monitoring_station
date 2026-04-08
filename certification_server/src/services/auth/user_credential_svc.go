@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	interfaces "certification_server/src/interfaces/auth"
+	iface "certification_server/src/iface/auth"
 	authmodel "certification_server/src/models/auth"
 	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"
@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var _ interfaces.IUserCredentialAuthService = (*UserCredentialAuthService)(nil)
+var _ iface.IUserCredentialAuthService = (*UserCredentialAuthService)(nil)
 
 // UserCredentialAuthService 提供用户名/密码认证骨架实现。
 type UserCredentialAuthService struct {
@@ -22,8 +22,8 @@ type UserCredentialAuthService struct {
 
 	users map[string]userCredentialRecord
 
-	sessionSvc interfaces.ISessionService
-	tokenSvc   interfaces.ITokenService
+	sessionSvc iface.ISessionService
+	tokenSvc   iface.ITokenService
 }
 
 type userCredentialRecord struct {
@@ -36,8 +36,8 @@ type userCredentialRecord struct {
 
 // NewUserCredentialAuthService 创建用户凭据认证服务。
 func NewUserCredentialAuthService(
-	sessionSvc interfaces.ISessionService,
-	tokenSvc interfaces.ITokenService,
+	sessionSvc iface.ISessionService,
+	tokenSvc iface.ITokenService,
 ) *UserCredentialAuthService {
 	svc := &UserCredentialAuthService{
 		users:      make(map[string]userCredentialRecord),

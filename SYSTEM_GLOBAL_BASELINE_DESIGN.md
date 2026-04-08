@@ -26,7 +26,6 @@
 
 - gateway
 - certification_server
-- api_service
 - edge_server
 - data_worker
 
@@ -71,7 +70,7 @@
 
 ## 4. 本地密钥存储规范（强制）
 
-适用对象：除客户端之外的系统模块（gateway、api_service、edge_server、data_worker 等）。
+适用对象：除客户端之外的系统模块（gateway、edge_server、data_worker 等）。
 
 统一要求：
 
@@ -173,7 +172,7 @@
 
 适用范围：
 
-- 后端模块间调用（gateway、certification_server、api_service、data_worker）。
+- 后端模块间调用（gateway、certification_server、data_worker）。
 
 统一约定：
 
@@ -186,7 +185,7 @@
 
 适用范围：
 
-- 后端模块：gateway、api_service、certification_server、data_worker。
+- 后端模块：gateway、certification_server、data_worker。
 
 统一约定：
 
@@ -222,18 +221,19 @@
 - Gateway：公共入口与协议映射，认证相关操作统一转发认证中心；不管理他方请求主体的 challenge/session/token/grant 状态，但需负责本模块自身凭证生命周期。
 - Certification Server：认证签发、会话/令牌/通道安全控制中心。
 - API Service：业务处理与出站调用，认证相关操作统一转发认证中心；不管理他方请求主体的 challenge/session/token/grant 状态，但需负责本模块自身凭证生命周期。
+- Data Worker：异步任务处理与出站调用，认证相关操作统一转发认证中心；不管理他方请求主体的 challenge/session/token/grant 状态，但需负责本模块自身凭证生命周期。
 - Edge Server：本地采集/推理/上传与边缘认证协调，不直接调用认证中心。
 - Client：仅走用户名密码链路，不参与密钥 bootstrap。
 - 非认证中心模块不得本地签发、刷新、撤销或缓存“他方请求主体”的认证凭证状态；同时必须负责本模块自身凭证生命周期管理。
 - 内部限流描述符主体来源统一为“认证中心复核后的身份上下文”（verified identity），不再以原始转发头作为主依据。
 - 会话与令牌标识统一使用 `x-verified-session-id` / `x-verified-token-id` 与 `x-downstream-*-id` 规范键，避免 `-id` 与非 `-id` 分裂。
-- API Service 运行期会话/令牌回源校验路径必须保留并作为内部转发默认校验路径。
+- 普通服务模块（API Service / Data Worker）运行期会话/令牌回源校验路径必须保留并作为内部转发默认校验路径。
 - 运行期告警指标至少覆盖：回源认证校验失败量、回源认证超时量。
 - 后端模块出站侧必须先确保安全通道可用（预热复用或首跳握手），之后才允许发送业务 payload。
 
 ---
 
-## 10. 服务发现/注册简要约定（gateway、certification_server、api_service）
+## 10. 服务发现/注册简要约定（gateway、certification_server、data_worker）
 
 本节仅定义后续推进所需的最小统一约定，不代表已接入完整运行链路。
 
@@ -251,7 +251,7 @@
 
 模块架构文档（仅保留层级/结构/接口）：
 
-- `api_service/API_SERVICE_DESIGN_SPEC.md`
+- `data_worker/DATA_WORKER_DESIGN_SPEC.md`
 - `certification_server/CERTIFICATION_SERVER_DESIGN_SPEC.md`
 - `gateway/GATEWAY_DESIGN_SPEC.md`
 - `edge_server/EDGE_AUTH_DESIGN_SPEC.md`

@@ -47,7 +47,7 @@
 
 3. Interface 层（端口契约）
 
-- 文件：src/interfaces/**
+- 文件：src/iface/**
 - 职责：定义可替换边界（auth/commsec/communication/ratelimit/registry）。
 
 4. Adapter 层（端口实现）
@@ -62,9 +62,9 @@
 
 ### 3.2 依赖方向（必须遵守）
 
-- App -> Usecase -> Interfaces -> Adapters
+- App -> Usecase -> iface -> Adapters
 - Usecase 可依赖 Models
-- Interfaces 可依赖 Models
+- iface 可依赖 Models
 - 禁止反向依赖
 
 ---
@@ -97,7 +97,7 @@
 
 ### 4.2.1 IBootstrapClient
 
-- 文件：src/interfaces/auth/bootstrap_cli.go
+- 文件：src/iface/auth/bootstrap_cli.go
 - 方法：
   - InitChallenge
   - AuthenticateBootstrap
@@ -106,21 +106,21 @@
 
 ### 4.2.2 IBootstrapFlowCoordinator
 
-- 文件：src/interfaces/auth/bootstrap_flow.go
+- 文件：src/iface/auth/bootstrap_flow.go
 - 方法：
   - EnsureReady
 - 职责：主动编排接口（stage 检查 -> challenge -> 本地签名 -> bootstrap 认证）。
 
 ### 4.2.3 IDownstreamGrantClient
 
-- 文件：src/interfaces/auth/downstream_grant_client.go
+- 文件：src/iface/auth/downstream_grant_client.go
 - 方法：
   - IssueDownstreamGrant
 - 职责：获取下游访问授权（grant）。
 
 ### 4.2.4 IAuthAuthorityClient
 
-- 文件：src/interfaces/auth/auth_authority_client.go
+- 文件：src/iface/auth/auth_authority_client.go
 - 职责：统一定义模块直连认证中心的远端鉴权门面调用（bootstrap、用户认证、token/session 校验、downstream grant），不承载“内部模块经网关中转”的语义。
 
 ---
@@ -129,7 +129,7 @@
 
 ### 4.3.1 ICommSecurityService
 
-- 文件：src/interfaces/commsec/commsec_svc.go
+- 文件：src/iface/commsec/commsec_svc.go
 - 关键方法：
   - InitHandshake / CompleteHandshake
   - EnsureChannel（主动方确保可用通道）
@@ -139,7 +139,7 @@
 
 ### 4.3.2 ISecretKeyService
 
-- 文件：src/interfaces/commsec/secret_key.go
+- 文件：src/iface/commsec/secret_key.go
 - 职责：密钥读取与公钥目录查询（私钥原文不外泄）。
 
 ---
@@ -148,17 +148,17 @@
 
 ### 4.4.1 IOutboundInvocationSecurity
 
-- 文件：src/interfaces/communication/outbound_security.go
+- 文件：src/iface/communication/outbound_security.go
 - 作用：将 auth + commsec 组合成单次出站安全上下文。
 
 ### 4.4.2 IOutboundTargetResolver
 
-- 文件：src/interfaces/communication/target_resolver.go
+- 文件：src/iface/communication/target_resolver.go
 - 作用：路由与目标服务解析（只解析，不做认证/握手/转发）。
 
 ### 4.4.3 IOutboundForwarder
 
-- 文件：src/interfaces/communication/outbound_forwarder.go
+- 文件：src/iface/communication/outbound_forwarder.go
 - 作用：执行出站调用（仅消费已准备好的安全上下文）。
 - 关键输入：
   - Endpoint

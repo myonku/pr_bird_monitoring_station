@@ -16,13 +16,13 @@ import (
 	"sync"
 	"time"
 
-	interfaces "certification_server/src/interfaces/commsec"
+	iface "certification_server/src/iface/commsec"
 	commsecmodel "certification_server/src/models/commsec"
 	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
 )
 
-var _ interfaces.ISecretKeyService = (*SecretKeyService)(nil)
+var _ iface.ISecretKeyService = (*SecretKeyService)(nil)
 
 // SecretKeyService 提供通信密钥目录访问能力。
 type SecretKeyService struct {

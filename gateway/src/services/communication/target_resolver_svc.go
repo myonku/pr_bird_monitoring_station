@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	commif "gateway/src/interfaces/communication"
-	registryif "gateway/src/interfaces/registry"
+	commif "gateway/src/iface/communication"
+	registryif "gateway/src/iface/registry"
 	modelsystem "gateway/src/models/system"
 )
 
@@ -25,11 +25,11 @@ type RouteRule struct {
 
 // TargetResolverService 负责将入站规范化请求映射为内部目标服务。
 type TargetResolverService struct {
-	Discovery registryif.IDiscoveryAdapter
+	Discovery registryif.IRegistry
 	Rules     []RouteRule
 }
 
-func NewTargetResolverService(discovery registryif.IDiscoveryAdapter, rules []RouteRule) *TargetResolverService {
+func NewTargetResolverService(discovery registryif.IRegistry, rules []RouteRule) *TargetResolverService {
 	copied := append([]RouteRule(nil), rules...)
 	sort.SliceStable(copied, func(i, j int) bool {
 		return len(copied[i].PathPrefix) > len(copied[j].PathPrefix)

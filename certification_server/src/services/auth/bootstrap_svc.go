@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	interfaces "certification_server/src/interfaces/auth"
-	commseciface "certification_server/src/interfaces/commsec"
+	iface "certification_server/src/iface/auth"
+	commseciface "certification_server/src/iface/commsec"
 	authmodel "certification_server/src/models/auth"
 	commonmodel "certification_server/src/models/common"
 	commsecmodel "certification_server/src/models/commsec"
@@ -21,7 +21,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var _ interfaces.IBootstrapService = (*BootstrapService)(nil)
+var _ iface.IBootstrapService = (*BootstrapService)(nil)
 
 // BootstrapService 提供冷启动 challenge 认证流程实现。
 type BootstrapService struct {
@@ -32,8 +32,8 @@ type BootstrapService struct {
 
 	redis *repo.RedisClient
 
-	sessionSvc interfaces.ISessionService
-	tokenSvc   interfaces.ITokenService
+	sessionSvc iface.ISessionService
+	tokenSvc   iface.ITokenService
 	keySvc     commseciface.ISecretKeyService
 	crypto     *utils.CryptoUtils
 }
@@ -41,8 +41,8 @@ type BootstrapService struct {
 // NewBootstrapService 创建冷启动认证服务实例。
 func NewBootstrapService(
 	redis *repo.RedisClient,
-	sessionSvc interfaces.ISessionService,
-	tokenSvc interfaces.ITokenService,
+	sessionSvc iface.ISessionService,
+	tokenSvc iface.ITokenService,
 	keySvc commseciface.ISecretKeyService,
 	crypto *utils.CryptoUtils,
 ) *BootstrapService {

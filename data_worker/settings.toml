@@ -1,0 +1,10 @@
+[runtime]
+entity_type = "service"
+entity_id = "certification_server"
+entity_name = "certification_server"
+instance_id = ""
+instance_name = ""
+
+[auth]
+secret_key_dir = "secret_keys"
+active_key_id = "cert-local-key"

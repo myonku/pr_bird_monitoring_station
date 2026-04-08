@@ -3,9 +3,9 @@ package communication
 import (
 	"context"
 
-	authif "gateway/src/interfaces/auth"
-	commsecif "gateway/src/interfaces/commsec"
-	commif "gateway/src/interfaces/communication"
+	authif "gateway/src/iface/auth"
+	commsecif "gateway/src/iface/commsec"
+	commif "gateway/src/iface/communication"
 	authmodel "gateway/src/models/auth"
 	commsecmodel "gateway/src/models/commsec"
 	modelsystem "gateway/src/models/system"

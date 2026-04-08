@@ -3,7 +3,7 @@ package security
 import (
 	"context"
 
-	commif "gateway/src/interfaces/communication"
+	commif "gateway/src/iface/communication"
 	commsecmodel "gateway/src/models/commsec"
 	modelsystem "gateway/src/models/system"
 )

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	interfaces "certification_server/src/interfaces/auth"
+	iface "certification_server/src/iface/auth"
 	authmodel "certification_server/src/models/auth"
 	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
@@ -15,7 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var _ interfaces.ISessionService = (*SessionService)(nil)
+var _ iface.ISessionService = (*SessionService)(nil)
 
 // SessionService 提供认证中心会话管理的内存实现。
 type SessionService struct {

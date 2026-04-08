@@ -27,7 +27,7 @@ type OutboundForwardResponse struct {
 }
 
 // OutboundSecurityContext 表示转发阶段所需安全上下文。
-// 引用: src/interfaces/communication/outbound_security.go。
+// 引用: src/iface/communication/outbound_security.go。
 type OutboundSecurityContext struct {
 	Grant   *authmodel.DownstreamAccessGrant
 	Channel *commsecmodel.SecureChannelSession
@@ -38,7 +38,7 @@ type OutboundSecurityContext struct {
 
 // IOutboundForwarder 负责把请求发送给内部服务。
 // 边界约束: 仅消费已准备好的安全上下文，不负责 bootstrap/grant/handshake 编排。
-// 引用: src/interfaces/auth/bootstrap_flow.go, src/interfaces/commsec/commsec_svc.go。
+// 引用: src/iface/auth/bootstrap_flow.go, src/iface/commsec/commsec_svc.go。
 type IOutboundForwarder interface {
 	Forward(ctx context.Context, req *OutboundForwardRequest, security *OutboundSecurityContext) (*OutboundForwardResponse, error)
 }

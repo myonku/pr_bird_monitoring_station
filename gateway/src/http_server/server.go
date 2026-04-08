@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"gateway/src/app"
-	authif "gateway/src/interfaces/auth"
+	authif "gateway/src/iface/auth"
 	modelsystem "gateway/src/models/system"
 )
 

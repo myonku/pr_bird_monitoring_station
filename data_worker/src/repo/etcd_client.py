@@ -8,7 +8,7 @@ from msgspec import json
 
 from src.models.registry.instance import ServiceInstance
 from src.models.sys.config import ProjectConfig
-from utils.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 from etcd3 import etcdrpc as _etcdrpc
 
 # 将 etcdrpc 标注为 Any，避免由缺失类型信息引起的静态检查误报
@@ -50,7 +50,9 @@ class EtcdAsyncClient:
             raise RuntimeError("Etcd配置缺失HOSTS")
 
         self.cfg = cfg
-        self.namespace = cfg.etcd.NAMESPACE.rstrip("/")
+        ns = (cfg.etcd.NAMESPACE or "").strip()
+        ns = ns.strip("/")
+        self.namespace = f"/{ns}" if ns else "/bms"
 
         # 针对 Etcd 的 RPC 维护一个熔断器
         self._circuit = CircuitBreaker("etcd_client", cfg.etcd.CIRCUITBREAKER)
@@ -311,12 +313,14 @@ class EtcdAsyncClient:
 
 def build_service_key(ns: str, name: str, instance_id: str) -> str:
     """生成服务实例的 etcd 键"""
-    return f"{ns}/services/{name}/{instance_id}"
+    namespace = _normalize_namespace(ns)
+    return f"{namespace}/services/{name}/{instance_id}"
 
 
 def build_prefix(ns: str, name: str) -> str:
     """生成服务前缀"""
-    return f"{ns}/services/{name}/"
+    namespace = _normalize_namespace(ns)
+    return f"{namespace}/services/{name}/"
 
 
 def encode_instance(si: ServiceInstance) -> bytes:
@@ -324,4 +328,32 @@ def encode_instance(si: ServiceInstance) -> bytes:
 
 
 def decode_instance(b: bytes) -> ServiceInstance:
-    return json.decode(b, type=ServiceInstance)
+    try:
+        return json.decode(b, type=ServiceInstance)
+    except Exception:
+        payload = json.decode(b)
+        if not isinstance(payload, dict):
+            raise
+
+        if "heartbeat" not in payload and "heartbeat_at" in payload:
+            raw_hb = payload.get("heartbeat_at")
+            if isinstance(raw_hb, (int, float)):
+                heartbeat = int(raw_hb)
+                if heartbeat < 10_000_000_000:
+                    heartbeat *= 1000
+                payload["heartbeat"] = heartbeat
+
+        payload.setdefault("heartbeat", 0)
+        payload.setdefault("zone", "")
+        payload.setdefault("version", "")
+        payload.setdefault("weight", 1)
+        payload.setdefault("tags", [])
+        payload.setdefault("active_comm_key_id", "")
+        payload.setdefault("metadata", {})
+
+        return json.decode(json.encode(payload), type=ServiceInstance)
+
+
+def _normalize_namespace(ns: str) -> str:
+    raw = (ns or "").strip().strip("/")
+    return f"/{raw}" if raw else "/bms"

@@ -9,7 +9,8 @@
 
 模块架构文档（仅层级/结构/接口）：
 
-- `api_service/API_SERVICE_DESIGN_SPEC.md`
+
+- `data_worker/DATA_WORKER_DESIGN_SPEC.md`
 - `certification_server/CERTIFICATION_SERVER_DESIGN_SPEC.md`
 - `gateway/GATEWAY_DESIGN_SPEC.md`
 - `edge_server/EDGE_AUTH_DESIGN_SPEC.md`

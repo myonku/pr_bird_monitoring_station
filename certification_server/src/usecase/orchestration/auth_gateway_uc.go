@@ -1,8 +1,8 @@
 package orchestration
 
 import (
-	authif "certification_server/src/interfaces/auth"
-	orchestrationif "certification_server/src/interfaces/orchestration"
+	authif "certification_server/src/iface/auth"
+	orchestrationif "certification_server/src/iface/orchestration"
 	authmodel "certification_server/src/models/auth"
 	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"

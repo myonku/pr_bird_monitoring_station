@@ -28,14 +28,14 @@ type OutboundInvocationContext struct {
 }
 
 // IOutboundAuthCoordinator 负责主动调用链路中的认证编排。
-// 引用: gateway/src/interfaces/auth/bootstrap_flow.go, gateway/src/interfaces/auth/downstream_grant_client.go。
+// 引用: gateway/src/iface/auth/bootstrap_flow.go, gateway/src/iface/auth/downstream_grant_client.go。
 type IOutboundAuthCoordinator interface {
 	EnsureBootstrapReady(ctx context.Context, req *authmodel.ChallengeRequest) (*authmodel.BootstrapAuthResult, error)
 	IssueDownstreamGrant(ctx context.Context, req *authmodel.DownstreamGrantRequest) (*authmodel.DownstreamAccessGrant, error)
 }
 
 // IOutboundChannelCoordinator 负责主动调用链路中的通道编排与载荷加密。
-// 引用: gateway/src/interfaces/commsec/commsec_svc.go。
+// 引用: gateway/src/iface/commsec/commsec_svc.go。
 type IOutboundChannelCoordinator interface {
 	EnsureChannel(ctx context.Context, req *commsecmodel.SecureChannelEnsureRequest) (*commsecmodel.SecureChannelSession, error)
 	EncryptForChannel(ctx context.Context, req *commsecmodel.EncryptForChannelRequest) (*commsecmodel.EncryptedPayload, error)

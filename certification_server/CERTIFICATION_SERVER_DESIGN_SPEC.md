@@ -47,12 +47,12 @@
 
 2. Usecase / Orchestration 层（业务编排）
 
-- 文件：src/interfaces/orchestration/*.go（当前为编排接口），后续可在 src/usecase/orchestration/* 落地实现。
+- 文件：src/iface/orchestration/*.go（当前为编排接口），后续可在 src/usecase/orchestration/* 落地实现。
 - 职责：串联 auth/commsec 服务，定义流程级事务边界与调用次序。
 
 3. Interface 层（端口契约）
 
-- 文件：src/interfaces/**
+- 文件：src/iface/**
 - 职责：定义可替换边界（auth/commsec/orchestration/ratelimit/registry）。
 
 4. Adapter 层（端口实现）
@@ -67,9 +67,9 @@
 
 ### 3.2 依赖方向（必须遵守）
 
-- App -> Usecase/Orchestration -> Interfaces -> Adapters
+- App -> Usecase/Orchestration -> iface -> Adapters
 - Usecase/Orchestration 可依赖 Models
-- Interfaces 可依赖 Models
+- iface 可依赖 Models
 - 禁止反向依赖
 
 ---
@@ -105,7 +105,7 @@
 
 ### 4.2.1 IBootstrapService
 
-- 文件：src/interfaces/auth/bootstrap.go
+- 文件：src/iface/auth/bootstrap.go
 - 方法：
   - InitChallenge
   - AuthenticateBootstrap
@@ -114,7 +114,7 @@
 
 ### 4.2.2 ITokenService
 
-- 文件：src/interfaces/auth/token_svc.go
+- 文件：src/iface/auth/token_svc.go
 - 方法：
   - IssueToken / IssueTokenBundle
   - RefreshTokenBundle / VerifyToken
@@ -123,7 +123,7 @@
 
 ### 4.2.3 ISessionService
 
-- 文件：src/interfaces/auth/session_svc.go
+- 文件：src/iface/auth/session_svc.go
 - 方法：
   - CreateSession / GetSession / TouchSession / ValidateSession
   - RevokeSession / RevokePrincipalSessions
@@ -131,12 +131,12 @@
 
 ### 4.2.4 IDownstreamGrantService
 
-- 文件：src/interfaces/auth/downstream_grant_svc.go
+- 文件：src/iface/auth/downstream_grant_svc.go
 - 职责：签发下游授权上下文。
 
 ### 4.2.5 IUserCredentialAuthService
 
-- 文件：src/interfaces/auth/user_credential_svc.go
+- 文件：src/iface/auth/user_credential_svc.go
 - 方法：
   - AuthenticateByPassword
   - RefreshByUserSession（可复用 token/session service）
@@ -149,17 +149,17 @@
 
 ### 4.3.1 ICommSecurityService
 
-- 文件：src/interfaces/commsec/commsec_svc.go
+- 文件：src/iface/commsec/commsec_svc.go
 - 关键方法：
   - InitHandshake / CompleteHandshake
   - UpsertChannel / GetChannel / RevokeChannel
   - EncryptByChannel / DecryptByChannel
 - 职责：握手、通道、传输加解密核心能力。
-- 约束：供 gateway/api_service 在 bootstrap 后预热通道或首跳通信前握手；协商失败返回显式错误，不得回退明文。
+- 约束：供 gateway/data_worker 在 bootstrap 后预热通道或首跳通信前握手；协商失败返回显式错误，不得回退明文。
 
 ### 4.3.2 ISecretKeyService
 
-- 文件：src/interfaces/commsec/secret_key.go
+- 文件：src/iface/commsec/secret_key.go
 - 职责：本地私钥引用与全局公钥目录查询（私钥原文不外泄）。
 
 ---
@@ -168,7 +168,7 @@
 
 ### 4.4.1 IBootstrapOrchestrator
 
-- 文件：src/interfaces/orchestration/bootstrap_flow.go
+- 文件：src/iface/orchestration/bootstrap_flow.go
 - 方法：
   - StartFlow
   - FinishFlow
@@ -177,7 +177,7 @@
 
 ### 4.4.2 ICommSecurityOrchestrator
 
-- 文件：src/interfaces/orchestration/secure_channel_flow.go
+- 文件：src/iface/orchestration/secure_channel_flow.go
 - 方法：
   - StartHandshakeFlow
   - FinishHandshakeFlow
@@ -187,7 +187,7 @@
 
 ### 4.4.3 IAuthGatewayOrchestrator
 
-- 文件：src/interfaces/orchestration/auth_gateway.go
+- 文件：src/iface/orchestration/auth_gateway.go
 - 方法：
   - InitChallenge / AuthenticateBootstrap / GetBootstrapStage
   - AuthenticateByPassword / RefreshByUserSession / VerifyToken / RevokeToken / RevokeUserSession
@@ -200,7 +200,7 @@
 
 ### 4.5.1 限流端口
 
-- 文件：src/interfaces/ratelimit/ratelimiter.go
+- 文件：src/iface/ratelimit/ratelimiter.go
 - 能力：
   - IRateLimiter.Decide
   - IDescriptorFactory.Build
@@ -208,7 +208,7 @@
 
 ### 4.5.2 描述符工厂
 
-- 文件：src/interfaces/ratelimit/descriptor_factory_default.go
+- 文件：src/iface/ratelimit/descriptor_factory_default.go
 - 作用：把 gRPC 上下文映射为统一 RateLimitDescriptor。
 
 ### 4.5.3 限流用例

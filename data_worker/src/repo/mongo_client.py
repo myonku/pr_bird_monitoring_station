@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from pymongo import AsyncMongoClient
 
 from src.models.sys.config import ProjectConfig
-from utils.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 
 
 class MongoDBClient:
@@ -51,9 +51,7 @@ class MongoDBClient:
                 document_models=document_models,
             )
         self.is_initialized = True
-        print(
-            f"已连接至Mongo数据库服务[{self.cfg.mongo.DATABASE}]，Beanie 初始化已完成"
-        )
+        print(f"已连接至Mongo数据库服务[{self.cfg.mongo.DATABASE}]，Beanie 初始化已完成")
 
     async def disconnect(self):
         """关闭连接"""

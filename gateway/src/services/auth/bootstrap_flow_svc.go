@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	authif "gateway/src/interfaces/auth"
-	commsecif "gateway/src/interfaces/commsec"
+	authif "gateway/src/iface/auth"
+	commsecif "gateway/src/iface/commsec"
 	authmodel "gateway/src/models/auth"
 	modelsystem "gateway/src/models/system"
 	"gateway/src/utils"

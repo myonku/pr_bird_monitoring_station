@@ -3,7 +3,7 @@ package ratelimit
 import (
 	"context"
 
-	ratelimitif "certification_server/src/interfaces/ratelimit"
+	ratelimitif "certification_server/src/iface/ratelimit"
 	authmodel "certification_server/src/models/auth"
 	modelsystem "certification_server/src/models/system"
 )

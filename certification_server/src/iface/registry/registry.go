@@ -1,7 +1,7 @@
 package registry
 
 import (
-	registrymodel "gateway/src/models/registry"
+	registrymodel "certification_server/src/models/registry"
 )
 
 // 服务注册接口定义
@@ -14,10 +14,6 @@ type IRegistry interface {
 	GetServiceInstances(serviceName string) ([]*registrymodel.ServiceInstance, error)
 	// GetServiceSnapShot 获取指定的本地服务快照。
 	GetServiceSnapShot(serviceName string) (*registrymodel.ServiceSnapshot, error)
-}
-
-// 服务发现适配器接口定义
-type IDiscoveryAdapter interface {
 	// ChooseEndpoint 选择服务实例，affinityKey 用于实现会话亲和，requireTags 用于过滤实例。
 	ChooseEndpoint(serviceName string, affinityKey string, requireTags []string) (*registrymodel.ServiceInstance, error)
 }

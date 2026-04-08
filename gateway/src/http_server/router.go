@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	authif "gateway/src/interfaces/auth"
+	authif "gateway/src/iface/auth"
 )
 
 // NewRouter 构建网关 HTTP 路由。

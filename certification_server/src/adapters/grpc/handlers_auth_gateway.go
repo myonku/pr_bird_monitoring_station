@@ -1,7 +1,7 @@
 package grpcadapter
 
 import (
-	orchestrationif "certification_server/src/interfaces/orchestration"
+	orchestrationif "certification_server/src/iface/orchestration"
 	authmodel "certification_server/src/models/auth"
 	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"

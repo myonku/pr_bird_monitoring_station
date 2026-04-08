@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	interfaces "certification_server/src/interfaces/auth"
+	iface "certification_server/src/iface/auth"
 	authmodel "certification_server/src/models/auth"
 	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"
@@ -18,7 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var _ interfaces.ITokenService = (*TokenService)(nil)
+var _ iface.ITokenService = (*TokenService)(nil)
 
 const (
 	defaultAccessTTLSeconds  int64 = 300

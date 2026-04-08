@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	authif "gateway/src/interfaces/auth"
+	authif "gateway/src/iface/auth"
 	authmodel "gateway/src/models/auth"
 	modelsystem "gateway/src/models/system"
 )

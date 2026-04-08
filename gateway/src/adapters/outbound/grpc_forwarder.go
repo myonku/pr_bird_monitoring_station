@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	commif "gateway/src/interfaces/communication"
+	commif "gateway/src/iface/communication"
 	authmodel "gateway/src/models/auth"
 	modelsystem "gateway/src/models/system"
 

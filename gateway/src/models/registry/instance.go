@@ -1,34 +1,8 @@
 package registry
 
 import (
-	commonmodel "gateway/src/models/common"
-
 	"github.com/google/uuid"
 )
-
-type UserRole = commonmodel.UserRole
-type DeviceStatus = commonmodel.DeviceStatus
-
-const (
-	UserRoleAdmin UserRole = commonmodel.UserRoleAdmin
-	UserRoleUser  UserRole = commonmodel.UserRoleUser
-)
-
-const (
-	DeviceStatusActive   DeviceStatus = commonmodel.DeviceStatusActive
-	DeviceStatusDisabled DeviceStatus = commonmodel.DeviceStatusDisabled
-	DeviceStatusBlocked  DeviceStatus = commonmodel.DeviceStatusBlocked
-	DeviceStatusInvoked  DeviceStatus = commonmodel.DeviceStatusInvoked
-)
-
-// User 代表认证服务器中的用户实体。
-type User = commonmodel.User
-
-// EdgeDevice 代表认证服务器中的边缘设备实体。
-type EdgeDevice = commonmodel.EdgeDevice
-
-// ServiceEntry 代表认证服务器中的服务实体。
-type ServiceEntry = commonmodel.ServiceEntry
 
 // ServiceInstance 定义服务实例的基本信息，用于服务发现和注册。
 type ServiceInstance struct {

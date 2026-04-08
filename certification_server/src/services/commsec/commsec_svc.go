@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	interfaces "certification_server/src/interfaces/commsec"
+	iface "certification_server/src/iface/commsec"
 	commsecmodel "certification_server/src/models/commsec"
 	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
@@ -20,7 +20,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var _ interfaces.ICommSecurityService = (*CommSecurityService)(nil)
+var _ iface.ICommSecurityService = (*CommSecurityService)(nil)
 
 // CommSecurityService 提供 ECDHE 握手与安全通道缓存管理。
 // 真正的曲线计算与签名校验策略后续可替换为完整实现。
@@ -32,14 +32,14 @@ type CommSecurityService struct {
 	handshakes map[uuid.UUID]*commsecmodel.ECDHEHandshakeRecord
 	channels   map[uuid.UUID]*commsecmodel.SecureChannelSession
 
-	secretKeySvc interfaces.ISecretKeyService
+	secretKeySvc iface.ISecretKeyService
 	crypto       *utils.CryptoUtils
 }
 
 // NewCommSecurityService 创建新的 CommSecurityService 实例。
 func NewCommSecurityService(
 	redis *repo.RedisClient,
-	secretKeySvc interfaces.ISecretKeyService, crypto *utils.CryptoUtils,
+	secretKeySvc iface.ISecretKeyService, crypto *utils.CryptoUtils,
 ) *CommSecurityService {
 
 	if crypto == nil {

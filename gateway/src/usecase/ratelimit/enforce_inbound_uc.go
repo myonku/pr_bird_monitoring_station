@@ -3,7 +3,7 @@ package ratelimit
 import (
 	"context"
 
-	ratelimitif "gateway/src/interfaces/ratelimit"
+	ratelimitif "gateway/src/iface/ratelimit"
 	authmodel "gateway/src/models/auth"
 	modelsystem "gateway/src/models/system"
 )
