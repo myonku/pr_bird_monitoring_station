@@ -1,5 +1,6 @@
 import base64
 import json
+import time
 from urllib import request
 from urllib.error import HTTPError, URLError
 
@@ -17,11 +18,27 @@ class EdgeEventHttpUploadCoordinator(IEdgeEventUploadCoordinator):
         healthcheck_url: str,
         timeout_sec: float = 3.0,
         auth_coordinator: IEdgeAuthCoordinator | None = None,
+        healthcheck_cache_ttl_sec: float = 1.0,
     ) -> None:
         self.upload_url = upload_url
         self.healthcheck_url = healthcheck_url
         self.timeout_sec = timeout_sec
         self.auth_coordinator = auth_coordinator
+        self.healthcheck_cache_ttl_sec = max(0.0, float(healthcheck_cache_ttl_sec))
+        self._healthcheck_cache_until = 0.0
+        self._healthcheck_cache_value: bool | None = None
+
+    def _cache_healthcheck(self, value: bool) -> bool:
+        if self.healthcheck_cache_ttl_sec <= 0:
+            self._healthcheck_cache_value = None
+            self._healthcheck_cache_until = 0.0
+            return value
+
+        self._healthcheck_cache_value = value
+        self._healthcheck_cache_until = (
+            time.monotonic() + self.healthcheck_cache_ttl_sec
+        )
+        return value
 
     @staticmethod
     def _build_payload(event: EdgeEvent) -> dict:
@@ -149,13 +166,21 @@ class EdgeEventHttpUploadCoordinator(IEdgeEventUploadCoordinator):
             return False
 
     def is_upload_endpoint_ready(self) -> bool:
+        now = time.monotonic()
+        if (
+            self._healthcheck_cache_value is not None
+            and now < self._healthcheck_cache_until
+        ):
+            return self._healthcheck_cache_value
+
         try:
             headers = self._resolve_auth_headers()
         except Exception:
-            return False
+            return self._cache_healthcheck(False)
+
         req = request.Request(self.healthcheck_url, headers=headers, method="GET")
         try:
             with request.urlopen(req, timeout=self.timeout_sec) as resp:
-                return 200 <= resp.status < 300
+                return self._cache_healthcheck(200 <= resp.status < 300)
         except (HTTPError, URLError, TimeoutError):
-            return False
+            return self._cache_healthcheck(False)

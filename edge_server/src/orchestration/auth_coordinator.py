@@ -307,7 +307,7 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
         return self._bootstrap(ts)
 
     def ensure_startup_ready(self, now_ts: float | None = None) -> EdgeAuthState:
-        """生产模式启动门禁：至少确保长期令牌可用；缺失时执行 bootstrap。"""
+        """full_development 启动门禁：至少确保长期令牌可用；缺失时执行 bootstrap。"""
 
         ts = self._now(now_ts)
         state = self._state_store.load()

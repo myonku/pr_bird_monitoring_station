@@ -1,7 +1,9 @@
 [runtime]
 device_id = "edge_device_001"
-# development: 开发联调（禁用认证与外发）；production: 正常运行（启用认证启动门禁）
-run_mode = "development"
+# development: 边缘端基础功能测试（禁用认证与外发）
+# no_auth: 无认证联调模式（允许正常上传与补传，但认证流程不执行，认证头字段为空）
+# full_development: 全面开发模式（启用认证与真实业务流程；此模式不要求配置 TLS）
+run_mode = "no_auth"
 spool_db_path = "data/edge_spool.sqlite3"
 sync_interval_sec = 3.0
 sync_batch_size = 20
@@ -15,6 +17,8 @@ auth_state_db_path = "data/edge_auth.sqlite3"
 [capture]
 # mock: 本地联调；pir: 树莓派 PIR 触发 + 相机抓拍
 mode = "mock"
+# 使用 BCM GPIO 编号；默认 17 （即 GPIO17）
+# PIR 输出建议接 3.3V 逻辑输入，和树莓派共地
 pir_gpio_pin = 17
 pir_wait_timeout_sec = 10.0
 capture_cooldown_sec = 0.1

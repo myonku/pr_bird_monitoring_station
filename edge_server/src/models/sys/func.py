@@ -191,12 +191,32 @@ def load_edge_config(
 
     legacy_spool_dir = str(runtime_tbl.get("spool_dir", "data"))
     default_spool_db_path = str(Path(legacy_spool_dir) / "edge_spool.sqlite3")
-    run_mode_raw = str(runtime_tbl.get("run_mode", "production")).strip().lower()
-    if run_mode_raw in {"prod", "live"}:
-        run_mode_raw = "production"
+    run_mode_raw = str(runtime_tbl.get("run_mode", "full_development")).strip().lower()
+    if run_mode_raw in {
+        "prod",
+        "live",
+        "production",
+        "full",
+        "integrated",
+        "full_development",
+        "full-development",
+        "full_dev",
+        "e2e",
+    }:
+        run_mode_raw = "full_development"
     if run_mode_raw in {"dev", "local", "test"}:
         run_mode_raw = "development"
-    if run_mode_raw not in {"production", "development"}:
+    if run_mode_raw in {
+        "no_auth",
+        "no-auth",
+        "noauth",
+        "without_auth",
+        "without-auth",
+        "unauth",
+        "unauthenticated",
+    }:
+        run_mode_raw = "no_auth"
+    if run_mode_raw not in {"full_development", "development", "no_auth"}:
         raise ValueError(f"unsupported runtime run_mode: {run_mode_raw}")
 
     runtime = RuntimeConfig(

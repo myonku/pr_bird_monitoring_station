@@ -16,7 +16,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - ./data/mysql:/var/lib/mysql # 可自定义义本地挂载目录
+      - D:/Docker/Volume/pr_bms/mysql:/var/lib/mysql # 可自定义义本地挂载目录
     networks:
       - project-network
 
@@ -30,11 +30,10 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: "mongoadmin" # 连接MongoDB 的管理员用户名
       MONGO_INITDB_ROOT_PASSWORD: "YourMongoPassword123!" # 连接MongoDB 的管理员密码
-      MONGO_INITDB_DATABASE: "my_project_db" # 启动时自动创建的数据库名称
     ports:
       - "27017:27017"
     volumes:
-      - ./data/mongodb:/data/db # 可自定义义本地挂载目录
+      - D:/Docker/Volume/pr_bms/mongodb:/data/db # 可自定义义本地挂载目录
     networks:
       - project-network
 
@@ -52,30 +51,30 @@ services:
       --requirepass "YourRedisPassword123!"
       --masterauth "YourRedisPassword123!"
     volumes:
-      - ./data/redis/node-1:/data
+      - D:/Docker/Volume/pr_bms/redis/node-1:/data
     networks:
       - project-network
   
   redis-node-2:
     <<: *redis-template
     volumes:
-      - ./data/redis/node-2:/data
+      - D:/Docker/Volume/pr_bms/redis/node-2:/data
   redis-node-3:
     <<: *redis-template
     volumes:
-      - ./data/redis/node-3:/data
+      - D:/Docker/Volume/pr_bms/redis/node-3:/data
   redis-node-4:
     <<: *redis-template
     volumes:
-      - ./data/redis/node-4:/data
+      - D:/Docker/Volume/pr_bms/redis/node-4:/data
   redis-node-5:
     <<: *redis-template
     volumes:
-      - ./data/redis/node-5:/data
+      - D:/Docker/Volume/pr_bms/redis/node-5:/data
   redis-node-6:
     <<: *redis-template
     volumes:
-      - ./data/redis/node-6:/data
+      - D:/Docker/Volume/pr_bms/redis/node-6:/data
 
   # 自动组建 Redis 集群的临时容器，在初始化后会自动退出
   redis-cluster-init:
@@ -117,7 +116,7 @@ services:
     ports:
       - "2379:2379"
     volumes:
-      - ./data/etcd/node-1:/etcd-data
+      - D:/Docker/Volume/pr_bms/etcd/node-1:/etcd-data
     networks:
       - project-network
 
@@ -138,7 +137,7 @@ services:
     ports:
       - "2381:2379" # 映射到不同的宿主机端口防止冲突
     volumes:
-      - ./data/etcd/node-2:/etcd-data
+      - D:/Docker/Volume/pr_bms/etcd/node-2:/etcd-data
     networks:
       - project-network
 
@@ -159,7 +158,7 @@ services:
     ports:
       - "2383:2379"
     volumes:
-      - ./data/etcd/node-3:/etcd-data
+      - D:/Docker/Volume/pr_bms/etcd/node-3:/etcd-data
     networks:
       - project-network
 

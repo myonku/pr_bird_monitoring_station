@@ -6,7 +6,7 @@ from src.models.workflow.workflow import ModelPackLocator
 
 ArtifactTask = Literal["detection", "classification"]
 ArtifactFormat = Literal["onnx", "tflite", "torchscript", "openvino", "custom"]
-RuntimeMode = Literal["production", "development"]
+RuntimeMode = Literal["development", "no_auth", "full_development"]
 RuntimeLogStage = Literal[
     "startup",
     "capture",
@@ -63,7 +63,7 @@ class DecisionPolicyConfig:
 @dataclass(slots=True)
 class RuntimeConfig:
     device_id: str
-    run_mode: RuntimeMode = "production"
+    run_mode: RuntimeMode = "full_development"
     spool_db_path: str = "data/edge_spool.sqlite3"
     sync_interval_sec: float = 3.0
     sync_batch_size: int = 20

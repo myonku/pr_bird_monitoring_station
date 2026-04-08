@@ -43,9 +43,27 @@ class EdgePipeline:
         if self.event_logger is not None:
             self.event_logger.emit(stage=stage, event=event, details=details)
 
-    def run_once(self) -> None:
-        """执行一次完整的边缘事件处理流程"""
-        ctx, image = self.capture.wait_and_capture()
+    def run_once(self, capture_timeout_sec: float | None = None) -> bool:
+        """执行一次完整的边缘事件处理流程。
+
+        返回：
+        - True: 本轮成功处理了一条事件
+        - False: 本轮仅等待触发超时，未生成事件
+        """
+        try:
+            ctx, image = self.capture.wait_and_capture(timeout_sec=capture_timeout_sec)
+        except TimeoutError as exc:
+            if str(exc) != "capture_wait_timeout":
+                raise
+            self._log(
+                stage="capture",
+                event="capture_wait_timeout",
+                details={
+                    "timeout_sec": capture_timeout_sec,
+                },
+            )
+            return False
+
         event = EdgeEvent.new(ctx, image)
         self._log(
             stage="capture",
@@ -158,3 +176,5 @@ class EdgePipeline:
                     "reason": decision.reason,
                 },
             )
+
+        return True

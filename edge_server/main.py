@@ -16,6 +16,7 @@ from src.sync_worker.sync_worker import SyncWorker
 from src.reasoner.infrencer import TwoStageInferenceModule
 from src.reasoner.model_loader import LocalModelBundleLoader
 from src.orchestration.auth_coordinator import EdgeAuthCoordinator
+from src.orchestration.no_auth_coordinator import NoAuthEdgeAuthCoordinator
 from src.transport.event_uploader import EdgeEventHttpUploadCoordinator
 from src.transport.auth_transport import EdgeGatewayAuthHttpClient
 from src.utils.runtime_logger import RuntimeEventLogger
@@ -85,33 +86,49 @@ def main() -> None:
 
     capture = build_capture_module(cfg.capture, cfg.runtime.device_id)
     spool = SQLiteSpoolStorage(cfg.runtime.spool_db_path)
-    is_development_mode = cfg.runtime.run_mode == "development"
+    is_basic_development_mode = cfg.runtime.run_mode == "development"
+    is_no_auth_mode = cfg.runtime.run_mode == "no_auth"
+    is_full_development_mode = cfg.runtime.run_mode == "full_development"
 
     model_loader = LocalModelBundleLoader()
     model_loader.load(cfg.model_pack)
     infer = TwoStageInferenceModule()
 
     auth_coordinator = None
-    if is_development_mode:
+    if is_basic_development_mode:
         event_logger.emit(
             stage="startup",
-            event="development_mode_enabled",
+            event="basic_development_mode_enabled",
             details={
                 "auth_enabled": False,
                 "outbound_enabled": False,
             },
         )
+    elif is_no_auth_mode:
+        auth_coordinator = NoAuthEdgeAuthCoordinator(event_logger=event_logger)
+        event_logger.emit(
+            stage="startup",
+            event="no_auth_mode_enabled",
+            details={
+                "auth_module_initialized": True,
+                "auth_flow_enabled": False,
+                "startup_gate_required": False,
+                "outbound_enabled": True,
+            },
+        )
     else:
         if not cfg.auth.active_key_id and not cfg.runtime.device_id.strip():
             raise RuntimeError(
-                "production mode requires at least one of auth.active_key_id or runtime.device_id"
+                "full_development mode requires at least one of auth.active_key_id or runtime.device_id"
             )
         auth_coordinator = _build_auth_coordinator(cfg, event_logger)
-        auth_coordinator.ensure_startup_ready()
         event_logger.emit(
             stage="startup",
-            event="production_startup_gate_passed",
-            details={"auth_enabled": True},
+            event="full_development_mode_enabled",
+            details={
+                "auth_enabled": True,
+                "startup_gate_required": True,
+            },
         )
 
     pipeline_uploader = EdgeEventHttpUploadCoordinator(
@@ -141,13 +158,13 @@ def main() -> None:
     def runtime_status_provider() -> RuntimeStatus:
         """采样当前设备运行状态，包括网络可用性和资源负载情况，为决策引擎提供输入。"""
         snapshot = resource_monitor.snapshot()
-        if is_development_mode:
+        if is_basic_development_mode:
             return RuntimeStatus(
                 network_ready=False,
                 high_load=snapshot.high_load,
                 cpu_percent=snapshot.cpu_percent,
                 memory_percent=snapshot.memory_percent,
-                network_reason="development_mode_no_upload",
+                network_reason="basic_development_mode_no_upload",
                 load_reason=snapshot.reason,
             )
 
@@ -161,11 +178,36 @@ def main() -> None:
             load_reason=snapshot.reason,
         )
 
-    def ensure_runtime_auth_gate() -> None:
+    startup_gate_reported = False
+
+    def ensure_runtime_auth_gate(*, block_until_ready: bool) -> bool:
+        nonlocal startup_gate_reported
+        if not is_full_development_mode:
+            return True
         if auth_coordinator is None:
-            return
-        # 生产模式：每轮业务处理前都确保长期凭证仍可用；缺失时尝试 bootstrap。
-        auth_coordinator.ensure_startup_ready()
+            return True
+
+        while True:
+            try:
+                # full_development 每轮都执行长期凭证门禁，缺失时由协调器触发 bootstrap。
+                auth_coordinator.ensure_startup_ready()
+                if not startup_gate_reported:
+                    event_logger.emit(
+                        stage="auth",
+                        event="startup_gate_passed",
+                    )
+                    startup_gate_reported = True
+                return True
+            except Exception as exc:
+                startup_gate_reported = False
+                event_logger.emit(
+                    stage="auth",
+                    event="startup_gate_failed",
+                    details={"error": str(exc)},
+                )
+                if not block_until_ready:
+                    return False
+                time.sleep(3.0)
 
     pipeline = EdgePipeline(
         capture=capture,
@@ -185,20 +227,47 @@ def main() -> None:
         event_logger=event_logger,
     )
 
+    loop_sleep_sec = max(args.interval_sec, 0.1)
+    sync_interval_sec = max(cfg.runtime.sync_interval_sec, 0.1)
+
     if not args.loop:
-        ensure_runtime_auth_gate()
-        pipeline.run_once()
-        if not is_development_mode:
+        if not ensure_runtime_auth_gate(block_until_ready=False):
+            print("edge pipeline run_once skipped: auth startup gate not ready")
+            return
+        processed = pipeline.run_once()
+        if not is_basic_development_mode:
             sync_worker.drain_once()
+        if not processed:
+            print("edge pipeline run_once done (no motion)")
+            return
         print("edge pipeline run_once done")
         return
 
+    if is_basic_development_mode:
+        while True:
+            ensure_runtime_auth_gate(block_until_ready=False)
+            processed = pipeline.run_once()
+            if processed:
+                time.sleep(loop_sleep_sec)
+            else:
+                time.sleep(min(loop_sleep_sec, 0.1))
+
+    next_sync_at = time.monotonic() + sync_interval_sec
     while True:
-        ensure_runtime_auth_gate()
-        pipeline.run_once()
-        if not is_development_mode:
+        ensure_runtime_auth_gate(block_until_ready=True)
+
+        remaining_sec = max(0.0, next_sync_at - time.monotonic())
+        processed = pipeline.run_once(capture_timeout_sec=remaining_sec)
+
+        now = time.monotonic()
+        if now >= next_sync_at:
             sync_worker.drain_once()
-        time.sleep(max(args.interval_sec, 0.1))
+            next_sync_at = now + sync_interval_sec
+
+        if processed:
+            time.sleep(loop_sleep_sec)
+        elif remaining_sec > 0:
+            time.sleep(min(remaining_sec, 0.05))
 
 
 if __name__ == "__main__":

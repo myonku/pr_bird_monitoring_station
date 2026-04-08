@@ -159,6 +159,7 @@
 ## 8. 文档关系与落地要求
 
 - 本文档负责“按模块链路视角”的统一说明。
+- no-auth 启动链路与 development 对照说明见 `SYSTEM_NO_AUTH_STARTUP_CHAIN_DESIGN.md`。
 - 边缘端接口字段与 HTTP 契约文档待重建（当前暂时下线），落地实现以边缘模块内现有代码与全局基线约束为准。
 - 全局规范（UUID、密钥、配置生命周期）以 `SYSTEM_GLOBAL_BASELINE_DESIGN.md` 为准。
 - 模块设计文档仅保留层级/结构/接口职责，不再承载认证链路叙事。

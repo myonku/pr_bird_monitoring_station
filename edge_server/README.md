@@ -72,7 +72,7 @@
 
 - `[runtime]`
   - `device_id`
-  - `run_mode`: `development` / `production`
+  - `run_mode`: `development` / `no_auth` / `full_development`
   - `spool_db_path`
   - `sync_interval_sec`
   - `sync_batch_size`
@@ -116,16 +116,23 @@
   - 不初始化认证模块；
   - 运行时将网络状态固定为不可上传，决策引擎统一走不上传路径；
   - 关闭补传 worker 的对外上传尝试。
-- `production`：
+- `no_auth`：
+  - 初始化认证模块占位实现，但不执行 bootstrap/refresh/鉴权恢复；
+  - 对主流程暴露的认证字段全部为空值；
+  - 保持业务上传与补传链路可用，用于后端认证未就绪阶段的全流程联调。
+- `full_development`：
   - 启动前必须通过认证门禁，确保至少存在可用长期凭证（refresh token）；
   - 若本地不存在可用长期凭证则执行 bootstrap 获取，失败则拒绝启动；
   - 断网场景可继续运行直至长期凭证到期，到期后需恢复网络并重新 bootstrap。
+  - 本模式以联调验证认证+业务全链路为目标，不要求在 edge 侧配置 TLS。
 - `[model_pack]` + `[[model_pack_lightweight_candidates]]`
   - 模型目录与候选映射
 
 ## 树莓派部署提示
 
 - `capture.mode = "pir"` 时需要安装并启用对应硬件依赖（如 `gpiozero`、`picamera2`）。
+- `pir_gpio_pin` 使用 BCM GPIO 编号，不是物理针脚号；默认 `17` 表示 GPIO17。
+- PIR 输出建议按 3.3V 逻辑接入，并与树莓派共地；当前实现只在输入变为高电平时放行抓拍。
 - 未安装硬件依赖时可先用 `capture.mode = "mock"` 完成联调。
 - 资源负载采样依赖 `psutil`。
 

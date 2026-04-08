@@ -23,24 +23,31 @@ class PIRMotionSensor(IMotionSensor):
     def __init__(self, pir_gpio_pin: int) -> None:
         self.pir_gpio_pin = pir_gpio_pin
         try:
-            motion_sensor_cls = getattr(
-                importlib.import_module("gpiozero"), "MotionSensor"
-            )
+            button_cls = getattr(importlib.import_module("gpiozero"), "Button")
         except ImportError as exc:
             raise ModuleNotFoundError(
                 "PIR capture mode requires gpiozero on Raspberry Pi"
             ) from exc
 
-        self._sensor: Any = motion_sensor_cls(self.pir_gpio_pin)
+        self._sensor: Any = button_cls(self.pir_gpio_pin, pull_up=False)
 
     def wait_for_motion(self, timeout_sec: float | None = None) -> bool:
-        self._sensor.wait_for_motion(timeout=timeout_sec)
-        return bool(self._sensor.motion_detected)
+        deadline = None
+        if timeout_sec is not None:
+            deadline = time.monotonic() + max(float(timeout_sec), 0.0)
+
+        while True:
+            if bool(self._sensor.is_active):
+                return True
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(0.02)
 
     def snapshot(self) -> dict[str, Any]:
         return {
             "capture_mode": "pir",
             "pir_gpio_pin": self.pir_gpio_pin,
+            "trigger_mode": "active_high",
         }
 
     def close(self) -> None:
