@@ -405,6 +405,7 @@ LocalCredentialManager 职责：
 - 认证请求与通道请求统一进入 Traffic Station，再由通信下层分类。
 - AuthControl 不承担远程认证调用，仅执行本地限流与认证结果消费。
 - Commsec 模块仅负责通道与载荷，不参与认证策略判断。
+- certification_server 启动时同样加载本地单活密钥对，用于 commsec 通道握手与加密；该密钥对不通过 bootstrap 生成。
 - 协议固定：认证中心对内统一暴露 gRPC server 作为权威入口。
 
 ## 5.3 data_worker

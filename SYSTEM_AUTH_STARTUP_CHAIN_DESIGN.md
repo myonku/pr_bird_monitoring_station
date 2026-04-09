@@ -22,6 +22,7 @@
 
 - 网关与普通服务模块在认证主干上保持一致，网关仅额外承担外部请求转发职能。
 - 认证中心不执行“自我认证”，其职责是处理他方认证请求并签发认证结果。
+- 认证中心不执行自身 bootstrap 认证，但仍需加载本地单活密钥对，用于 commsec 通道握手与加密；该密钥对不由 bootstrap 产出。
 - 非认证中心模块（gateway、data_worker、edge_server）不管理“他方请求主体”的 challenge/session/token/grant 状态，认证权威与公钥目录权威统一归属认证中心。
 - 非认证中心模块需负责本模块自身凭证生命周期（bootstrap 结果持有、refresh、revoke）。
 - 内部转发请求默认采用“网关回源认证中心校验 + 目标模块再次回源认证中心校验”的双端校验路径。
@@ -136,7 +137,7 @@
 
 ### 6.2 启动链路（初始化 -> 稳定运行）
 
-1. 初始化配置、mysql/redis/etcd 等基础依赖。
+1. 初始化配置、本地单活密钥对、mysql/redis/etcd 等基础依赖。
 2. 组装 auth/commsec/ratelimit/orchestration 组件。
 3. 启动 gRPC server 并挂载拦截器。
 4. 进入稳定运行，持续处理认证与通信安全请求。

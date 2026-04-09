@@ -1,4 +1,4 @@
 package http_server
 
-// Stage cleanup: implementation intentionally cleared for next interface-layer refactor.
-// Do not restore compatibility code in this phase.
+// 阶段性清理：此处实现已刻意清空，等待下一轮接口层重构。
+// 本阶段不要恢复兼容代码。

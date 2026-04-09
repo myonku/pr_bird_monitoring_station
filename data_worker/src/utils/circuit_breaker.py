@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable
 import time
 from typing import Any, Literal
 
-from data_worker.src.models.sys.config import CircuitBreakerConfig
+from src.models.sys.config import CircuitBreakerConfig
 
 
 class CircuitOpenError(RuntimeError):

@@ -128,6 +128,16 @@ type LocalPrivateKeyRef struct {
 	LoadedAt      time.Time
 }
 
+// PublicKeyLookupResult 是公钥目录查询结果。
+type PublicKeyLookupResult struct {
+	Found     bool
+	Key       ServicePublicKeyRecord
+	MatchedBy string
+
+	FailureReason string
+	CheckedAt     time.Time
+}
+
 // ECDHEHandshakeRecord 表示一次基于服务公钥认证的 ECDHE 握手过程。
 type ECDHEHandshakeRecord struct {
 	ID uuid.UUID
@@ -230,14 +240,4 @@ func (r PublicKeyLookupRequest) Normalized() PublicKeyLookupRequest {
 		}
 	}
 	return r
-}
-
-// PublicKeyLookupResult 是公钥目录查询结果。
-type PublicKeyLookupResult struct {
-	Found     bool
-	Key       ServicePublicKeyRecord
-	MatchedBy string
-
-	FailureReason string
-	CheckedAt     time.Time
 }

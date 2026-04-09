@@ -4,7 +4,7 @@ from src.models.auth.auth import IdentityContext, Session
 
 
 class ForwardedAuthContext(Struct, kw_only=True):
-    """Gateway -> service forwarded auth context carried in headers."""
+    """网关向其他业务服务转发的认证上下文，包括主体标识、会话和令牌信息，以及服务间调用的相关元数据等。"""
 
     principal_id: str
     session_id: str
@@ -25,7 +25,7 @@ class ForwardedAuthContext(Struct, kw_only=True):
 
 
 class ForwardedAuthVerificationResult(Struct, kw_only=True):
-    """Inbound forwarded auth verification result contract."""
+    """网关认证上下文验证结果，包括是否允许访问、身份上下文和会话信息，以及验证失败的原因等。"""
 
     allowed: bool
     identity: IdentityContext | None = None

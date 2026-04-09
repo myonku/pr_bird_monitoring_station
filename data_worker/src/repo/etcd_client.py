@@ -6,7 +6,7 @@ from typing import Any, cast
 import grpc
 from msgspec import json
 
-from src.models.registry.instance import ServiceInstance
+from src.models.common.instance import ServiceInstance
 from src.models.sys.config import ProjectConfig
 from src.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 from etcd3 import etcdrpc as _etcdrpc

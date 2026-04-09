@@ -38,7 +38,7 @@ func NewSessionService(redis *repo.RedisClient) *SessionService {
 
 // CreateSession 根据认证结果创建新的会话记录。
 func (s *SessionService) CreateSession(
-	ctx context.Context, req *authmodel.SessionIssueRequest) (*authmodel.Session, error) {
+	ctx context.Context, req *iface.SessionIssueRequest) (*authmodel.Session, error) {
 
 	if req == nil {
 		return nil, &modelsystem.ErrSessionIssueRequestNil
@@ -160,7 +160,7 @@ func (s *SessionService) TouchSession(
 
 // ValidateSession 验证会话的有效性和状态。
 func (s *SessionService) ValidateSession(
-	ctx context.Context, req *authmodel.SessionValidateRequest) (*authmodel.Session, error) {
+	ctx context.Context, req *iface.SessionValidateRequest) (*authmodel.Session, error) {
 
 	if req == nil {
 		return nil, &modelsystem.ErrSessionValidateRequestNil
@@ -196,7 +196,7 @@ func (s *SessionService) ValidateSession(
 }
 
 // RevokeSession 根据会话ID撤销会话。
-func (s *SessionService) RevokeSession(ctx context.Context, req *authmodel.SessionRevokeRequest) error {
+func (s *SessionService) RevokeSession(ctx context.Context, req *iface.SessionRevokeRequest) error {
 	if req == nil {
 		return &modelsystem.ErrSessionRevokeRequestNil
 	}

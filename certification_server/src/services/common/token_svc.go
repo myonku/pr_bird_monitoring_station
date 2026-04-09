@@ -51,7 +51,7 @@ func NewTokenService(mysql *repo.MySQLClient, redis *repo.RedisClient) *TokenSer
 
 // IssueToken 根据认证上下文和请求参数签发新的令牌。
 func (s *TokenService) IssueToken(
-	ctx context.Context, req *authmodel.TokenIssueRequest) (*authmodel.IssuedToken, error) {
+	ctx context.Context, req *iface.TokenIssueRequest) (*authmodel.IssuedToken, error) {
 
 	if req == nil {
 		return nil, &modelsystem.ErrTokenIssueRequestNil
@@ -137,7 +137,7 @@ func (s *TokenService) IssueToken(
 
 // IssueTokenBundle 根据认证上下文和请求参数签发访问令牌和刷新令牌的组合。
 func (s *TokenService) IssueTokenBundle(
-	ctx context.Context, session *authmodel.Session, req *authmodel.TokenIssueRequest,
+	ctx context.Context, session *authmodel.Session, req *iface.TokenIssueRequest,
 ) (*authmodel.TokenBundle, error) {
 
 	if session == nil {
@@ -185,7 +185,7 @@ func (s *TokenService) IssueTokenBundle(
 
 // RefreshTokenBundle 根据刷新令牌刷新访问令牌和刷新令牌的组合。
 func (s *TokenService) RefreshTokenBundle(
-	ctx context.Context, req *authmodel.TokenRefreshRequest) (*authmodel.TokenBundle, error) {
+	ctx context.Context, req *iface.TokenRefreshRequest) (*authmodel.TokenBundle, error) {
 
 	if req == nil || req.RefreshToken == "" {
 		return nil, &modelsystem.ErrRefreshTokenRequired
@@ -219,7 +219,7 @@ func (s *TokenService) RefreshTokenBundle(
 		return nil, &modelsystem.ErrRefreshTokenNotActive
 	}
 
-	issueReq := &authmodel.TokenIssueRequest{
+	issueReq := &iface.TokenIssueRequest{
 		Principal:     record.Principal,
 		TokenType:     authmodel.TokenAccess,
 		SessionID:     record.SessionID,
@@ -258,7 +258,7 @@ func (s *TokenService) RefreshTokenBundle(
 
 // VerifyToken 根据原始令牌字符串验证令牌的有效性和提取认证上下文。
 func (s *TokenService) VerifyToken(
-	ctx context.Context, req *authmodel.TokenVerifyRequest) (*authmodel.TokenVerificationResult, error) {
+	ctx context.Context, req *iface.TokenVerifyRequest) (*authmodel.TokenVerificationResult, error) {
 
 	if req == nil || req.RawToken == "" {
 		return nil, &modelsystem.ErrRawTokenRequired
@@ -336,7 +336,7 @@ func (s *TokenService) VerifyToken(
 }
 
 // RevokeToken 根据令牌ID或令牌家族ID撤销令牌。
-func (s *TokenService) RevokeToken(ctx context.Context, req *authmodel.TokenRevokeRequest) error {
+func (s *TokenService) RevokeToken(ctx context.Context, req *iface.TokenRevokeRequest) error {
 	if req == nil {
 		return &modelsystem.ErrTokenRevokeRequestNil
 	}

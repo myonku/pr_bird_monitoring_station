@@ -3,7 +3,7 @@ import contextlib
 from time import time
 from uuid import UUID
 
-from src.models.registry.instance import ServiceInstance, ServiceSnapshot
+from src.models.common.instance import ServiceInstance, ServiceSnapshot
 from src.repo.etcd_client import (
     EtcdAsyncClient,
     build_prefix,

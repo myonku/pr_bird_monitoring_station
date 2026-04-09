@@ -1,6 +1,6 @@
 import hashlib, random
 
-from data_worker.src.models.registry.instance import ServiceInstance
+from src.models.common.instance import ServiceInstance
 
 
 def pick_round_robin(

@@ -22,6 +22,7 @@
 3. 不承担网关式流量转发职责。
 4. 不承担外部 HTTP 服务入口职责。
 5. SessionManager 和 TokenManager 仅认证中心持有。
+6. 认证中心同样配置本地单活密钥对，用于 commsec 通道握手与载荷加密；bootstrap 仅面向外部发起方，不作为认证中心自身密钥获取流程。
 
 ---
 
@@ -71,7 +72,7 @@ Data Managers 最小集合：
 启动链（最小）：
 
 1. 读取配置快照（一次性）。
-2. 初始化基础依赖与 Data Managers。
+2. 初始化基础依赖与 Data Managers，并加载本地单活密钥对与 commsec 所需密钥引用。
 3. 组装认证与通道能力。
 4. 启动 gRPC server。
 

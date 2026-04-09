@@ -1,0 +1,43 @@
+package communication
+
+import "context"
+
+// FlowCategory 定义 certification_server 的入站流量类别。
+type FlowCategory string
+
+const (
+	FlowCategoryBootstrapCall    FlowCategory = "bootstrap_call"
+	FlowCategoryRemoteAuthVerify FlowCategory = "remote_auth_verify"
+	FlowCategoryExternalAuth     FlowCategory = "external_auth_forward"
+	FlowCategoryTargetReverify   FlowCategory = "target_reverify_call"
+	FlowCategoryCommsecCall      FlowCategory = "commsec_call"
+)
+
+// SecurityPolicy 定义安全通道要求级别。
+type SecurityPolicy string
+
+const (
+	SecurityPolicyRequired SecurityPolicy = "required"
+	SecurityPolicyOptional SecurityPolicy = "optional"
+	SecurityPolicyDisabled SecurityPolicy = "disabled"
+)
+
+// InboundPolicyPlan 是构建后的入站策略结果。
+type InboundPolicyPlan struct {
+	RouteProfile *RouteProfile
+
+	RequireSecureChannel bool
+	RequiredScopes       []string
+	Tags                 map[string]string
+}
+
+// IRoutingPayloadPipeline 定义 certification_server 的路由分类与策略构建。
+//
+// 下游接口调用：
+//   - communication.ICommsecChannelManager.EnsureChannel
+//   - common.IKeyManager.LookupPublicKey
+type IRoutingPayloadPipeline interface {
+	ResolveRouteProfile(ctx context.Context, input *RoutingInput) (*RouteProfile, error)
+	ClassifyFlow(ctx context.Context, input *RoutingInput) (FlowCategory, error)
+	BuildInboundPolicy(ctx context.Context, input *RoutingInput) (*InboundPolicyPlan, error)
+}

@@ -1,6 +1,6 @@
-"""Forwarded-auth and downstream context header keys.
+"""转发认证与下游上下文请求头键。
 
-These constants keep key names stable across interceptor, usecase, and outbound code.
+这些常量用于在拦截器、用例层和出站代码之间保持键名稳定。
 """
 
 HEADER_AUTH_VERIFIED = "x-auth-verified"
