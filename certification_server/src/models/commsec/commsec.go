@@ -14,6 +14,8 @@ type CipherSuite string          // 密码套件
 type HandshakeStatus string      // 握手状态
 type SecureChannelStatus string  // 安全通道状态
 type ChannelBindingType string   // 通道绑定类型
+type ChannelClass string         // 逻辑通道类型（认证/业务）
+type ChannelSecurityMode string  // 通道安全策略
 
 const (
 	CommKeyActive  CommKeyStatus = "active"
@@ -55,6 +57,17 @@ const (
 const (
 	ChannelBindingToken   ChannelBindingType = "token"
 	ChannelBindingSession ChannelBindingType = "session"
+)
+
+const (
+	ChannelClassAuth     ChannelClass = "auth"
+	ChannelClassBusiness ChannelClass = "business"
+)
+
+const (
+	ChannelSecurityRequired ChannelSecurityMode = "required"
+	ChannelSecurityOptional ChannelSecurityMode = "optional"
+	ChannelSecurityDisabled ChannelSecurityMode = "disabled"
 )
 
 // ServiceKeyOwner 标识通信密钥属于哪一个实体或实例。
@@ -119,6 +132,9 @@ type LocalPrivateKeyRef struct {
 type ECDHEHandshakeRecord struct {
 	ID uuid.UUID
 
+	ChannelClass ChannelClass
+	SecurityMode ChannelSecurityMode
+
 	Initiator ServiceKeyOwner
 	Responder ServiceKeyOwner
 
@@ -158,6 +174,9 @@ type SecureChannelBinding struct {
 // DerivedKeyRef 指向本地缓存或内存槽位，不建议直接持久化原始对称密钥。
 type SecureChannelSession struct {
 	ID uuid.UUID
+
+	ChannelClass ChannelClass
+	SecurityMode ChannelSecurityMode
 
 	HandshakeID uuid.UUID
 	Binding     SecureChannelBinding

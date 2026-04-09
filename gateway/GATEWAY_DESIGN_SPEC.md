@@ -1,339 +1,105 @@
-# Gateway 模块设计说明（开发管控版）
+# Gateway 模块设计约束（硬约束版）
 
-## 1. 文档目的
-
-本说明用于在后续开发中统一网关方向，避免出现“由下向上扩张导致边界失控”的问题。
-
-文档覆盖：
-
-- 整体架构与层级设计。
-- 各细化模块（接口/用例/适配器/模型）的职责。
-- 启动链路、运行链路、限流链路的调用关系。
-- 依赖约束与开发守则（防偏离清单）。
+版本：1.0.0
+状态：Constraint-Only
+日期：2026-04-09
 
 ---
 
-## 2. 当前定位与边界
+## 1. 目的
 
-### 2.1 Gateway 定位
+本文件只保留 gateway 的硬性约束和最小落地方向。
 
-- 仅有一个入站协议：HTTP Server。
-- 核心职能：将外部请求转发到内部服务。
-- 安全职责：在转发前完成认证授权与应用层安全通道准备。
-- 对内转发必须绑定有效 commsec 安全通道，未建立通道时先握手再转发。
-- 内部转发职责：注入下游认证上下文，要求目标模块对认证中心执行再次校验。
-
-### 2.2 明确非目标
-
-- 不承载 gRPC Server 业务端点。
-- 不负责认证中心逻辑本体（仅通过客户端接口调用认证中心）。
-- 不承载下游业务编排。
+- 允许：作为实现与重构的约束清单。
+- 禁止：作为历史设计说明或实现细节文档。
 
 ---
 
-## 3. 分层架构
+## 2. 模块角色与协议边界（冻结）
 
-### 3.1 分层定义
-
-1. App 层（应用生命周期与装配）
-
-- 文件：src/app/app.go, src/app/lifecycle.go, main.go
-- 职责：装配依赖、启动顺序、关闭顺序。
-
-2. Usecase 层（业务编排）
-
-- 文件：src/usecase/bootstrap/*, src/usecase/security/*, src/usecase/forwarding/*, src/usecase/ratelimit/*
-- 职责：定义调用链，不关心底层协议和存储细节。
-
-3. Interface 层（端口契约）
-
-- 文件：src/iface/**
-- 职责：定义可替换边界（auth/commsec/communication/ratelimit/registry）。
-
-4. Adapter 层（端口实现）
-
-- 文件：src/adapters/**, src/services/**, src/repo/**, src/http_server/**
-- 职责：协议适配、客户端调用、存储访问。
-
-5. Model/Utils 层（领域模型与工具）
-
-- 文件：src/models/**, src/utils/**
-- 职责：数据结构、错误定义、纯工具逻辑。
-
-### 3.2 依赖方向（必须遵守）
-
-- App -> Usecase -> iface -> Adapters
-- Usecase 可依赖 Models
-- iface 可依赖 Models
-- 禁止反向依赖
+1. gateway 是外部请求统一入口和内部转发执行者。
+2. gateway 对外协议固定为 HTTP server。
+3. gateway 对内协议固定为 gRPC client。
+4. 内部模块间禁止引入 HTTP 作为服务间协议。
+5. gateway 不承担认证中心权威逻辑（会话/令牌全局状态、权威签发）。
 
 ---
 
-## 4. 关键模块说明（按目录）
+## 3. 最小层级方向
 
-## 4.1 App 层
+gateway 只按以下最小层级收敛，不展开实现细节：
 
-### 4.1.1 GatewayApp
+1. Inbound Adapter（HTTP）
+2. Traffic Station（统一流量站点）
+3. Routing + Payload Pipeline（通信下层）
+4. Forwarding Orchestrator（流程编排）
+5. Capability Modules
+6. Data Managers
+7. Outbound Adapter（gRPC client）
 
-- 文件：src/app/app.go
-- 结构：
-  - Lifecycle（Boot/Shutdown）
-  - HTTPServerPort（Start/Stop）
-- 作用：统一应用生命周期，确保“先 Boot 再 Start，先 Stop 再 Shutdown”。
+Capability Modules 最小集合：
 
-### 4.1.2 HookLifecycle
+- AuthControl（含 RateLimit）
+- Bootstrap
+- CommsecChannelManager
 
-- 文件：src/app/lifecycle.go
-- 作用：当前阶段的可注入生命周期钩子，便于逐步替换为真实启动流程。
+Data Managers 最小集合：
 
-### 4.1.3 main
-
-- 文件：main.go
-- 现状：占位入口（noop HTTP server + HookLifecycle），用于先固定顶层边界。
-
----
-
-## 4.2 Auth 接口层
-
-### 4.2.1 IBootstrapClient
-
-- 文件：src/iface/auth/bootstrap_cli.go
-- 方法：
-  - InitChallenge
-  - AuthenticateBootstrap
-  - GetBootstrapStage
-- 职责：对认证中心的原子调用接口（客户端语义）。
-
-### 4.2.2 IBootstrapFlowCoordinator
-
-- 文件：src/iface/auth/bootstrap_flow.go
-- 方法：
-  - EnsureReady
-- 职责：主动编排接口（stage 检查 -> challenge -> 本地签名 -> bootstrap 认证）。
-
-### 4.2.3 IDownstreamGrantClient
-
-- 文件：src/iface/auth/downstream_grant_client.go
-- 方法：
-  - IssueDownstreamGrant
-- 职责：获取下游访问授权（grant）。
-
-### 4.2.4 IAuthAuthorityClient
-
-- 文件：src/iface/auth/auth_authority_client.go
-- 职责：统一定义模块直连认证中心的远端鉴权门面调用（bootstrap、用户认证、token/session 校验、downstream grant），不承载“内部模块经网关中转”的语义。
+- ServiceRegistryManager
+- KeyManager
+- ServiceResolver（网关专属）
+- PolicySnapshotManager（网关专属）
+- LocalCredentialManager（网关本地凭证）
 
 ---
 
-## 4.3 CommSec 接口层
+## 4. 硬约束
 
-### 4.3.1 ICommSecurityService
-
-- 文件：src/iface/commsec/commsec_svc.go
-- 关键方法：
-  - InitHandshake / CompleteHandshake
-  - EnsureChannel（主动方确保可用通道）
-  - UpsertChannel / GetChannel / RevokeChannel
-  - EncryptForChannel / DecryptFromChannel
-- 职责：对应用层加密通道做完整生命周期管理，并为拦截器提供加解密能力。
-
-### 4.3.2 ISecretKeyService
-
-- 文件：src/iface/commsec/secret_key.go
-- 职责：密钥读取与公钥目录查询（私钥原文不外泄）。
+1. 所有入站/出站流量都必须先进入 Traffic Station。
+2. 流量分类必须在通信下层完成，不允许在顶层按 auth/business 直接分叉实现。
+3. AuthControl 内聚认证决策与限流决策，不再单列独立 RateLimit 模块。
+4. Gateway AuthControl 负责远程认证调用结果消费和限流决策。
+5. AuthControl 不得调用 Bootstrap、CommsecChannelManager、LocalCredentialManager。
+6. Bootstrap 成功判定依赖 LocalCredentialManager 写入 Redis 成功；写入失败必须上抛错误。
+7. 业务转发必须先获取授权并确保通道可用，再执行加密转发。
+8. 目标服务必须执行二次认证复核；该复核属于目标服务独立能力，不属于 gateway AuthControl。
+9. no-auth 模式下必须禁用认证链路、限流与通道加密要求。
+10. 配置文件只允许在启动期读取一次，运行期按参数快照传递。
 
 ---
 
-## 4.4 Communication 接口层
+## 5. 最小链路
 
-### 4.4.1 IOutboundInvocationSecurity
+启动链（最小）：
 
-- 文件：src/iface/communication/outbound_security.go
-- 作用：将 auth + commsec 组合成单次出站安全上下文。
+1. 读取配置快照（一次性）。
+2. 初始化基础依赖与 Data Managers。
+3. 执行 Bootstrap 并落地本地凭证。
+4. 注册服务实例。
+5. 启动 HTTP server。
 
-### 4.4.2 IOutboundTargetResolver
+运行链（最小）：
 
-- 文件：src/iface/communication/target_resolver.go
-- 作用：路由与目标服务解析（只解析，不做认证/握手/转发）。
-
-### 4.4.3 IOutboundForwarder
-
-- 文件：src/iface/communication/outbound_forwarder.go
-- 作用：执行出站调用（仅消费已准备好的安全上下文）。
-- 关键输入：
-  - Endpoint
-  - RPCMethod/Method
-  - TimeoutMS
-  - OutboundSecurityContext（Grant/Channel/EncryptedMeta）
+1. HTTP 入站标准化。
+2. Traffic Station 接管。
+3. 通信下层完成路由分类与策略决策。
+4. AuthControl（远程认证结果消费 + 限流）。
+5. CommsecChannelManager 确保通道并处理载荷。
+6. gRPC client 出站转发。
 
 ---
 
-## 4.5 Usecase 层
+## 6. 明确非目标
 
-### 4.5.1 ReadinessUsecase
-
-- 文件：src/usecase/bootstrap/bootstrap_readiness_uc.go
-- 输入：ReadinessRequest
-- 依赖：IBootstrapFlowCoordinator
-- 输出：BootstrapAuthResult
-- 作用：启动阶段 bootstrap 就绪编排。
-
-### 4.5.2 PrepareOutboundSecurityUsecase
-
-- 文件：src/usecase/security/prepare_outbound_security_uc.go
-- 输入：OutboundInvocationRequest
-- 依赖：
-  - IOutboundAuthCoordinator
-  - IOutboundChannelCoordinator
-- 输出：OutboundInvocationContext
-- 作用：获取 grant、确保通道、按需加密负载。
-
-### 4.5.3 ForwardExternalRequestUsecase
-
-- 文件：src/usecase/forwarding/forward_external_request_uc.go
-- 输入：ForwardExternalRequest
-- 依赖：
-  - IOutboundTargetResolver
-  - IOutboundInvocationSecurity
-  - IOutboundForwarder
-- 作用：端到端外部请求转发编排。
-
-### 4.5.4 EnforceInboundUsecase（限流）
-
-- 文件：src/usecase/ratelimit/enforce_inbound_uc.go
-- 依赖：
-  - IDescriptorFactory
-  - IRateLimiter
-- 输出：RateLimitDecision
-- 作用：统一协议无关入站限流决策。
+1. 不在本文件描述 handler、proto、repo、SDK 的实现细节。
+2. 不在本文件保留旧版兼容链路或历史迁移叙事。
+3. 不在本文件定义认证中心内部权威逻辑。
 
 ---
 
-## 4.6 Adapter 层
+## 7. 规范引用
 
-### 4.6.1 GRPCOutboundForwarder
-
-- 文件：src/adapters/outbound/grpc_forwarder.go
-- 依赖：
-  - IGRPCConnProvider
-  - IGRPCPayloadCodec
-- 行为：
-  - 解析 RPCMethod/Method
-  - 从 Endpoint 获取连接
-  - 构造 metadata（grant/channel/encrypted 信息 + 下游认证上下文）
-  - 仅在 OutboundSecurityContext 含有效 channel（或刚完成 EnsureChannel 握手）时执行调用
-  - 调用 conn.Invoke
-- 备注：为“最小可用骨架”，具体 proto 映射由 codec 实现。
-
-### 4.6.2 RegistryService + DiscoveryAdapter
-
-- 文件：src/services/registry/registry_svc.go, src/services/registry/discovery_adapter.go
-- 作用：
-  - RegistryService：注册/注销/快照读取（基于 etcd）。
-  - DiscoveryAdapter：实例选择（标签过滤、亲和、轮询）。
-
-### 4.6.3 Repo 基础客户端
-
-- 文件：src/repo/mysql_client.go, src/repo/redis_client.go, src/repo/etcd_client.go, src/repo/kafka_client.go
-- 作用：提供统一基础数据访问能力（含超时、熔断、连接探活）。
-
-### 4.6.4 HTTP Server 目录
-
-- 文件：src/http_server/server.go, src/http_server/router.go, src/http_server/handler.go
-- 现状：占位包；尚未接入用例调用。
-
----
-
-## 4.7 Model 层
-
-### 4.7.1 Auth 模型
-
-- 文件：src/models/auth/auth.go, auth_contract.go, bootstrap.go, ratelimit.go
-- 关键能力：
-  - Identity/Session/Token 语义
-  - Bootstrap 挑战与认证结构
-  - 限流描述符/规则/决策结构
-
-### 4.7.2 CommSec 模型
-
-- 文件：src/models/commsec/commsec.go, commsec_contract.go
-- 关键能力：
-  - ECDHE 握手与协商结果
-  - SecureChannel 生命周期
-  - 加密消息元数据
-  - Ensure/Encrypt/Decrypt 请求响应结构
-
-### 4.7.3 Registry/System 模型
-
-- 文件：src/models/registry/entry.go, src/models/system/config.go, src/models/system/errors.go
-- 关键能力：
-  - 服务实例信息
-  - 全局配置定义
-  - 统一错误类型
-
----
-
-## 5. 核心调用关系
-
-## 5.1 启动链（通用行为）
-
-目标：完成网关就绪与安全预热。
-
-建议顺序：
-
-1. LoadConfig
-  - 配置分区约束：模块本体标识放 `runtime`；密钥装载信息放 `auth`，且仅保留 `secret_key_dir` 与 `active_key_id`。
-  - 生命周期约束：配置只在启动期读取一次，后续链路按参数快照传递，禁止运行期重复读取 settings。
-2. 初始化 repo 客户端（mysql/redis/etcd/kafka）
-3. 组装 registry/discovery/adapters
-4. 执行 ReadinessUsecase（bootstrap）
-5. 预热关键下游通道（EnsureChannel）；未预热时首跳请求前必须先握手完成
-6. 注册网关服务实例
-7. 启动 HTTP Server
-
-## 5.2 运行链（职能行为）
-
-目标：接收 HTTP 请求并安全转发。
-
-调用链：
-
-1. HTTP Handler 接收请求并标准化为 ForwardExternalRequest
-2. ForwardExternalRequestUsecase.Execute
-3. Resolver.Resolve 得到 ServiceName/Endpoint/Timeout
-4. SecurityPreparer.Prepare 得到 Grant/Channel/CipherText（若无可用 channel 则先握手）
-5. OutboundForwarder.Forward 注入 metadata（含下游认证上下文）并执行 gRPC 调用
-6. 目标模块基于下游认证上下文向认证中心执行再次校验后再进入业务处理
-7. 返回 OutboundForwardResponse 并映射 HTTP 响应
-
-## 5.3 限流链（跨协议统一）
-
-HTTP middleware 与 gRPC interceptor 共用：
-
-1. 提取协议上下文 -> InboundRateLimitInput
-2. DefaultDescriptorFactory.Build -> RateLimitDescriptor
-3. IRateLimiter.Decide -> RateLimitDecision
-4. 如果拒绝：
-   - HTTP: 429 + Retry-After
-   - gRPC: ResourceExhausted + metadata
-
----
-
-## 6. 约束清单（开发强约束）
-
-1. Handler 不允许直接调用 repo 客户端。
-2. Handler 不允许直接调用 commsec/auth 低层接口。
-3. OutboundForwarder 不允许内部触发 bootstrap 或握手编排。
-4. Usecase 不允许 import 具体 grpc/http/mysql/redis 实现。
-5. DescriptorFactory 不允许依赖网络/存储层。
-6. 限流规则匹配逻辑不允许放在 middleware/interceptor。
-7. 加密工具层不得主动发起网络调用。
-8. 内部转发必须依赖“网关注入下游上下文 + 目标模块回源认证中心再次校验”路径，禁止引入本地放行分支。
-9. 后端模块间通信必须走加密信道，握手失败时快速失败，禁止明文降级。
-
----
-
-## 7. 全局流程与约定引用
-
-- 网关参与的认证链路与启动链路见根目录 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
-- ID/密钥/配置等统一约定见根目录 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
-- 边缘端双通道接口契约文档待重建（当前暂时下线）。
+- SYSTEM_BACKEND_LAYER_REFACTOR_DRAFT.md
+- SYSTEM_GLOBAL_BASELINE_DESIGN.md
+- SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md
+- SYSTEM_NO_AUTH_STARTUP_CHAIN_DESIGN.md

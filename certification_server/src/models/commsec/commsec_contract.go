@@ -4,6 +4,9 @@ import "github.com/google/uuid"
 
 // ECDHEHandshakeInitRequest 表示 ECDHE 握手初始化请求。
 type ECDHEHandshakeInitRequest struct {
+	ChannelClass ChannelClass
+	SecurityMode ChannelSecurityMode
+
 	Initiator ServiceKeyOwner
 	Responder ServiceKeyOwner
 
@@ -43,8 +46,10 @@ type ECDHEHandshakeCompleteResult struct {
 
 // SecureChannelUpsertRequest 表示建立或更新通道缓存请求。
 type SecureChannelUpsertRequest struct {
-	HandshakeID uuid.UUID
-	Binding     SecureChannelBinding
+	HandshakeID  uuid.UUID
+	ChannelClass ChannelClass
+	SecurityMode ChannelSecurityMode
+	Binding      SecureChannelBinding
 
 	Source ServiceKeyOwner
 	Target ServiceKeyOwner
@@ -59,8 +64,9 @@ type SecureChannelUpsertRequest struct {
 
 // SecureChannelQuery 表示通道查询条件。
 type SecureChannelQuery struct {
-	ChannelID uuid.UUID
-	Binding   SecureChannelBinding
+	ChannelID    uuid.UUID
+	Binding      SecureChannelBinding
+	ChannelClass ChannelClass
 
 	SourceEntityID string
 	TargetEntityID string
