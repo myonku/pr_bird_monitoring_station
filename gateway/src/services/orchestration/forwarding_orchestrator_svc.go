@@ -2,22 +2,23 @@ package orchestration
 
 import (
 	"context"
-	"errors"
 
+	communicationif "gateway/src/iface/communication"
 	iface "gateway/src/iface/orchestration"
 	modelsystem "gateway/src/models/system"
 )
 
 var _ iface.IForwardingOrchestrator = (*ForwardingOrchestratorService)(nil)
 
-var errForwardingOrchestratorNotImplemented = errors.New("forwarding orchestrator skeleton not implemented")
-
 // ForwardingOrchestratorService 是网关转发编排的最小实现骨架。
-type ForwardingOrchestratorService struct{}
+type ForwardingOrchestratorService struct {
+	trafficStation communicationif.ITrafficStation
+}
 
-// NewForwardingOrchestratorService 创建最小可编译编排服务骨架。
-func NewForwardingOrchestratorService() *ForwardingOrchestratorService {
-	return &ForwardingOrchestratorService{}
+func NewForwardingOrchestratorServiceWithDeps(
+	trafficStation communicationif.ITrafficStation,
+) *ForwardingOrchestratorService {
+	return &ForwardingOrchestratorService{trafficStation: trafficStation}
 }
 
 // HandleBusinessForward 处理业务转发骨架逻辑。
@@ -27,7 +28,7 @@ func (s *ForwardingOrchestratorService) HandleBusinessForward(
 	if req == nil {
 		return nil, &modelsystem.ErrForwardingRequestInvalid
 	}
-	return nil, errForwardingOrchestratorNotImplemented
+	return s.handleForward(ctx, req)
 }
 
 // HandleExternalAuthForward 处理外部认证转发骨架逻辑。
@@ -37,5 +38,65 @@ func (s *ForwardingOrchestratorService) HandleExternalAuthForward(
 	if req == nil {
 		return nil, &modelsystem.ErrForwardingRequestInvalid
 	}
-	return nil, errForwardingOrchestratorNotImplemented
+	return s.handleForward(ctx, req)
+}
+
+func (s *ForwardingOrchestratorService) handleForward(
+	ctx context.Context,
+	req *iface.ForwardingRequest,
+) (*iface.ForwardingResult, error) {
+	if s.trafficStation == nil {
+		return nil, &modelsystem.ErrForwardingDependenciesRequired
+	}
+
+	inboundDecision, err := s.trafficStation.HandleInbound(
+		ctx,
+		&communicationif.InboundTrafficRequest{
+			Flow:    req.Flow,
+			Headers: cloneStringMap(req.InboundHeaders),
+			Payload: req.Payload,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if inboundDecision == nil || !inboundDecision.Accepted {
+		return nil, &modelsystem.ErrForwardingRequestInvalid
+	}
+
+	dispatch, err := s.trafficStation.SendOutbound(
+		ctx,
+		&communicationif.OutboundTrafficRequest{
+			Flow:    req.Flow,
+			Headers: cloneStringMap(req.InboundHeaders),
+			Payload: req.Payload,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if dispatch == nil || dispatch.Profile == nil {
+		return nil, &modelsystem.ErrForwardingRequestInvalid
+	}
+
+	result := &iface.ForwardingResult{
+		RouteProfile:   dispatch.Profile,
+		TargetEndpoint: dispatch.TargetEndpoint,
+		OutboundHeaders: map[string]string{
+			"x-flow-category": string(dispatch.Profile.FlowCategory),
+		},
+		OutboundPayload: dispatch.Payload,
+	}
+	return result, nil
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(source))
+	for key, value := range source {
+		out[key] = value
+	}
+	return out
 }

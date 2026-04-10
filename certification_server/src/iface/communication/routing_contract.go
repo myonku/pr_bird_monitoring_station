@@ -8,14 +8,19 @@ type RoutingInput struct {
 	Method    string
 	Path      string
 
-	SourceService string
-	TargetService string
+	SourceService     string
+	TargetService     string
+	TargetServiceHint string
 
 	Metadata map[string]string
 }
 
 // RouteProfile 是 communication 包共享的路由画像契约。
 type RouteProfile struct {
+	TargetServiceType string
+	TargetServiceName string
+	TargetEndpoint    string
+
 	FlowCategory   FlowCategory
 	SecurityPolicy SecurityPolicy
 

@@ -1,6 +1,6 @@
 # 系统认证链路与启动链路总说明（按模块）
 
-版本：1.1.0
+版本：1.2.0
 状态：Baseline
 
 ## 1. 文档目的
@@ -192,3 +192,73 @@
 - 模块设计文档仅保留层级/结构/接口职责，不再承载认证链路叙事。
 - 内部转发链路若出现歧义，以“双端回源认证中心校验”为准。
 - 后端模块间通信若出现歧义，以“先 EnsureChannel 后业务调用、禁止明文降级”为准。
+
+---
+
+## 10. 后端启动链执行细则（development 补充）
+
+本节用于补充后端模块在 development 模式下的统一执行细则，作为跨模块落地时的最小一致性约束。
+
+### 10.1 统一顺序（后端三模块）
+
+1. 读取配置快照（仅一次）。
+2. 规范化运行时标识（entity_type、service_name、instance_id、端口、run_mode）。
+3. 初始化基础依赖（至少 etcd 客户端与注册服务）。
+4. 初始化本地密钥服务并读取 active_key_id。
+5. 执行模块级 bootstrap 分支：
+	- gateway/data_worker：执行 bootstrap readiness 链路。
+	- certification_server：明确跳过自身 bootstrap。
+6. 构造 ServiceInstance 元数据。
+7. 调用注册服务写入服务发现。
+8. 启动最小入站能力并进入运行态。
+
+### 10.2 失败处理约束
+
+- 配置解析失败：立即失败退出，不注册。
+- 依赖初始化失败：立即失败退出，不注册。
+- bootstrap 分支失败（gateway/data_worker）：立即失败退出，不注册。
+- 注册失败：立即失败退出，不进入最小运行态。
+- 注册成功后入站启动失败：必须 best-effort 注销实例后退出。
+
+### 10.3 注册实例与键路径约束
+
+注册实例最小字段：
+
+- id
+- service_id
+- name
+- endpoint
+- heartbeat
+- weight
+- tags
+- active_comm_key_id
+- metadata
+
+补充规则：
+
+- heartbeat 为空时由注册服务填充当前毫秒时间。
+- weight 小于等于 0 时归一为 1。
+- 注册键路径统一为 `/bms/services/{service_name}/{instance_id}`。
+
+### 10.4 阶段日志最小集
+
+每个后端模块至少输出以下阶段日志：
+
+- config_loaded
+- dependencies_initialized
+- bootstrap_skipped_or_ready
+- registry_register_attempt
+- registry_register_success
+- server_start_attempt
+- server_start_success
+
+失败路径至少记录：
+
+- stage
+- error
+- request_id 或 trace_id（若可用）
+
+### 10.5 文档引用补充
+
+- 路由与 proto 合并基准见 `SYSTEM_BACKEND_ROUTE_PROTO_BASELINE.md`。
+- 后端启动链路阶段记录与时间线见 `SYSTEM_BACKEND_STARTUP_PROGRESS_TIMELINE.md`。

@@ -3,6 +3,7 @@ entity_type = "service"
 service_name = "gateway"
 instance_id = "gateway"
 run_mode = "no_auth"
+http_listen_host = "127.0.0.1"
 http_listen_port = 8080
 
 [auth]

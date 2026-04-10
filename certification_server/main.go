@@ -1,4 +1,12 @@
 package main
 
-// 阶段性清理：此处实现已刻意清空，等待下一轮接口层重构。
-// 本阶段不要恢复兼容代码。
+import (
+	app "certification_server/src/app"
+	"log"
+)
+
+func main() {
+	if err := app.Run(); err != nil {
+		log.Fatalf("certification_server startup failed: %v", err)
+	}
+}

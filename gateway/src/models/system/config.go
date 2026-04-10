@@ -24,6 +24,7 @@ const (
 )
 
 const (
+	defaultGatewayHTTPListenHost = "127.0.0.1"
 	defaultGatewayHTTPListenPort = 8080
 )
 
@@ -49,6 +50,7 @@ type RuntimeConfig struct {
 	ServiceName    string
 	InstanceID     string
 	RunMode        RuntimeRunMode
+	HTTPListenHost string
 	HTTPListenPort int
 }
 
@@ -61,6 +63,7 @@ func (c *RuntimeConfig) Normalized(defaultInstanceID string) RuntimeConfig {
 			ServiceName:    instanceID,
 			InstanceID:     instanceID,
 			RunMode:        RuntimeRunModeDevelopment,
+			HTTPListenHost: defaultGatewayHTTPListenHost,
 			HTTPListenPort: defaultGatewayHTTPListenPort,
 		}
 	}
@@ -79,6 +82,10 @@ func (c *RuntimeConfig) Normalized(defaultInstanceID string) RuntimeConfig {
 		normalized.ServiceName = normalized.InstanceID
 	}
 	normalized.RunMode = normalizeRuntimeRunMode(string(normalized.RunMode))
+	normalized.HTTPListenHost = strings.TrimSpace(normalized.HTTPListenHost)
+	if normalized.HTTPListenHost == "" {
+		normalized.HTTPListenHost = defaultGatewayHTTPListenHost
+	}
 	if normalized.HTTPListenPort <= 0 {
 		normalized.HTTPListenPort = defaultGatewayHTTPListenPort
 	}

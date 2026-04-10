@@ -1,6 +1,6 @@
 # 系统 no-auth 运行模式启动链路说明（对照 development）
 
-版本：1.0.0
+版本：1.1.0
 状态：Baseline
 
 ## 1. 文档目的
@@ -230,3 +230,72 @@
 - no-auth 仅用于“最基本业务功能测试”与联调提速，不作为生产运行方案。
 - 进入 development 或更高环境前，必须恢复认证链路、限流链路、握手与加密链路。
 - 外部请求目标服务决策始终由 Gateway 路由配置负责，不因 no-auth 模式改变。
+
+---
+
+## 10. 后端 no-auth 启动链执行细则（补充）
+
+本节补充后端模块在 no-auth 模式下的统一执行细则，用于和 development 模式形成可比对的最小执行基准。
+
+### 10.1 统一顺序（后端三模块）
+
+1. 读取配置快照（仅一次）。
+2. 规范化运行时标识（service_name、instance_id、端口、run_mode=no-auth）。
+3. 初始化基础依赖（至少 etcd 客户端与注册服务）。
+4. 初始化本地密钥服务并读取 active_key_id（供实例元数据与后续模式切换复用）。
+5. no-auth 分支处理：
+	- gateway/data_worker：跳过 bootstrap 调用。
+	- certification_server：可不启动；若启动则跳过自身 bootstrap。
+6. 构造 ServiceInstance 元数据。
+7. 调用注册服务写入服务发现。
+8. 启动最小入站能力并进入运行态。
+
+### 10.2 失败处理约束
+
+- 配置解析失败：立即失败退出，不注册。
+- 依赖初始化失败：立即失败退出，不注册。
+- 注册失败：立即失败退出，不进入最小运行态。
+- 注册成功后入站启动失败：必须 best-effort 注销实例后退出。
+
+### 10.3 注册实例与键路径约束
+
+注册实例最小字段：
+
+- id
+- service_id
+- name
+- endpoint
+- heartbeat
+- weight
+- tags
+- active_comm_key_id
+- metadata
+
+补充规则：
+
+- heartbeat 为空时由注册服务填充当前毫秒时间。
+- weight 小于等于 0 时归一为 1。
+- 注册键路径统一为 `/bms/services/{service_name}/{instance_id}`。
+
+### 10.4 阶段日志最小集
+
+每个后端模块至少输出以下阶段日志：
+
+- config_loaded
+- dependencies_initialized
+- bootstrap_skipped_or_ready
+- registry_register_attempt
+- registry_register_success
+- server_start_attempt
+- server_start_success
+
+失败路径至少记录：
+
+- stage
+- error
+- request_id 或 trace_id（若可用）
+
+### 10.5 文档引用补充
+
+- 路由与 proto 合并基准见 `SYSTEM_BACKEND_ROUTE_PROTO_BASELINE.md`。
+- 后端启动链路阶段记录与时间线见 `SYSTEM_BACKEND_STARTUP_PROGRESS_TIMELINE.md`。

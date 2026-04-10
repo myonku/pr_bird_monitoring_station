@@ -3,6 +3,7 @@ entity_type = "service"
 service_name = "certification_server"
 instance_id = "certification_server"
 run_mode = "no_auth"
+grpc_listen_host = "127.0.0.1"
 grpc_listen_port = 50051
 
 [auth]

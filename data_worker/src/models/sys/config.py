@@ -9,6 +9,7 @@ from msgspec import Struct
 
 
 DEFAULT_DATA_WORKER_GRPC_LISTEN_PORT = 50052
+DEFAULT_DATA_WORKER_GRPC_LISTEN_HOST = "127.0.0.1"
 RuntimeRunMode = Literal["development", "no_auth"]
 
 
@@ -79,6 +80,7 @@ class RuntimeConfig(Struct, kw_only=True):
     service_name: str = ""
     instance_id: str = ""
     run_mode: RuntimeRunMode = "development"
+    grpc_listen_host: str = DEFAULT_DATA_WORKER_GRPC_LISTEN_HOST
     grpc_listen_port: int = DEFAULT_DATA_WORKER_GRPC_LISTEN_PORT
 
     def normalized(self, default_entity_id: str = "") -> "RuntimeConfig":
@@ -91,6 +93,11 @@ class RuntimeConfig(Struct, kw_only=True):
             service_name=service_name,
             instance_id=instance_id,
             run_mode=normalize_runtime_run_mode(self.run_mode),
+            grpc_listen_host=(
+                self.grpc_listen_host.strip()
+                if isinstance(self.grpc_listen_host, str) and self.grpc_listen_host.strip()
+                else DEFAULT_DATA_WORKER_GRPC_LISTEN_HOST
+            ),
             grpc_listen_port=(
                 self.grpc_listen_port
                 if isinstance(self.grpc_listen_port, int) and self.grpc_listen_port > 0

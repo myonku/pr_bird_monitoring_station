@@ -22,6 +22,7 @@ const (
 )
 
 const (
+	defaultCertificationGRPCListenHost = "127.0.0.1"
 	defaultCertificationGRPCListenPort = 50051
 )
 
@@ -40,6 +41,7 @@ type RuntimeConfig struct {
 	ServiceName    string
 	InstanceID     string
 	RunMode        RuntimeRunMode
+	GRPCListenHost string
 	GRPCListenPort int
 }
 
@@ -52,6 +54,7 @@ func (c *RuntimeConfig) Normalized(defaultInstanceID string) RuntimeConfig {
 			ServiceName:    instanceID,
 			InstanceID:     instanceID,
 			RunMode:        RuntimeRunModeDevelopment,
+			GRPCListenHost: defaultCertificationGRPCListenHost,
 			GRPCListenPort: defaultCertificationGRPCListenPort,
 		}
 	}
@@ -70,6 +73,10 @@ func (c *RuntimeConfig) Normalized(defaultInstanceID string) RuntimeConfig {
 		normalized.ServiceName = normalized.InstanceID
 	}
 	normalized.RunMode = normalizeRuntimeRunMode(string(normalized.RunMode))
+	normalized.GRPCListenHost = strings.TrimSpace(normalized.GRPCListenHost)
+	if normalized.GRPCListenHost == "" {
+		normalized.GRPCListenHost = defaultCertificationGRPCListenHost
+	}
 	if normalized.GRPCListenPort <= 0 {
 		normalized.GRPCListenPort = defaultCertificationGRPCListenPort
 	}
