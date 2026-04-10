@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+import tomllib
 from typing import Literal
 from urllib.parse import quote_plus, urlencode
+import msgspec
 from msgspec import Struct
+
+
+DEFAULT_DATA_WORKER_GRPC_LISTEN_PORT = 50052
+RuntimeRunMode = Literal["development", "no_auth"]
 
 
 class ProjectConfig(Struct):
@@ -31,33 +38,74 @@ class ProjectConfig(Struct):
             secret_key_dir=auth_cfg.secret_key_dir,
             active_key_id=auth_cfg.active_key_id,
             entity_type=runtime_cfg.entity_type,
-            entity_id=runtime_cfg.entity_id,
-            entity_name=runtime_cfg.entity_name,
+            entity_id=runtime_cfg.instance_id,
+            entity_name=runtime_cfg.service_name,
             instance_id=runtime_cfg.instance_id,
-            instance_name=runtime_cfg.instance_name,
+            instance_name=runtime_cfg.service_name,
         )
+
+
+def load_project_config(raw_settings: dict[str, object] | ProjectConfig | None) -> ProjectConfig:
+    """从已解析的配置映射构建 ProjectConfig。"""
+
+    if raw_settings is None:
+        return ProjectConfig()
+    if isinstance(raw_settings, ProjectConfig):
+        return raw_settings
+
+    cfg = msgspec.convert(raw_settings, type=ProjectConfig, strict=False)
+    if cfg.runtime is not None:
+        cfg.runtime = cfg.runtime.normalized()
+    if cfg.auth is not None:
+        cfg.auth = cfg.auth.normalized()
+    return cfg
+
+
+def load_project_config_from_toml(settings_path: str = "settings.toml") -> ProjectConfig:
+    """从 TOML 文件读取并构建 ProjectConfig。"""
+
+    path = Path(settings_path).expanduser()
+    if not path.exists():
+        return ProjectConfig()
+
+    with path.open("rb") as f:
+        raw = tomllib.load(f)
+    return load_project_config(raw)
 
 class RuntimeConfig(Struct, kw_only=True):
     """服务本体运行时标识配置。"""
 
     entity_type: str = "service"
-    entity_id: str = ""
-    entity_name: str = ""
+    service_name: str = ""
     instance_id: str = ""
-    instance_name: str = ""
+    run_mode: RuntimeRunMode = "development"
+    grpc_listen_port: int = DEFAULT_DATA_WORKER_GRPC_LISTEN_PORT
 
     def normalized(self, default_entity_id: str = "") -> "RuntimeConfig":
         entity_type = self.entity_type.strip().lower() or "service"
-        entity_id = self.entity_id.strip() or default_entity_id
-        entity_name = self.entity_name.strip() or entity_id
+        instance_id = self.instance_id.strip() or default_entity_id
+        service_name = self.service_name.strip() or instance_id
 
         return RuntimeConfig(
             entity_type=entity_type,
-            entity_id=entity_id,
-            entity_name=entity_name,
-            instance_id=self.instance_id.strip(),
-            instance_name=self.instance_name.strip(),
+            service_name=service_name,
+            instance_id=instance_id,
+            run_mode=normalize_runtime_run_mode(self.run_mode),
+            grpc_listen_port=(
+                self.grpc_listen_port
+                if isinstance(self.grpc_listen_port, int) and self.grpc_listen_port > 0
+                else DEFAULT_DATA_WORKER_GRPC_LISTEN_PORT
+            ),
         )
+
+
+def normalize_runtime_run_mode(raw: object) -> RuntimeRunMode:
+    mode = str(raw or "").strip().lower()
+    if mode in {"", "development", "dev", "local", "test"}:
+        return "development"
+    if mode in {"no_auth", "no-auth", "noauth"}:
+        return "no_auth"
+    raise ValueError(f"unsupported runtime run_mode: {mode}")
 
 
 class AuthConfig(Struct, kw_only=True):

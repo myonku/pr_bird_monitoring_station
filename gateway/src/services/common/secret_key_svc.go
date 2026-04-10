@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,10 @@ import (
 
 var _ commonif.IKeyManager = (*SecretKeyService)(nil)
 
+const defaultGatewayEntityID = "gateway"
+
+var errGatewayProjectConfigRequired = errors.New("project config is required")
+
 // SecretKeyService 维护网关本地私钥引用和公钥目录缓存。
 type SecretKeyService struct {
 	mu sync.RWMutex
@@ -32,6 +37,26 @@ type SecretKeyService struct {
 	localPrivate commsecmodel.LocalPrivateKeyRef
 	catalogByKey map[string]commsecmodel.ServicePublicKeyRecord
 	mysql        *repo.MySQLClient
+}
+
+// NewSecretKeyServiceFromProjectConfig 基于主流程注入的配置模型构建密钥服务。
+// 该入口禁止在服务层读取配置文件，仅解析配置实例并委托启动参数构造器。
+func NewSecretKeyServiceFromProjectConfig(
+	cfg *modelsystem.ProjectConfig,
+	catalog []commsecmodel.ServicePublicKeyRecord,
+	mysql *repo.MySQLClient,
+) (*SecretKeyService, modelsystem.SecretKeyStartupParams, error) {
+	if cfg == nil {
+		return nil, modelsystem.SecretKeyStartupParams{}, errGatewayProjectConfigRequired
+	}
+
+	startupParams := cfg.BuildSecretKeyStartupParams(defaultGatewayEntityID)
+	secretSvc, err := NewSecretKeyServiceFromStartupParams(startupParams, catalog, mysql)
+	if err != nil {
+		return nil, startupParams, err
+	}
+
+	return secretSvc, startupParams, nil
 }
 
 // NewSecretKeyServiceFromStartupParams 基于启动参数构建密钥服务。

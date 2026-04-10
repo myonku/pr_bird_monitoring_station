@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,10 @@ import (
 
 var _ iface.IKeyManager = (*SecretKeyService)(nil)
 
+const defaultCertificationEntityID = "certification_server"
+
+var errCertificationProjectConfigRequired = errors.New("project config is required")
+
 // SecretKeyService 提供通信密钥目录访问能力。
 type SecretKeyService struct {
 	mu sync.RWMutex
@@ -34,6 +39,26 @@ type SecretKeyService struct {
 	mysql *repo.MySQLClient
 
 	catalogByKey map[string]commsecmodel.ServicePublicKeyRecord
+}
+
+// NewSecretKeyServiceFromProjectConfig 基于主流程注入的配置模型构建密钥服务。
+// 该入口禁止在服务层读取配置文件，仅解析配置实例并委托启动参数构造器。
+func NewSecretKeyServiceFromProjectConfig(
+	cfg *modelsystem.ProjectConfig,
+	catalog []commsecmodel.ServicePublicKeyRecord,
+	mysql *repo.MySQLClient,
+) (*SecretKeyService, modelsystem.SecretKeyStartupParams, error) {
+	if cfg == nil {
+		return nil, modelsystem.SecretKeyStartupParams{}, errCertificationProjectConfigRequired
+	}
+
+	startupParams := cfg.BuildSecretKeyStartupParams(defaultCertificationEntityID)
+	secretSvc, err := NewSecretKeyServiceFromStartupParams(startupParams, catalog, mysql)
+	if err != nil {
+		return nil, startupParams, err
+	}
+
+	return secretSvc, startupParams, nil
 }
 
 // NewSecretKeyServiceFromStartupParams 基于启动参数构建密钥服务。

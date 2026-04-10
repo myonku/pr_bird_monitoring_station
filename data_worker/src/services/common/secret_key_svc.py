@@ -18,12 +18,68 @@ from src.models.commsec.commsec import (
     ServicePublicKeyRecord,
     SignatureAlgorithm,
 )
+from src.models.sys.config import ProjectConfig, SecretKeyStartupParams
 from src.repo.mysql_client import MySQLClient
 from src.repo.mysql_dao import ServicePublicKeysDAO
 
 
 class SecretKeyService:
     """密钥服务：本地私钥引用 + 全局公钥目录查询。"""
+
+    @classmethod
+    def from_project_config(
+        cls,
+        *,
+        config: ProjectConfig | None,
+        default_entity_id: str = "data_worker",
+        catalog: list[ServicePublicKeyRecord] | None = None,
+        mysql_client: MySQLClient | None = None,
+    ) -> tuple["SecretKeyService", SecretKeyStartupParams]:
+        """从主流程注入的配置模型实例构建密钥服务。
+
+        该入口禁止在服务层读取配置文件，仅解析配置实例并委托启动参数构造器。
+        """
+        if config is None:
+            raise ValueError("project config is required")
+
+        startup_params = config.build_secret_key_startup_params(
+            default_entity_id=default_entity_id,
+        )
+        service = cls.from_startup_params(
+            params=startup_params,
+            catalog=catalog,
+            mysql_client=mysql_client,
+        )
+        return service, startup_params
+
+    @classmethod
+    def from_startup_params(
+        cls,
+        *,
+        params: SecretKeyStartupParams,
+        catalog: list[ServicePublicKeyRecord] | None = None,
+        mysql_client: MySQLClient | None = None,
+    ) -> "SecretKeyService":
+        """基于启动参数快照构建密钥服务。"""
+        resolved_key_id = params.active_key_id.strip()
+        if not resolved_key_id:
+            raise ValueError("active_key_id is required")
+
+        owner = ServiceKeyOwner(
+            entity_type=params.entity_type,
+            entity_id=params.entity_id,
+            entity_name=params.entity_name,
+            instance_id=params.instance_id,
+            instance_name=params.instance_name,
+        ).normalized()
+
+        return cls.from_secret_dir(
+            owner=owner,
+            active_key_id=resolved_key_id,
+            secret_dir=params.secret_key_dir,
+            catalog=catalog,
+            mysql_client=mysql_client,
+        )
 
     @classmethod
     def from_secret_dir(

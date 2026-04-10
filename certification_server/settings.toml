@@ -1,7 +1,10 @@
 [runtime]
 entity_type = "service"
-entity_id = "certification_server"
-entity_name = "certification_server"
-instance_id = ""
-instance_name = ""
+service_name = "certification_server"
+instance_id = "certification_server"
+run_mode = "no_auth"
+grpc_listen_port = 50051
 
+[auth]
+secret_key_dir = "secret_keys"
+active_key_id = "cert-local-key"

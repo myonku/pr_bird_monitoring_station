@@ -10,10 +10,21 @@ import (
 
 type RedisMode string
 
+type RuntimeRunMode string
+
 const (
 	RedisModeStandalone RedisMode = "standalone"
 	RedisModeSentinel   RedisMode = "sentinel"
 	RedisModeCluster    RedisMode = "cluster"
+)
+
+const (
+	RuntimeRunModeDevelopment RuntimeRunMode = "development"
+	RuntimeRunModeNoAuth      RuntimeRunMode = "no_auth"
+)
+
+const (
+	defaultGatewayHTTPListenPort = 8080
 )
 
 // 加载全局配置的函数
@@ -34,21 +45,23 @@ type ProjectConfig struct {
 
 // RuntimeConfig 定义服务本体运行时标识配置。
 type RuntimeConfig struct {
-	EntityType   string
-	EntityID     string
-	EntityName   string
-	InstanceID   string
-	InstanceName string
+	EntityType     string
+	ServiceName    string
+	InstanceID     string
+	RunMode        RuntimeRunMode
+	HTTPListenPort int
 }
 
 // Normalized 返回包含默认值的运行时标识配置快照。
-func (c *RuntimeConfig) Normalized(defaultEntityID string) RuntimeConfig {
+func (c *RuntimeConfig) Normalized(defaultInstanceID string) RuntimeConfig {
 	if c == nil {
-		entityID := strings.TrimSpace(defaultEntityID)
+		instanceID := strings.TrimSpace(defaultInstanceID)
 		return RuntimeConfig{
-			EntityType: "service",
-			EntityID:   entityID,
-			EntityName: entityID,
+			EntityType:     "service",
+			ServiceName:    instanceID,
+			InstanceID:     instanceID,
+			RunMode:        RuntimeRunModeDevelopment,
+			HTTPListenPort: defaultGatewayHTTPListenPort,
 		}
 	}
 
@@ -57,18 +70,39 @@ func (c *RuntimeConfig) Normalized(defaultEntityID string) RuntimeConfig {
 	if normalized.EntityType == "" {
 		normalized.EntityType = "service"
 	}
-	normalized.EntityID = strings.TrimSpace(normalized.EntityID)
-	if normalized.EntityID == "" {
-		normalized.EntityID = strings.TrimSpace(defaultEntityID)
-	}
-	normalized.EntityName = strings.TrimSpace(normalized.EntityName)
-	if normalized.EntityName == "" {
-		normalized.EntityName = normalized.EntityID
-	}
 	normalized.InstanceID = strings.TrimSpace(normalized.InstanceID)
-	normalized.InstanceName = strings.TrimSpace(normalized.InstanceName)
+	if normalized.InstanceID == "" {
+		normalized.InstanceID = strings.TrimSpace(defaultInstanceID)
+	}
+	normalized.ServiceName = strings.TrimSpace(normalized.ServiceName)
+	if normalized.ServiceName == "" {
+		normalized.ServiceName = normalized.InstanceID
+	}
+	normalized.RunMode = normalizeRuntimeRunMode(string(normalized.RunMode))
+	if normalized.HTTPListenPort <= 0 {
+		normalized.HTTPListenPort = defaultGatewayHTTPListenPort
+	}
 
 	return normalized
+}
+
+func normalizeRuntimeRunMode(raw string) RuntimeRunMode {
+	if mode, ok := parseRuntimeRunMode(raw); ok {
+		return mode
+	}
+	return RuntimeRunModeDevelopment
+}
+
+func parseRuntimeRunMode(raw string) (RuntimeRunMode, bool) {
+	mode := strings.ToLower(strings.TrimSpace(raw))
+	switch mode {
+	case "", "development", "dev", "local", "test":
+		return RuntimeRunModeDevelopment, true
+	case "no_auth", "no-auth", "noauth":
+		return RuntimeRunModeNoAuth, true
+	default:
+		return "", false
+	}
 }
 
 // AuthConfig 定义认证相关配置。
@@ -108,7 +142,7 @@ type SecretKeyStartupParams struct {
 }
 
 // BuildSecretKeyStartupParams 从 ProjectConfig 构建密钥服务启动参数。
-func (c *ProjectConfig) BuildSecretKeyStartupParams(defaultEntityID string) SecretKeyStartupParams {
+func (c *ProjectConfig) BuildSecretKeyStartupParams(defaultInstanceID string) SecretKeyStartupParams {
 	var runtimeCfg *RuntimeConfig
 	var authCfg *AuthConfig
 	if c != nil {
@@ -116,17 +150,17 @@ func (c *ProjectConfig) BuildSecretKeyStartupParams(defaultEntityID string) Secr
 		authCfg = c.Auth
 	}
 
-	runtime := runtimeCfg.Normalized(defaultEntityID)
+	runtime := runtimeCfg.Normalized(defaultInstanceID)
 	auth := authCfg.Normalized()
 
 	return SecretKeyStartupParams{
 		SecretKeyDir: auth.SecretKeyDir,
 		ActiveKeyID:  auth.ActiveKeyID,
 		EntityType:   runtime.EntityType,
-		EntityID:     runtime.EntityID,
-		EntityName:   runtime.EntityName,
+		EntityID:     runtime.InstanceID,
+		EntityName:   runtime.ServiceName,
 		InstanceID:   runtime.InstanceID,
-		InstanceName: runtime.InstanceName,
+		InstanceName: runtime.ServiceName,
 	}
 }
 

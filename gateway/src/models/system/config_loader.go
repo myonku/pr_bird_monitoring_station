@@ -89,30 +89,34 @@ func assignRuntimeField(cfg *ProjectConfig, key, value string, lineNo int) error
 			return fmt.Errorf("invalid [runtime].entity_type at line %d: %w", lineNo, err)
 		}
 		cfg.Runtime.EntityType = parsed
-	case "entity_id":
+	case "service_name", "entity_name":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
-			return fmt.Errorf("invalid [runtime].entity_id at line %d: %w", lineNo, err)
+			return fmt.Errorf("invalid [runtime].service_name at line %d: %w", lineNo, err)
 		}
-		cfg.Runtime.EntityID = parsed
-	case "entity_name":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [runtime].entity_name at line %d: %w", lineNo, err)
-		}
-		cfg.Runtime.EntityName = parsed
-	case "instance_id":
+		cfg.Runtime.ServiceName = parsed
+	case "instance_id", "entity_id", "service_id":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [runtime].instance_id at line %d: %w", lineNo, err)
 		}
 		cfg.Runtime.InstanceID = parsed
-	case "instance_name":
+	case "run_mode":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
-			return fmt.Errorf("invalid [runtime].instance_name at line %d: %w", lineNo, err)
+			return fmt.Errorf("invalid [runtime].run_mode at line %d: %w", lineNo, err)
 		}
-		cfg.Runtime.InstanceName = parsed
+		mode, ok := parseRuntimeRunMode(parsed)
+		if !ok {
+			return fmt.Errorf("invalid [runtime].run_mode at line %d: unsupported value %q", lineNo, parsed)
+		}
+		cfg.Runtime.RunMode = mode
+	case "http_listen_port", "http_port":
+		parsed, err := parseTOMLInt(value)
+		if err != nil {
+			return fmt.Errorf("invalid [runtime].http_listen_port at line %d: %w", lineNo, err)
+		}
+		cfg.Runtime.HTTPListenPort = parsed
 	}
 
 	return nil
@@ -168,30 +172,18 @@ func assignLegacySecretKeyField(cfg *ProjectConfig, key, value string, lineNo in
 			return fmt.Errorf("invalid [secret_key].entity_type at line %d: %w", lineNo, err)
 		}
 		cfg.Runtime.EntityType = parsed
-	case "entity_id", "service_id":
+	case "entity_id", "service_id", "instance_id":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].entity_id at line %d: %w", lineNo, err)
 		}
-		cfg.Runtime.EntityID = parsed
-	case "entity_name", "service_name":
+		cfg.Runtime.InstanceID = parsed
+	case "entity_name", "service_name", "instance_name":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].entity_name at line %d: %w", lineNo, err)
 		}
-		cfg.Runtime.EntityName = parsed
-	case "instance_id":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].instance_id at line %d: %w", lineNo, err)
-		}
-		cfg.Runtime.InstanceID = parsed
-	case "instance_name":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].instance_name at line %d: %w", lineNo, err)
-		}
-		cfg.Runtime.InstanceName = parsed
+		cfg.Runtime.ServiceName = parsed
 	case "enabled", "public_key_ref", "private_key_ref":
 		// legacy 兼容字段：新结构下不再使用。
 		return nil
@@ -255,6 +247,14 @@ func parseTOMLBool(raw string) (bool, error) {
 		return false, err
 	}
 	return strconv.ParseBool(strings.ToLower(strings.TrimSpace(value)))
+}
+
+func parseTOMLInt(raw string) (int, error) {
+	value, err := parseTOMLString(raw)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(value))
 }
 
 func parseTOMLInt64(raw string) (int64, error) {

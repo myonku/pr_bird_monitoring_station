@@ -1,0 +1,197 @@
+syntax = "proto3";
+
+package bms.auth.v1;
+
+option go_package = "pr_bird_monitoring_station/schemas/proto/auth/v1;authv1";
+
+// AuthAuthorityBootstrapService defines the minimal authority API for bootstrap flows.
+service AuthAuthorityBootstrapService {
+  // InitBootstrapChallenge issues a short-lived challenge for module bootstrap.
+  rpc InitBootstrapChallenge(BootstrapChallengeRequest) returns (BootstrapChallengeResponse);
+  // AuthenticateBootstrap verifies signed challenge proof and returns bootstrap credentials.
+  rpc AuthenticateBootstrap(BootstrapAuthenticateRequest) returns (BootstrapAuthenticateResponse);
+}
+
+enum EntityType {
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  ENTITY_TYPE_USER = 1;
+  ENTITY_TYPE_DEVICE = 2;
+  ENTITY_TYPE_SERVICE = 3;
+}
+
+enum SignatureAlgorithm {
+  SIGNATURE_ALGORITHM_UNSPECIFIED = 0;
+  SIGNATURE_ALGORITHM_ECDSA_P256_SHA256 = 1;
+  SIGNATURE_ALGORITHM_ED25519 = 2;
+  SIGNATURE_ALGORITHM_RSA_PSS_SHA256 = 3;
+}
+
+enum BootstrapStage {
+  BOOTSTRAP_STAGE_UNSPECIFIED = 0;
+  BOOTSTRAP_STAGE_UNINITIALIZED = 1;
+  BOOTSTRAP_STAGE_CHALLENGING = 2;
+  BOOTSTRAP_STAGE_AUTHENTICATING = 3;
+  BOOTSTRAP_STAGE_READY = 4;
+}
+
+enum TokenType {
+  TOKEN_TYPE_UNSPECIFIED = 0;
+  TOKEN_TYPE_ACCESS = 1;
+  TOKEN_TYPE_REFRESH = 2;
+  TOKEN_TYPE_DOWNSTREAM = 3;
+}
+
+message RuntimeIdentity {
+  string entity_type = 1;
+  string entity_id = 2;
+  string entity_name = 3;
+  string instance_id = 4;
+  string instance_name = 5;
+}
+
+message Principal {
+  EntityType entity_type = 1;
+  string entity_id = 2;
+  string principal_id = 3;
+}
+
+message IdentityContext {
+  Principal principal = 1;
+  string session_id = 2;
+  string token_id = 3;
+  string token_family_id = 4;
+
+  string role = 5;
+  repeated string scopes = 6;
+
+  string auth_method = 7;
+  string source_ip = 8;
+  string client_id = 9;
+  string gateway_id = 10;
+
+  string source_service = 11;
+  string target_service = 12;
+
+  string request_id = 13;
+  string trace_id = 14;
+
+  int64 issued_at_ms = 15;
+  int64 expires_at_ms = 16;
+}
+
+message SessionInfo {
+  string session_id = 1;
+  Principal principal = 2;
+  string status = 3;
+  string auth_method = 4;
+
+  string client_id = 5;
+  string gateway_id = 6;
+
+  repeated string scope_snapshot = 7;
+  string role_snapshot = 8;
+
+  int64 created_at_ms = 9;
+  int64 expires_at_ms = 10;
+  int64 version = 11;
+}
+
+message IssuedToken {
+  string raw = 1;
+  TokenType token_type = 2;
+  int64 ttl_sec = 3;
+}
+
+message TokenBundle {
+  IssuedToken access_token = 1;
+  IssuedToken refresh_token = 2;
+  IssuedToken downstream_token = 3;
+}
+
+message BootstrapChallengeRequest {
+  EntityType entity_type = 1;
+  string entity_id = 2;
+  string key_id = 3;
+
+  string audience = 4;
+
+  string client_id = 5;
+  string gateway_id = 6;
+  string source_ip = 7;
+  string user_agent = 8;
+
+  string request_id = 9;
+  string trace_id = 10;
+
+  int64 ttl_sec = 11;
+  RuntimeIdentity runtime = 12;
+}
+
+message ChallengePayload {
+  string challenge_id = 1;
+
+  string issuer = 2;
+  string audience = 3;
+
+  EntityType entity_type = 4;
+  string entity_id = 5;
+  string key_id = 6;
+
+  string nonce = 7;
+
+  int64 issued_at_ms = 8;
+  int64 expires_at_ms = 9;
+}
+
+message BootstrapChallengeResponse {
+  ChallengePayload challenge = 1;
+}
+
+message SignedChallengeResponse {
+  string challenge_id = 1;
+  string key_id = 2;
+
+  SignatureAlgorithm signature_algorithm = 3;
+  string signature = 4;
+
+  int64 signed_at_ms = 5;
+}
+
+message BootstrapAuthenticateRequest {
+  ChallengePayload challenge = 1;
+  SignedChallengeResponse signed = 2;
+
+  repeated string scopes = 3;
+  string role = 4;
+
+  bool require_downstream_token = 5;
+}
+
+message BootstrapAuthenticateResponse {
+  BootstrapStage stage = 1;
+
+  IdentityContext identity = 2;
+  SessionInfo session = 3;
+  TokenBundle tokens = 4;
+
+  string active_comm_key_id = 5;
+
+  int64 issued_at_ms = 6;
+  int64 expires_at_ms = 7;
+}
+
+message ServiceInstanceMetadata {
+  string id = 1;
+  string service_id = 2;
+  string name = 3;
+  string endpoint = 4;
+
+  int64 heartbeat_ms = 5;
+  string zone = 6;
+  string version = 7;
+  int32 weight = 8;
+
+  repeated string tags = 9;
+  string active_comm_key_id = 10;
+  map<string, string> metadata = 11;
+}

@@ -1,7 +1,9 @@
 [runtime]
 entity_type = "service"
-entity_id = "gateway"
-entity_name = "gateway"
+service_name = "gateway"
+instance_id = "gateway"
+run_mode = "no_auth"
+http_listen_port = 8080
 
 [auth]
 secret_key_dir = "secret_keys"

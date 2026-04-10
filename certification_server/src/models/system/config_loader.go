@@ -8,12 +8,31 @@ import (
 	"strings"
 )
 
+const (
+	// DefaultSettingsPath 是认证中心默认配置文件路径。
+	DefaultSettingsPath = "settings.toml"
+	// SettingsPathEnvVar 定义认证中心配置路径的环境变量名。
+	SettingsPathEnvVar = "CERTIFICATION_SETTINGS_PATH"
+)
+
+// ResolveConfigPath 解析认证中心配置文件路径，优先级：显式参数 > 环境变量 > 默认路径。
+func ResolveConfigPath(cfgPath string) string {
+	path := strings.TrimSpace(cfgPath)
+	if path != "" {
+		return path
+	}
+
+	envPath := strings.TrimSpace(os.Getenv(SettingsPathEnvVar))
+	if envPath != "" {
+		return envPath
+	}
+
+	return DefaultSettingsPath
+}
+
 // LoadConfig 从 TOML 文件加载认证中心配置。
 func LoadConfig(cfgPath string) (*ProjectConfig, error) {
-	path := strings.TrimSpace(cfgPath)
-	if path == "" {
-		path = "settings.toml"
-	}
+	path := ResolveConfigPath(cfgPath)
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -94,30 +113,34 @@ func assignRuntimeField(cfg *ProjectConfig, key, value string, lineNo int) error
 			return fmt.Errorf("invalid [runtime].entity_type at line %d: %w", lineNo, err)
 		}
 		cfg.Runtime.EntityType = parsed
-	case "entity_id":
+	case "service_name", "entity_name":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
-			return fmt.Errorf("invalid [runtime].entity_id at line %d: %w", lineNo, err)
+			return fmt.Errorf("invalid [runtime].service_name at line %d: %w", lineNo, err)
 		}
-		cfg.Runtime.EntityID = parsed
-	case "entity_name":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [runtime].entity_name at line %d: %w", lineNo, err)
-		}
-		cfg.Runtime.EntityName = parsed
-	case "instance_id":
+		cfg.Runtime.ServiceName = parsed
+	case "instance_id", "entity_id", "service_id":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [runtime].instance_id at line %d: %w", lineNo, err)
 		}
 		cfg.Runtime.InstanceID = parsed
-	case "instance_name":
+	case "run_mode":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
-			return fmt.Errorf("invalid [runtime].instance_name at line %d: %w", lineNo, err)
+			return fmt.Errorf("invalid [runtime].run_mode at line %d: %w", lineNo, err)
 		}
-		cfg.Runtime.InstanceName = parsed
+		mode, ok := parseRuntimeRunMode(parsed)
+		if !ok {
+			return fmt.Errorf("invalid [runtime].run_mode at line %d: unsupported value %q", lineNo, parsed)
+		}
+		cfg.Runtime.RunMode = mode
+	case "grpc_listen_port", "grpc_port":
+		parsed, err := parseTOMLInt(value)
+		if err != nil {
+			return fmt.Errorf("invalid [runtime].grpc_listen_port at line %d: %w", lineNo, err)
+		}
+		cfg.Runtime.GRPCListenPort = parsed
 	}
 
 	return nil
@@ -173,30 +196,18 @@ func assignLegacySecretKeyField(cfg *ProjectConfig, key, value string, lineNo in
 			return fmt.Errorf("invalid [secret_key].entity_type at line %d: %w", lineNo, err)
 		}
 		cfg.Runtime.EntityType = parsed
-	case "entity_id", "service_id":
+	case "entity_id", "service_id", "instance_id":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].entity_id at line %d: %w", lineNo, err)
 		}
-		cfg.Runtime.EntityID = parsed
-	case "entity_name", "service_name":
+		cfg.Runtime.InstanceID = parsed
+	case "entity_name", "service_name", "instance_name":
 		parsed, err := parseTOMLString(value)
 		if err != nil {
 			return fmt.Errorf("invalid [secret_key].entity_name at line %d: %w", lineNo, err)
 		}
-		cfg.Runtime.EntityName = parsed
-	case "instance_id":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].instance_id at line %d: %w", lineNo, err)
-		}
-		cfg.Runtime.InstanceID = parsed
-	case "instance_name":
-		parsed, err := parseTOMLString(value)
-		if err != nil {
-			return fmt.Errorf("invalid [secret_key].instance_name at line %d: %w", lineNo, err)
-		}
-		cfg.Runtime.InstanceName = parsed
+		cfg.Runtime.ServiceName = parsed
 	case "enabled", "public_key_ref", "private_key_ref":
 		// legacy 兼容字段：新结构下不再使用。
 		return nil
@@ -260,4 +271,12 @@ func parseTOMLBool(raw string) (bool, error) {
 		return false, err
 	}
 	return strconv.ParseBool(strings.ToLower(strings.TrimSpace(value)))
+}
+
+func parseTOMLInt(raw string) (int, error) {
+	value, err := parseTOMLString(raw)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(value))
 }
