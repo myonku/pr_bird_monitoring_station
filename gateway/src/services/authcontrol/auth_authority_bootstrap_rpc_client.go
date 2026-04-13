@@ -7,14 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/types/known/structpb"
-)
+	authv1 "gateway/src/gen/auth/v1"
 
-const (
-	bootstrapInitMethodPath = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
-	bootstrapAuthMethodPath = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBootstrap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // BootstrapHandshakeRequest 表示网关在冷启动阶段向认证中心发起的最小握手请求。
@@ -59,14 +56,16 @@ func (c *BootstrapRPCClient) ExecuteBootstrapHandshake(
 	if strings.TrimSpace(req.EntityType) == "" || strings.TrimSpace(req.EntityID) == "" {
 		return nil, fmt.Errorf("bootstrap entity_type and entity_id are required")
 	}
-
-	dialCtx, dialCancel := context.WithTimeout(ctx, c.dialTimeout)
-	defer dialCancel()
-	conn, err := grpc.DialContext(
-		dialCtx,
-		c.endpoint,
+	entityType, err := mapEntityType(req.EntityType)
+	if err != nil {
+		return nil, err
+	}
+	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
+	}
+	conn, err := grpc.NewClient(
+		c.endpoint,
+		options...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial auth authority failed: %w", err)
@@ -75,32 +74,31 @@ func (c *BootstrapRPCClient) ExecuteBootstrapHandshake(
 		_ = conn.Close()
 	}()
 
-	challengeReq, err := structpb.NewStruct(map[string]any{
-		"entity_type": req.EntityType,
-		"entity_id":   req.EntityID,
-		"key_id":      strings.TrimSpace(req.KeyID),
-		"audience":    strings.TrimSpace(req.Audience),
-		"ttl_sec":     float64(60),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build bootstrap challenge request failed: %w", err)
+	dialCtx, dialCancel := context.WithTimeout(ctx, c.dialTimeout)
+	if err := waitForConnectionReady(dialCtx, conn); err != nil {
+		dialCancel()
+		return nil, fmt.Errorf("wait for auth authority connection ready failed: %w", err)
 	}
+	dialCancel()
 
-	challengeResp := &structpb.Struct{}
+	client := authv1.NewAuthAuthorityBootstrapServiceClient(conn)
+
+	challengeReq := &authv1.BootstrapChallengeRequest{
+		EntityType: entityType,
+		EntityId:   strings.TrimSpace(req.EntityID),
+		KeyId:      strings.TrimSpace(req.KeyID),
+		Audience:   strings.TrimSpace(req.Audience),
+		TtlSec:     60,
+	}
 	challengeCtx, challengeCancel := context.WithTimeout(ctx, c.callTimeout)
-	err = conn.Invoke(challengeCtx, bootstrapInitMethodPath, challengeReq, challengeResp)
+	challengeResp, err := client.InitBootstrapChallenge(challengeCtx, challengeReq)
 	challengeCancel()
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap challenge rpc failed: %w", err)
 	}
-
-	challengeEnvelope := challengeResp.AsMap()
-	challengeMap := readMap(challengeEnvelope, "challenge")
-	if len(challengeMap) == 0 {
-		challengeMap = challengeEnvelope
-	}
-	challengeID := readString(challengeMap, "challenge_id")
-	challengeKeyID := readString(challengeMap, "key_id")
+	challenge := challengeResp.GetChallenge()
+	challengeID := strings.TrimSpace(challenge.GetChallengeId())
+	challengeKeyID := strings.TrimSpace(challenge.GetKeyId())
 	if challengeID == "" {
 		return nil, fmt.Errorf("bootstrap challenge response missing challenge_id")
 	}
@@ -108,85 +106,79 @@ func (c *BootstrapRPCClient) ExecuteBootstrapHandshake(
 		challengeKeyID = strings.TrimSpace(req.KeyID)
 	}
 
-	authReq, err := structpb.NewStruct(map[string]any{
-		"challenge": challengeMap,
-		"signed": map[string]any{
-			"challenge_id":        challengeID,
-			"key_id":              challengeKeyID,
-			"signature_algorithm": "ed25519",
-			"signature":           base64.StdEncoding.EncodeToString([]byte("bootstrap:" + challengeID)),
-			"signed_at_ms":        float64(time.Now().UnixMilli()),
+	authReq := &authv1.BootstrapAuthenticateRequest{
+		Challenge: challenge,
+		Signed: &authv1.SignedChallengeResponse{
+			ChallengeId:        challengeID,
+			KeyId:              challengeKeyID,
+			SignatureAlgorithm: authv1.SignatureAlgorithm_SIGNATURE_ALGORITHM_ED25519,
+			Signature:          base64.StdEncoding.EncodeToString([]byte("bootstrap:" + challengeID)),
+			SignedAtMs:         time.Now().UnixMilli(),
 		},
-		"scopes":                   []any{"service:bootstrap"},
-		"role":                     "service",
-		"require_downstream_token": false,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build bootstrap authenticate request failed: %w", err)
+		Scopes:                 []string{"service:bootstrap"},
+		Role:                   "service",
+		RequireDownstreamToken: false,
 	}
-
-	authResp := &structpb.Struct{}
 	authCtx, authCancel := context.WithTimeout(ctx, c.callTimeout)
-	err = conn.Invoke(authCtx, bootstrapAuthMethodPath, authReq, authResp)
+	authResp, err := client.AuthenticateBootstrap(authCtx, authReq)
 	authCancel()
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap authenticate rpc failed: %w", err)
 	}
 
-	authMap := authResp.AsMap()
-	stage := normalizeBootstrapStage(readString(authMap, "stage"))
+	stage := normalizeBootstrapStage(authResp.GetStage())
 	if stage == "" {
 		return nil, fmt.Errorf("bootstrap authenticate response missing stage")
 	}
 
 	return &BootstrapHandshakeResult{
 		Stage:           stage,
-		ActiveCommKeyID: readString(authMap, "active_comm_key_id"),
+		ActiveCommKeyID: strings.TrimSpace(authResp.GetActiveCommKeyId()),
 	}, nil
 }
 
-func readString(m map[string]any, key string) string {
-	if len(m) == 0 {
-		return ""
+func waitForConnectionReady(ctx context.Context, conn *grpc.ClientConn) error {
+	conn.Connect()
+	for {
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			return nil
+		}
+		if !conn.WaitForStateChange(ctx, state) {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return fmt.Errorf("connection did not reach ready state")
+		}
 	}
-	v, ok := m[key]
-	if !ok || v == nil {
-		return ""
-	}
-	s, ok := v.(string)
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(s)
 }
 
-func readMap(m map[string]any, key string) map[string]any {
-	if len(m) == 0 {
-		return nil
-	}
-	v, ok := m[key]
-	if !ok || v == nil {
-		return nil
-	}
-	child, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	return child
-}
-
-func normalizeBootstrapStage(raw string) string {
-	stage := strings.TrimSpace(strings.ToLower(raw))
-	switch stage {
-	case "ready", "bootstrap_stage_ready", "4":
-		return "ready"
-	case "uninitialized", "bootstrap_stage_uninitialized", "1":
-		return "uninitialized"
-	case "challenging", "bootstrap_stage_challenging", "2":
-		return "challenging"
-	case "authenticating", "bootstrap_stage_authenticating", "3":
-		return "authenticating"
+func mapEntityType(raw string) (authv1.EntityType, error) {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "user":
+		return authv1.EntityType_ENTITY_TYPE_USER, nil
+	case "device":
+		return authv1.EntityType_ENTITY_TYPE_DEVICE, nil
+	case "service":
+		return authv1.EntityType_ENTITY_TYPE_SERVICE, nil
 	default:
-		return stage
+		return authv1.EntityType_ENTITY_TYPE_UNSPECIFIED, fmt.Errorf("unsupported bootstrap entity_type: %q", strings.TrimSpace(raw))
+	}
+}
+
+func normalizeBootstrapStage(stage authv1.BootstrapStage) string {
+	switch stage {
+	case authv1.BootstrapStage_BOOTSTRAP_STAGE_READY:
+		return "ready"
+	case authv1.BootstrapStage_BOOTSTRAP_STAGE_UNINITIALIZED:
+		return "uninitialized"
+	case authv1.BootstrapStage_BOOTSTRAP_STAGE_CHALLENGING:
+		return "challenging"
+	case authv1.BootstrapStage_BOOTSTRAP_STAGE_AUTHENTICATING:
+		return "authenticating"
+	case authv1.BootstrapStage_BOOTSTRAP_STAGE_UNSPECIFIED:
+		return ""
+	default:
+		return strings.TrimSpace(strings.ToLower(stage.String()))
 	}
 }

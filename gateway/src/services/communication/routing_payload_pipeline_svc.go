@@ -118,13 +118,6 @@ func (s *RoutingPayloadPipelineService) BuildOutboundPayload(
 		PlainPayload: req.PlainPayload,
 	}
 
-	if req.EnsureChannel != nil && profile.SecurityPolicy == commonif.SecurityPolicyRequired {
-		if req.AdditionalData == nil {
-			req.AdditionalData = make(map[string]string)
-		}
-		req.AdditionalData["commsec_required"] = "true"
-	}
-
 	return plan, nil
 }
 

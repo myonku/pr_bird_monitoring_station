@@ -489,6 +489,8 @@ lib/
 - 统计数据
 - 修改密码
 
+更细的客户端请求路径、请求体、响应体和字段语义草案见 `CLIENT_BACKEND_INTERFACE_DRAFT.md`。
+
 ---
 
 ## 15. no-auth 模式下的特殊约束

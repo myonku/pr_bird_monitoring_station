@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package bms.auth.v1;
+
+import "auth/v1/auth_authority_bootstrap.proto";
+
+option go_package = "pr_bird_monitoring_station/schemas/proto/auth/v1;authv1";
+
+// AuthAuthorityRemoteAuthService handles remote authentication validation routes.
+service AuthAuthorityRemoteAuthService {
+  // auth.remote.verify.token -> VerifyToken.
+  rpc VerifyToken(TokenVerifyRequest) returns (TokenVerificationResult);
+
+  // auth.remote.validate.session -> ValidateSession.
+  rpc ValidateSession(SessionValidateRequest) returns (Session);
+}
+
+enum SessionStatus {
+  SESSION_STATUS_UNSPECIFIED = 0;
+  SESSION_STATUS_ACTIVE = 1;
+  SESSION_STATUS_REVOKED = 2;
+  SESSION_STATUS_EXPIRED = 3;
+  SESSION_STATUS_BLOCKED = 4;
+}
+
+enum TokenStatus {
+  TOKEN_STATUS_UNSPECIFIED = 0;
+  TOKEN_STATUS_ACTIVE = 1;
+  TOKEN_STATUS_ROTATED = 2;
+  TOKEN_STATUS_REVOKED = 3;
+  TOKEN_STATUS_EXPIRED = 4;
+}
+
+enum TokenStorage {
+  TOKEN_STORAGE_UNSPECIFIED = 0;
+  TOKEN_STORAGE_CACHE = 1;
+  TOKEN_STORAGE_DATABASE = 2;
+  TOKEN_STORAGE_HYBRID = 3;
+}
+
+enum AuthMethod {
+  AUTH_METHOD_UNSPECIFIED = 0;
+  AUTH_METHOD_PASSWORD = 1;
+  AUTH_METHOD_DEVICE_SECRET = 2;
+  AUTH_METHOD_SERVICE_SECRET = 3;
+  AUTH_METHOD_REFRESH_TOKEN = 4;
+  AUTH_METHOD_TOKEN_EXCHANGE = 5;
+}
+
+message Session {
+  string session_id = 1;
+  Principal principal = 2;
+  EntityType entity_type = 3;
+  string entity_id = 4;
+  string principal_id = 5;
+
+  SessionStatus status = 6;
+  AuthMethod auth_method = 7;
+
+  string created_by_ip = 8;
+  string last_seen_ip = 9;
+  string user_agent = 10;
+  string client_id = 11;
+  string gateway_id = 12;
+
+  repeated string scope_snapshot = 13;
+  string role_snapshot = 14;
+  string token_family_id = 15;
+
+  int64 created_at_ms = 16;
+  int64 updated_at_ms = 17;
+  int64 last_seen_at_ms = 18;
+  int64 last_verified_at_ms = 19;
+  int64 next_refresh_at_ms = 20;
+  int64 expires_at_ms = 21;
+  int64 revoked_at_ms = 22;
+  int64 version = 23;
+}
+
+message TokenRecord {
+  string id = 1;
+  string family_id = 2;
+  string session_id = 3;
+
+  TokenType token_type = 4;
+  TokenStatus status = 5;
+  TokenStorage storage = 6;
+
+  Principal principal = 7;
+  string principal_id = 8;
+
+  string parent_token_id = 9;
+  string client_id = 10;
+  string gateway_id = 11;
+
+  string role_snapshot = 12;
+  repeated string scope_snapshot = 13;
+
+  int64 issued_at_ms = 14;
+  int64 expires_at_ms = 15;
+  int64 last_validated_at_ms = 16;
+  int64 revoked_at_ms = 17;
+}
+
+message TokenVerifyRequest {
+  string raw_token = 1;
+  repeated TokenType expected_types = 2;
+  string expected_audience = 3;
+  repeated string require_scopes = 4;
+
+  string source_service = 5;
+  string target_service = 6;
+
+  int64 allow_expired_skew_sec = 7;
+}
+
+message TokenVerificationResult {
+  bool valid = 1;
+  TokenStatus status = 2;
+  IdentityContext identity = 3;
+  TokenRecord token = 4;
+  bool revalidation_required = 5;
+  string failure_reason = 6;
+}
+
+message SessionValidateRequest {
+  string session_id = 1;
+  string principal_id = 2;
+  bool require_active = 3;
+  int64 min_version = 4;
+}

@@ -1,6 +1,6 @@
 # 后端路由与 Proto 基准约定（合并版）
 
-版本：1.1.0
+版本：1.2.0
 状态：Baseline
 适用模块：gateway / certification_server / data_worker
 
@@ -19,14 +19,14 @@
 
 1. bootstrap 最小链路所需 proto 服务边界。
 2. 路由输入输出语义与匹配优先级。
-3. route_key、flow_category、security_policy 的统一映射。
+3. route_key、flow_category、target_service_type、target_service_name 的统一映射。
 4. 模块侧最小职责分工与验收基线。
 
 本文件不覆盖：
 
 - 完整业务转发策略与细粒度授权票据生命周期。
 - 认证中心全部 verify/refresh/revoke 的完整业务语义细节。
-- commsec 全量协议细节（仅保留本阶段对路由安全策略的最小约束）。
+- 底层传输实现细节（仅保留本阶段对路由边界的最小约束）。
 
 ## 3. Proto 最小边界（Bootstrap to Registry）
 
@@ -76,7 +76,6 @@
 - target_service_name
 - target_endpoint
 - flow_category
-- security_policy
 
 认证中心可附加 `operation` 与 `metadata` 扩展字段，但不得改变上述核心语义。
 
@@ -106,19 +105,13 @@
 
 补充：
 
-- certification_server 内部可保留 `commsec_call` 作为扩展分类。
+- certification_server 内部可保留额外实现分类，但不在本文件中定义新的安全策略字段。
 
-### 6.2 SecurityPolicy
+### 6.2 运行模式约束
 
-- required
-- optional
-- disabled
-
-阶段规则：
-
-- bootstrap_call 当前阶段默认 `optional`。
-- no-auth 模式下认证相关流量默认 `disabled`。
-- 后续阶段再按链路类型提升到 `required`。
+- bootstrap_call 当前阶段保持最小可用。
+- no-auth 模式下认证相关流量按关闭认证链处理。
+- 后续阶段如需更细路由策略，由模块级文档或实现配置补充。
 
 ### 6.3 TargetServiceType
 
@@ -131,16 +124,15 @@
 ### 7.1 本阶段强制落地
 
 1. `auth.bootstrap.challenge`
-   - flow_category：bootstrap_call
-   - target_service_type：auth_authority
-   - target_service_name：certification_server
-   - security_policy：optional
 
-2. `auth.bootstrap.authenticate`
    - flow_category：bootstrap_call
    - target_service_type：auth_authority
    - target_service_name：certification_server
-   - security_policy：optional
+2. `auth.bootstrap.authenticate`
+
+   - flow_category：bootstrap_call
+   - target_service_type：auth_authority
+   - target_service_name：certification_server
 
 ### 7.2 已预留（按计划逐步落地）
 
@@ -184,7 +176,6 @@ bootstrap 固定映射：
 - flow_category
 - target_service_type
 - target_service_name
-- security_policy
 - matched_by（route_key/static/hint）
 - route_mapping_version
 - request_id
@@ -213,9 +204,9 @@ bootstrap 固定映射：
 ### 12.3 增量迁移路线
 
 1. P0（已落地）：bootstrap 最小链路遵循统一字段语义，可通过结构化动态适配层接入。
-2. P1（下一步）：固化 bootstrap proto 生成桩，gateway/data_worker 出站优先走真实 proto 调用。
-3. P2：逐步补齐预留 route_key 对应 proto 方法，形成 route_key 与 rpc method 的一一映射表。
-4. P3：将动态调用路径降级为兼容通道，仅用于灰度与回滚。
+2. P1（已落地）：固化 bootstrap proto 生成桩，gateway/data_worker 出站优先走真实 proto 调用。
+3. P2（下一步）：逐步补齐预留 route_key 对应 proto 方法，形成 route_key 与 rpc method 的一一映射表。
+4. P3：将动态调用路径降级为兼容路径，仅用于灰度与回滚。
 5. P4：在兼容窗口结束后，收敛为“生成桩优先，动态通道按需保留”。
 
 ### 12.4 开发与验收方向

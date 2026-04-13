@@ -65,10 +65,6 @@ class TrafficStationService(ITrafficStation):
             )
         )
 
-        payload = plan.plain_payload
-        if plan.encrypted is not None:
-            payload = plan.encrypted.ciphertext
-
         target_endpoint = (plan.route_profile.target_endpoint or "").strip()
         if not target_endpoint and plan.target is not None:
             target_endpoint = (plan.target.endpoint or "").strip()
@@ -76,7 +72,7 @@ class TrafficStationService(ITrafficStation):
         return TrafficDispatchResult(
             profile=plan.route_profile,
             target_endpoint=target_endpoint,
-            payload=payload,
+            payload=plan.plain_payload,
             metadata={
                 "flow_category": plan.route_profile.flow_category,
                 "security_policy": plan.route_profile.security_policy,

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	commonif "certification_server/src/iface/common"
-	communicationif "certification_server/src/iface/communication"
 	iface "certification_server/src/iface/orchestration"
+	orchestrationif "certification_server/src/iface/orchestration"
 	authmodel "certification_server/src/models/auth"
 	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"
@@ -218,8 +218,8 @@ func (s *AuthRequestOrchestratorService) HandleBootstrapAuthenticate(
 }
 
 func (s *AuthRequestOrchestratorService) HandleUserPasswordAuth(
-	ctx context.Context, req *communicationif.UserPasswordAuthRequest,
-) (*communicationif.UserPasswordAuthResult, error) {
+	ctx context.Context, req *orchestrationif.UserPasswordAuthRequest,
+) (*orchestrationif.UserPasswordAuthResult, error) {
 	if req == nil {
 		return nil, &modelsystem.ErrUserPasswordAuthRequestNil
 	}
@@ -263,7 +263,7 @@ func (s *AuthRequestOrchestratorService) HandleTokenRevoke(
 }
 
 func (s *AuthRequestOrchestratorService) HandleDownstreamGrant(
-	ctx context.Context, req *communicationif.DownstreamGrantRequest,
+	ctx context.Context, req *orchestrationif.DownstreamGrantRequest,
 ) (*authmodel.DownstreamAccessGrant, error) {
 	if req == nil {
 		return nil, &modelsystem.ErrDownstreamGrantRequestNil

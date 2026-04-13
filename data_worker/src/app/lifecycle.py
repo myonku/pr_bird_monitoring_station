@@ -96,7 +96,9 @@ async def run_data_worker() -> None:
             config=config,
             default_entity_id="data_worker",
         )
-        logger.info("stage=dependencies_initialized service=%s", runtime_cfg.service_name)
+        logger.info(
+            "stage=dependencies_initialized service=%s", runtime_cfg.service_name
+        )
 
         if runtime_cfg.run_mode == "no_auth":
             logger.info(
@@ -137,7 +139,9 @@ async def run_data_worker() -> None:
         )
 
         worker_server = grpc.aio.server()
-        bound_port = worker_server.add_insecure_port(build_worker_listen_addr(runtime_cfg))
+        bound_port = worker_server.add_insecure_port(
+            build_worker_listen_addr(runtime_cfg)
+        )
         if bound_port <= 0:
             raise RuntimeError("data_worker grpc listener bind failed")
         await worker_server.start()
@@ -214,6 +218,8 @@ async def ensure_worker_bootstrap_ready(
     local_credential_manager: ILocalCredentialManager | None,
 ) -> None:
     logger = logging.getLogger("data_worker.startup")
+    if local_credential_manager is None:
+        raise RuntimeError("local credential manager dependencies are required")
     startup_orchestrator = BootstrapStartupOrchestratorService(
         traffic_station=traffic_station,
         local_credential_manager=local_credential_manager,

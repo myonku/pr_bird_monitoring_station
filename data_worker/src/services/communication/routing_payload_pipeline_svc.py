@@ -5,6 +5,8 @@ from src.iface.communication.routing_contract import (
     FlowCategory,
     FlowRouteInput,
     RouteProfile,
+    SecurityPolicy,
+    TargetServiceType,
 )
 from src.iface.communication.routing_payload_pipeline import (
     BuildOutboundPayloadRequest,
@@ -15,6 +17,8 @@ from src.models.common.instance import ServiceInstance
 
 
 DEFAULT_AUTH_AUTHORITY_SERVICE = "certification_server"
+
+
 BOOTSTRAP_CHALLENGE_ROUTE_KEY = "auth.bootstrap.challenge"
 BOOTSTRAP_AUTH_ROUTE_KEY = "auth.bootstrap.authenticate"
 REMOTE_AUTH_VERIFY_ROUTE_KEY = "auth.remote.verify.token"
@@ -23,6 +27,8 @@ EXTERNAL_AUTH_FORWARD_ROUTE_KEY = "auth.external.forward.user_password"
 BUSINESS_FORWARD_ROUTE_KEY = "business.forward.generic"
 TARGET_REVERIFY_ROUTE_KEY = "auth.target.reverify.forwarded_context"
 TRUSTED_INTERNAL_CALL_METADATA_KEY = "trusted_internal_call"
+
+
 BOOTSTRAP_INIT_PATH = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
 BOOTSTRAP_AUTH_PATH = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBootstrap"
 
@@ -102,9 +108,6 @@ class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
             if not profile.target_endpoint.strip():
                 raise RuntimeError("route target endpoint is unresolved")
 
-        if req.ensure_channel is not None and profile.security_policy == "required":
-            req.additional_data["commsec_required"] = "true"
-
         return OutboundPayloadPlan(
             route_profile=profile,
             target=target,
@@ -153,14 +156,14 @@ class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
 
         return ""
 
-    def _resolve_target_service_type(self, target_service_name: str) -> str:
+    def _resolve_target_service_type(self, target_service_name: str) -> TargetServiceType:
         if not target_service_name.strip():
             return "unknown"
         if target_service_name.strip().lower() == self._auth_authority_service.lower():
             return "auth_authority"
         return "internal_service"
 
-    def _resolve_security_policy(self, category: FlowCategory) -> str:
+    def _resolve_security_policy(self, category: FlowCategory) -> SecurityPolicy:
         if self._run_mode == "no_auth":
             return "disabled"
 

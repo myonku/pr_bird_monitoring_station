@@ -3,30 +3,16 @@ package commsec
 import (
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
-type CommKeyStatus string        // 通信密钥状态
-type KeyExchangeAlgorithm string // 密钥交换算法
-type SignatureAlgorithm string   // 签名算法
-type CipherSuite string          // 密码套件
-type HandshakeStatus string      // 握手状态
-type SecureChannelStatus string  // 安全通道状态
-type ChannelBindingType string   // 通道绑定类型
-type ChannelClass string         // 逻辑通道类型（认证/业务）
-type ChannelSecurityMode string  // 通道安全策略
+type CommKeyStatus string      // 通信密钥状态
+type SignatureAlgorithm string // 签名算法
+type CipherSuite string        // 密码套件
 
 const (
 	CommKeyActive  CommKeyStatus = "active"
 	CommKeyExpired CommKeyStatus = "expired"
 	CommKeyRevoked CommKeyStatus = "revoked"
-)
-
-const (
-	KeyExchangeECDHEP256   KeyExchangeAlgorithm = "ecdhe_p256"
-	KeyExchangeECDHEP384   KeyExchangeAlgorithm = "ecdhe_p384"
-	KeyExchangeECDHEX25519 KeyExchangeAlgorithm = "ecdhe_x25519"
 )
 
 const (
@@ -39,35 +25,6 @@ const (
 	CipherSuiteAES128GCM        CipherSuite = "aes_128_gcm"
 	CipherSuiteAES256GCM        CipherSuite = "aes_256_gcm"
 	CipherSuiteChaCha20Poly1305 CipherSuite = "chacha20_poly1305"
-)
-
-const (
-	HandshakePending     HandshakeStatus = "pending"
-	HandshakeEstablished HandshakeStatus = "established"
-	HandshakeFailed      HandshakeStatus = "failed"
-	HandshakeExpired     HandshakeStatus = "expired"
-)
-
-const (
-	SecureChannelActive  SecureChannelStatus = "active"
-	SecureChannelExpired SecureChannelStatus = "expired"
-	SecureChannelRevoked SecureChannelStatus = "revoked"
-)
-
-const (
-	ChannelBindingToken   ChannelBindingType = "token"
-	ChannelBindingSession ChannelBindingType = "session"
-)
-
-const (
-	ChannelClassAuth     ChannelClass = "auth"
-	ChannelClassBusiness ChannelClass = "business"
-)
-
-const (
-	ChannelSecurityRequired ChannelSecurityMode = "required"
-	ChannelSecurityOptional ChannelSecurityMode = "optional"
-	ChannelSecurityDisabled ChannelSecurityMode = "disabled"
 )
 
 // ServiceKeyOwner 标识通信密钥属于哪一个实体或实例。
@@ -136,88 +93,6 @@ type PublicKeyLookupResult struct {
 
 	FailureReason string
 	CheckedAt     time.Time
-}
-
-// ECDHEHandshakeRecord 表示一次基于服务公钥认证的 ECDHE 握手过程。
-type ECDHEHandshakeRecord struct {
-	ID uuid.UUID
-
-	ChannelClass ChannelClass
-	SecurityMode ChannelSecurityMode
-
-	Initiator ServiceKeyOwner
-	Responder ServiceKeyOwner
-
-	InitiatorKeyID string
-	ResponderKeyID string
-
-	KeyExchangeAlgorithm KeyExchangeAlgorithm
-	SignatureAlgorithm   SignatureAlgorithm
-	CipherSuite          CipherSuite
-
-	InitiatorEphemeralPublicKey string
-	ResponderEphemeralPublicKey string
-
-	InitiatorNonce string
-	ResponderNonce string
-
-	InitiatorSignature string
-	ResponderSignature string
-
-	Status        HandshakeStatus
-	FailureReason string
-
-	StartedAt   time.Time
-	CompletedAt time.Time
-	ExpiresAt   time.Time
-}
-
-// SecureChannelBinding 表示应用层加密通道挂靠在哪个本地认证对象上。
-type SecureChannelBinding struct {
-	BindingType   ChannelBindingType
-	SessionID     uuid.UUID
-	TokenID       uuid.UUID
-	TokenFamilyID uuid.UUID
-}
-
-// SecureChannelSession 表示握手完成后在本地缓存中的对称密钥状态。
-// DerivedKeyRef 指向本地缓存或内存槽位，不建议直接持久化原始对称密钥。
-type SecureChannelSession struct {
-	ID uuid.UUID
-
-	ChannelClass ChannelClass
-	SecurityMode ChannelSecurityMode
-
-	HandshakeID uuid.UUID
-	Binding     SecureChannelBinding
-
-	Source ServiceKeyOwner
-	Target ServiceKeyOwner
-
-	LocalKeyID string
-	PeerKeyID  string
-
-	CipherSuite CipherSuite
-	Status      SecureChannelStatus
-
-	DerivedKeyRef string
-	Sequence      uint64
-	EstablishedAt time.Time
-	LastUsedAt    time.Time
-	ExpiresAt     time.Time
-	RevokedAt     time.Time
-}
-
-// EncryptedMessageMeta 是后续写入 gRPC metadata 的应用层加密元数据。
-type EncryptedMessageMeta struct {
-	ChannelID      uuid.UUID
-	HandshakeID    uuid.UUID
-	KeyID          string
-	CipherSuite    CipherSuite
-	Sequence       uint64
-	Nonce          string
-	AdditionalData map[string]string
-	IssuedAt       time.Time
 }
 
 // PublicKeyLookupRequest 表示统一的公钥目录查询请求。

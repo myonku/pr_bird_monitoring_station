@@ -79,15 +79,10 @@ func (s *TrafficStationService) SendOutbound(
 		return nil, err
 	}
 
-	payload := plan.PlainPayload
-	if plan.Encrypted != nil {
-		payload = plan.Encrypted.CipherText
-	}
-
 	dispatch := &communicationif.TrafficDispatchResult{
 		Profile:        plan.RouteProfile,
 		TargetEndpoint: plan.RouteProfile.TargetEndpoint,
-		Payload:        payload,
+		Payload:        plan.PlainPayload,
 		Metadata: map[string]string{
 			"flow_category":   string(plan.RouteProfile.FlowCategory),
 			"security_policy": string(plan.RouteProfile.SecurityPolicy),

@@ -1,8 +1,8 @@
-# 后端服务层级结构重构草案（V0 修订）
+# 后端服务层级结构重构草案（V1 收敛）
 
-版本：0.7.0
+版本：0.8.0
 状态：Draft
-日期：2026-04-09
+日期：2026-04-13
 
 ---
 
@@ -12,7 +12,7 @@
 
 - 统一所有服务模块的流量站点入口。
 - 将流量分路下沉到通信层下层处理。
-- 强化加密通道管理模块的独立性。
+- 抽离通道安全设计，收敛路由分路与载荷处理边界。
 - 修正 AuthControl 与凭证管理模块语义边界。
 - 明确网关认证转发与业务转发的双端校验流程。
 - 明确底层数据管理模块分类，便于上层调用关系梳理与后续重构拆分。
@@ -39,13 +39,13 @@
 
 ## 2. 需求整理（修正版）
 
-结合你的补充说明，整理为以下七条硬约束与三条实施原则。
+结合当前主线，整理为以下七条硬约束与三条实施原则。
 
 ### 2.1 硬约束
 
 1. 统一流量站点
 
-- 每个后端模块必须对“所有入站/出站流量”提供统一站点能力。
+- 每个后端模块必须对所有入站/出站流量提供统一站点能力。
 - 远程认证调用、认证请求转发、普通业务转发都走同一流量站点。
 - 载荷是否加密不影响站点入口语义。
 
@@ -55,9 +55,9 @@
 - gateway 在此处获取目标服务类型（例如认证中心/普通服务）。
 - 不再在顶层通信抽象上按 auth/business 进行通道切分。
 
-3. 加密通道管理独立化
+3. 载荷处理独立化
 
-- 加密通道管理模块只负责通道生命周期与载荷处理（加解密）。
+- 载荷处理模块只负责载荷准备、转换与投递，不承担连接生命周期或额外安全准备编排。
 - 不承担路由分类、认证策略决策、业务编排。
 
 4. 认证控制语义修正
@@ -65,7 +65,7 @@
 - AuthControl 不再承担凭证状态管理。
 - Gateway 的 AuthControl 是全局统一认证校验与限流控制点，负责远程认证调用（到认证中心）并基于结果执行限流。
 - 认证中心外其他服务模块（例如 data_worker、普通服务）的 AuthControl 仅做本地资源级限流，不做远程认证调用。
-- AuthControl 不调用 bootstrap，不调用 commsec。
+- AuthControl 不调用 bootstrap，不承担载荷处理或通道管理职责。
 
 5. 凭证状态管理独立化
 
@@ -77,10 +77,10 @@
 
 6. 网关认证转发与业务转发补全
 
-- 网关需要具备“外部 bootstrap/密钥校验请求转发到认证中心”的初始认证转发能力。
-- 网关向内部服务转发业务流量时，必须先向认证中心申请授权并完成加密，再执行转发。
+- 网关需要具备外部 bootstrap/密钥校验请求转发到认证中心的初始认证转发能力。
+- 网关向内部服务转发业务流量时，必须先向认证中心申请授权，再执行转发。
 - 目标服务必须执行二次校验（双端校验）。
-- 目标服务到认证中心的二次校验通信是独立能力，不等同于网关远程认证调用，且必须加密。
+- 目标服务到认证中心的二次校验通信是独立能力，不等同于网关远程认证调用。
 - 目标服务的二次校验发生在本模块 AuthControl 之后，并使用网关下发授权向认证中心确认。
 
 7. 协议与通信角色显式固定
@@ -101,12 +101,12 @@
 
 2. 上层决策优先
 
-- 认证恢复、通道建立、重试策略、降级策略由上层统一决策。
+- 认证恢复、重试策略、降级策略由上层统一决策。
 - 能力模块只提供单一能力，不隐式触发其他能力链。
 
 3. no-auth 测试模式硬约束
 
-- no-auth 模式禁用全部认证系统与通道加密能力，仅保留基础业务能力用于测试。
+- no-auth 模式禁用全部认证系统与额外安全准备，仅保留基础业务能力用于测试。
 - no-auth 模式下认证中心默认被屏蔽（或不启动）。
 
 ---
@@ -128,12 +128,12 @@ L2 统一流量站点层（Traffic Station）
 L3 通信下层（Routing + Payload Pipeline）
 
 - 基于路由映射计算目标服务类型与流量分类。
-- 依据策略决定是否执行载荷加解密步骤。
-- 调用独立的通道管理能力，不实现通道状态本体。
+- 依据策略决定是否执行载荷处理步骤。
+- 调用独立的载荷处理能力，不实现通道状态本体。
 
 L4 流程编排层（Usecase / Orchestration）
 
-- 决定何时调用认证控制、何时触发 bootstrap、何时调用通道管理。
+- 决定何时调用认证控制、何时触发 bootstrap、何时调用载荷处理。
 - 承担重试、失败恢复、模式分支（auth/no-auth）。
 
 L5 能力模块层（Capability Modules）
@@ -141,7 +141,7 @@ L5 能力模块层（Capability Modules）
 - AuthControl（含 RateLimit）：认证结果消费与限流决策。
 - Bootstrap：凭证初始化/恢复流程。
 - LocalCredentialManager：非认证中心模块的凭证缓存与状态管理（Redis 为主）。
-- CommsecChannelManager：通道管理与载荷处理。
+- PayloadPipeline：载荷组装、头部整理与投递适配。
 - RouteMapping：路由规则与目标选择。
 - DataManagers：Registry/Session/Token/Key/ServiceResolver/PolicySnapshot/LocalCredential 等面向数据状态的管理模块。
 
@@ -194,7 +194,7 @@ L6 基础设施层（Repo / SDK / Runtime）
 
 - 基于 route_key / method / path / metadata 做流量分类。
 - 输出目标服务类型、目标端点、策略标签。
-- 根据策略调用通道管理能力执行加解密步骤。
+- 根据策略调用载荷处理能力完成载荷准备与投递。
 
 非职责：
 
@@ -209,18 +209,18 @@ L6 基础设施层（Repo / SDK / Runtime）
 - business_forward（网关转发业务流量）
 - target_reverify_call（目标服务向认证中心发起二次认证校验）
 
-### 4.3 CommsecChannelManager（独立模块）
+### 4.3 PayloadPipeline（独立模块）
 
 职责：
 
-- 通道创建、复用、续期、撤销。
-- 提供统一 Encrypt/Decrypt 能力。
+- 载荷准备、头部整理、序列化与投递适配。
+- 提供统一的请求/响应载荷整形能力。
 
 非职责：
 
 - 不做路由解析。
 - 不做认证限流决策。
-- 不决定业务是否重试。
+- 不承担通道状态管理。
 
 ### 4.4 Bootstrap + LocalCredentialManager（非认证中心模块）
 
@@ -244,7 +244,7 @@ LocalCredentialManager 职责：
 非职责（两者共同）：
 
 - 不做限流决策。
-- 不做通道加解密。
+- 不做额外安全准备。
 - 不管理认证中心全局会话/令牌（该职责属于 SessionManager/TokenManager）。
 
 ### 4.5 AuthControl（收敛 RateLimit）
@@ -258,7 +258,6 @@ LocalCredentialManager 职责：
 非职责：
 
 - 不调用 bootstrap。
-- 不调用 commsec。
 - 不承担凭证状态管理。
 - 不承担路由分流。
 - 不承担业务流量转发后的远程复核（由 TargetReverify 承担）。
@@ -277,7 +276,6 @@ LocalCredentialManager 职责：
 
 - 仅针对“网关转发业务流量”执行目标服务到认证中心的远程复核。
 - 使用网关下发授权向认证中心确认授权有效性与主体一致性。
-- 强制加密通信。
 
 时序约束：
 
@@ -290,7 +288,7 @@ LocalCredentialManager 职责：
 
 ### 4.7 底层数据管理模块（新增方向）
 
-本节用于固定“面向特定数据状态”的底层模块分类，这些模块作为下层能力存在，供上层统一编排调用。
+本节用于固定面向特定数据状态的底层模块分类，这些模块作为下层能力存在，供上层统一编排调用。
 
 1. ServiceRegistryManager（服务注册/发现）
 
@@ -314,7 +312,7 @@ LocalCredentialManager 职责：
 4. KeyManager（密钥管理）
 
 - 职责：本地密钥引用管理、公钥目录查询、激活密钥切换。
-- 边界：不负责握手编排策略与业务限流策略。
+- 边界：不负责连接编排策略与业务限流策略。
 
 5. ServiceResolver（服务类型/实例解析）
 
@@ -328,12 +326,7 @@ LocalCredentialManager 职责：
 - 边界：不负责远程认证调用，不负责限流。
 - 服务归属：gateway、data_worker、普通服务。
 
-7. 补充方向：GrantStateManager（建议）
-
-- 职责：下游授权票据短期缓存、过期清理与状态追踪。
-- 价值：降低重复授权申请成本，增强业务转发链路可观测性。
-
-8. PolicySnapshotManager（网关专属）
+7. PolicySnapshotManager（网关专属）
 
 - 职责：路由映射、运行模式、策略版本等配置快照管理。
 - 价值：稳定上层编排输入，降低运行期策略漂移风险。
@@ -371,14 +364,14 @@ LocalCredentialManager 职责：
 ### 5.1.4 网关初始认证转发能力（补充）
 
 - 网关必须支持将外部模块发起的 bootstrap/密钥校验请求转发到认证中心。
-- 网关仅做转发与安全封装，不本地执行认证中心权威逻辑。
+- 网关仅做转发与上下文封装，不本地执行认证中心权威逻辑。
 - 认证中心本地持有并执行 bootstrap 与密钥校验能力。
 
 ### 5.1.5 网关业务流量双端校验（补充）
 
 1. 网关收到外部业务请求并完成路由分类。
 2. 网关向认证中心申请下游授权（grant 或等价授权票据）。
-3. 网关在通道可用前提下执行载荷加密并转发至目标服务。
+3. 网关转发业务流量到目标服务。
 4. 目标服务先执行本模块 AuthControl（本地执行、无远程认证）。
 5. 目标服务随后通过 TargetReverify 能力携带网关下发授权向认证中心发起二次校验通信。
 6. 目标服务基于二次校验结果执行放行/拒绝，并进入业务处理。
@@ -387,7 +380,7 @@ LocalCredentialManager 职责：
 
 ### 5.2.1 模块定位
 
-- 认证与通道协商权威中心。
+- 认证与全局凭证状态权威中心。
 - 主要处理入站请求，不承担网关式转发。
 
 ### 5.2.2 目标层级
@@ -396,16 +389,16 @@ LocalCredentialManager 职责：
 2. Traffic Station（统一站点）
 3. Routing + Payload Pipeline（通信下层）
 4. Auth Request Orchestrator
-5. Capability Modules（AuthControl / Bootstrap / Commsec）
+5. Capability Modules（AuthControl / Bootstrap）
 6. Data Managers（Registry/Session/Token/Key）
 7. Repo/Storage
 
 ### 5.2.3 关键行为
 
-- 认证请求与通道请求统一进入 Traffic Station，再由通信下层分类。
+- 认证请求统一进入 Traffic Station，再由通信下层分类。
 - AuthControl 不承担远程认证调用，仅执行本地限流与认证结果消费。
-- Commsec 模块仅负责通道与载荷，不参与认证策略判断。
-- certification_server 启动时同样加载本地单活密钥对，用于 commsec 通道握手与加密；该密钥对不通过 bootstrap 生成。
+- Bootstrap 负责签发链路；SessionManager 与 TokenManager 负责状态管理。
+- certification_server 启动时加载本地单活密钥对，用于本模块自身认证与签名相关场景；该密钥对不通过 bootstrap 生成。
 - 协议固定：认证中心对内统一暴露 gRPC server 作为权威入口。
 
 ## 5.3 data_worker
@@ -421,7 +414,7 @@ LocalCredentialManager 职责：
 2. Traffic Station（统一站点）
 3. Routing + Payload Pipeline（通信下层）
 4. Worker Orchestrator
-5. Capability Modules（AuthControl / Bootstrap / Commsec）
+5. Capability Modules（AuthControl / Bootstrap）
 6. Data Managers（Registry/Key/LocalCredential）
 7. Repo/Queue
 8. Outbound Adapter（gRPC Client）
@@ -432,7 +425,7 @@ LocalCredentialManager 职责：
 - AuthControl 仅做本地资源级限流，不做远程认证调用。
 - 凭证由 LocalCredentialManager 维护，bootstrap 成功后写入 Redis。
 - data_worker 默认不持有 ServiceResolver 与 PolicySnapshotManager。
-- no-auth 下由编排层统一短路认证与通道要求。
+- no-auth 下由编排层统一短路认证要求。
 - 协议固定：内部入站由 gRPC server 承接，内部出站统一由 gRPC client 发起。
 
 ## 5.4 普通服务模板（api_service 可复用）
@@ -446,44 +439,43 @@ LocalCredentialManager 职责：
 
 ## 6. 系统通信类型总览（五类）
 
-## 6.1 类型一：后端模块对认证中心的 bootstrap 请求（握手前）
+## 6.1 类型一：后端模块对认证中心的 bootstrap 请求
 
 1. 认证中心外后端模块（gateway、data_worker、普通服务）发起 bootstrap。
-2. 该流程位于握手之前，先完成凭证获取。
+2. 该流程先完成凭证获取。
 3. bootstrap 成功后写入 Redis，由 LocalCredentialManager 接管。
 4. 后端模块之外的外部 bootstrap/密码认证不纳入本类型，归入类型三。
 5. 协议：发起方使用 gRPC client 调用认证中心 gRPC server。
 
-## 6.2 类型二：网关向认证中心发起远程认证校验（加密）
+## 6.2 类型二：网关向认证中心发起远程认证校验
 
 1. 网关在转发或鉴权前触发远程认证校验。
 2. 通信下层分类为 remote_auth_verify。
-3. 必须经过加密通道（required 安全策略）。
-4. AuthControl 消费远程认证结果并执行限流决策。
-5. 协议：网关以 gRPC client 调用认证中心 gRPC server。
+3. AuthControl 消费远程认证结果并执行限流决策。
+4. 协议：网关以 gRPC client 调用认证中心 gRPC server。
 
-## 6.3 类型三：网关转发外部 bootstrap/密码认证到认证中心（加密）
+## 6.3 类型三：网关转发外部 bootstrap/密码认证到认证中心
 
 1. 网关接收外部模块的 bootstrap 或密码认证请求。
 2. 通信下层分类为 external_auth_forward。
-3. 网关通过加密通道将请求转发到认证中心。
+3. 网关将请求转发到认证中心。
 4. 认证中心在本地执行 bootstrap/密钥校验/密码认证权威能力并返回结果。
 5. 协议：外部到网关为 HTTP；网关到认证中心为 gRPC。
 
-## 6.4 类型四：网关向认证中心外模块转发业务流量（授权 + 加密）
+## 6.4 类型四：网关向认证中心外模块转发业务流量
 
 1. 网关接收外部业务请求并路由分类为 business_forward。
 2. 网关先向认证中心申请下游授权。
-3. 网关确保安全通道并执行加密后转发业务流量。
+3. 网关转发业务流量到目标服务。
 4. 目标服务接收流量后触发类型五通信完成二次认证校验。
 5. 协议：外部到网关为 HTTP；网关到目标服务为 gRPC。
 
-## 6.5 类型五：目标服务向认证中心发起二次认证校验（加密，独立能力）
+## 6.5 类型五：目标服务向认证中心发起二次认证校验
 
 1. 目标服务在收到网关业务流量后，独立发起 target_reverify_call。
 2. 该能力不经网关 AuthControl，不属于网关远程认证调用范畴。
 3. 该调用发生在目标服务本模块 AuthControl 之后。
-4. 调用请求需携带网关下发授权并通过加密通道（required 安全策略）请求认证中心校验。
+4. 调用请求携带网关下发授权向认证中心校验。
 5. 认证结果返回后，目标服务执行放行/拒绝决策。
 6. 协议：目标服务以 gRPC client 调用认证中心 gRPC server。
 
@@ -495,12 +487,11 @@ LocalCredentialManager 职责：
 
 1. Inbound：网关接收外部请求并标准化上下文。
 2. AuthZ：网关向认证中心申请下游授权（grant）。
-3. Secure：网关建立/复用通道并加密业务载荷。
-4. Forward：网关转发到目标后端模块。
-5. Local-Control：目标模块先执行本模块 AuthControl（本地资源级控制）。
-6. Re-Verify：目标模块通过 TargetReverify 能力携带网关下发授权向认证中心执行二次认证校验（强制加密）。
-7. Decision：目标模块基于复核结果放行或拒绝业务处理。
-8. Respond：目标模块返回结果，网关回传响应。
+3. Forward：网关转发到目标后端模块。
+4. Local-Control：目标模块先执行本模块 AuthControl（本地资源级控制）。
+5. Re-Verify：目标模块通过 TargetReverify 能力携带网关下发授权向认证中心执行二次认证校验。
+6. Decision：目标模块基于复核结果放行或拒绝业务处理。
+7. Respond：目标模块返回结果，网关回传响应。
 
 ---
 
@@ -511,22 +502,21 @@ LocalCredentialManager 职责：
 - 编排层 -> AuthControl
 - 编排层 -> Bootstrap
 - 编排层 -> LocalCredentialManager
-- 编排层 -> CommsecChannelManager
+- 编排层 -> PayloadPipeline
 - Bootstrap -> LocalCredentialManager（写入 bootstrap 结果）
 - Gateway AuthControl -> 远程认证客户端
 - 编排层 -> TargetReverify
 - TargetReverify -> 认证中心校验客户端（独立于网关 AuthControl）
-- 通信下层 -> CommsecChannelManager（仅为载荷处理与通道调用）
+- 通信下层 -> PayloadPipeline（仅为载荷处理与投递适配）
 - gateway HTTP server -> gateway gRPC client（协议桥接）
 
 禁止：
 
 - AuthControl -> Bootstrap
-- AuthControl -> CommsecChannelManager
+- AuthControl -> PayloadPipeline
 - AuthControl -> LocalCredentialManager（凭证状态管理逻辑禁止下沉到 AuthControl）
 - AuthControl -> TargetReverify（禁止由 AuthControl 直接触发远程复核）
 - Bootstrap -> AuthControl
-- CommsecChannelManager -> AuthControl
 - 非 Gateway AuthControl -> 远程认证调用
 - 能力模块之间绕过编排层直接互调业务策略
 - 内部模块间以 HTTP 直接互调业务接口
@@ -550,8 +540,8 @@ RouteProfile 最小字段建议：
 
 - target_service_type
 - target_endpoint
+- target_service_name
 - flow_category（bootstrap_call / remote_auth_verify / external_auth_forward / business_forward / target_reverify_call）
-- security_policy（required / optional / disabled）
 
 ### 9.3 AuthControl（按模块分语义）
 
@@ -580,7 +570,7 @@ Gateway AuthControl：
 约束：
 
 - SaveBootstrapCredential 返回成功才允许上层将 bootstrap 判定为成功。
-- 失败必须返回可决策错误（供上层重试/降级/拒绝）。
+- 失败必须返回可决策错误（供上层重试、降级或拒绝）。
 
 ### 9.6 TargetReverify
 
@@ -590,13 +580,18 @@ Gateway AuthControl：
 
 - 输入必须包含网关下发授权。
 - 调用必须发生在目标服务本模块 AuthControl 之后。
-- 通信策略必须为 required 加密。
 
-### 9.7 CommsecChannelManager
+### 9.7 PayloadPipeline
 
-- EnsureChannel(ctx, target)
-- EncryptPayload(ctx, payload)
-- DecryptPayload(ctx, payload)
+- PreparePayload(ctx, flow, routeProfile) -> PayloadContext
+- AttachHeaders(ctx, payloadContext) -> PayloadContext
+- FinalizeOutbound(ctx, payloadContext) -> PayloadContext
+
+约束：
+
+- 不做路由决策。
+- 不做认证决策。
+- 不承担凭证或会话状态管理。
 
 ### 9.8 ServiceRegistryManager
 
@@ -651,7 +646,7 @@ Gateway AuthControl：
 
 阶段 1：先做语义收敛（不改运行链）
 
-- 将 AuthControl 中“凭证状态管理”语义迁出。
+- 将 AuthControl 中凭证状态管理语义迁出。
 - 新增 LocalCredentialManager 接口与 Redis 缓存模型（非认证中心模块）。
 - 认证中心保持 SessionManager + TokenManager 的全局凭证管理边界。
 
@@ -674,7 +669,6 @@ Gateway AuthControl：
 阶段 5：增加目标服务独立回源认证能力
 
 - 新增 target_reverify_call 分类与独立接口。
-- 确保该通信加密且不经网关 AuthControl。
 - 固定执行时序为“本模块 AuthControl -> TargetReverify”。
 
 阶段 6：统一通信分类与可观测指标
@@ -684,7 +678,7 @@ Gateway AuthControl：
 
 阶段 7：固化 no-auth 运行策略
 
-- 禁用全部认证系统与通道加密。
+- 禁用全部认证系统与额外安全准备。
 - 认证中心默认屏蔽（或不启动），仅保留基础业务链路用于测试。
 
 阶段 8：底层数据管理模块独立化
@@ -699,12 +693,12 @@ Gateway AuthControl：
 
 ## 11. 已确认决策（冻结）
 
-1. 网关外服务模块不进行远程认证调用；网关承担全局统一认证校验和限流点。
+1. 非 Gateway 模块不进行远程认证调用；Gateway AuthControl 承担全局统一认证校验和限流点。
 2. bootstrap 凭证写入 Redis 必须成功；失败则上抛并通知上层决策。
-3. external_auth_forward 强制加密。
+3. external_auth_forward 直接转发外部 bootstrap/密码认证到认证中心。
 4. business_forward 必须执行目标服务二次校验：网关申请下发授权后转发，目标服务携带授权向认证中心确认。
-5. target_reverify_call 强制加密，且独立于网关 AuthControl 与本模块 AuthControl；执行时序在本模块 AuthControl 之后。
-6. no-auth 模式禁用全部认证系统与通道加密，仅保留基础业务能力用于测试；认证中心默认被屏蔽（或不启动）。
+5. target_reverify_call 是目标服务独立复核能力，且独立于网关 AuthControl 与本模块 AuthControl；执行时序在本模块 AuthControl 之后。
+6. no-auth 模式禁用全部认证系统与额外安全准备，仅保留基础业务能力用于测试；认证中心默认被屏蔽（或不启动）。
 7. RateLimit 能力收敛到 AuthControl，不再保留独立 ratelimit 能力接口层。
 8. 协议角色冻结：gateway 外部 HTTP 入站 + 内部 gRPC 出站；certification_server 持有 gRPC server；普通内部模块同时持有 gRPC server/client；内部模块间不使用 HTTP。
 
@@ -714,4 +708,4 @@ Gateway AuthControl：
 2. 本文档定义的是目标边界与分层方向，后续会继续执行更深层清理。
 3. 后续清理原则：优先自顶向下收敛调用关系，不触碰已稳定的模型定义与 repo 直连基础实现。
 
-下一步可直接进入：按模块输出“目录与接口落地清单（可直接开工）”。
+下一步可直接进入：按模块输出目录与接口落地清单（可直接开工）。

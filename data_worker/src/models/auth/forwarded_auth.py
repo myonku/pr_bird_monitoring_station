@@ -12,7 +12,6 @@ class ForwardedAuthContext(Struct, kw_only=True):
 
     source_service: str = ""
     target_service: str = ""
-    binding_type: str = ""
 
     gateway_id: str = ""
     verify_mode: str = ""

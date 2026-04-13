@@ -39,6 +39,7 @@ enum TokenType {
   TOKEN_TYPE_ACCESS = 1;
   TOKEN_TYPE_REFRESH = 2;
   TOKEN_TYPE_DOWNSTREAM = 3;
+  TOKEN_TYPE_SERVICE = 4;
 }
 
 message RuntimeIdentity {

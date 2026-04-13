@@ -5,7 +5,6 @@ import (
 	"time"
 
 	authmodel "gateway/src/models/auth"
-	commsecmodel "gateway/src/models/commsec"
 )
 
 // DownstreamGrantRequest 定义网关申请下游授权请求。
@@ -13,10 +12,7 @@ type DownstreamGrantRequest struct {
 	Identity authmodel.IdentityContext
 
 	TargetService string
-	BindingType   commsecmodel.ChannelBindingType
-
-	RequireEncryption bool
-	TTLSec            int64
+	TTLSec        int64
 }
 
 // UserPasswordAuthRequest 定义用户名密码认证请求。

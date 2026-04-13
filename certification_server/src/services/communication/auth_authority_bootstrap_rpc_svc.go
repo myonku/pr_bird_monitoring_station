@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	authv1 "certification_server/src/gen/auth/v1"
 	communicationif "certification_server/src/iface/communication"
 	orchestrationif "certification_server/src/iface/orchestration"
 	authmodel "certification_server/src/models/auth"
@@ -16,26 +17,18 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
-	bootstrapServiceName            = "bms.auth.v1.AuthAuthorityBootstrapService"
-	bootstrapInitMethodName         = "InitBootstrapChallenge"
-	bootstrapAuthenticateMethodName = "AuthenticateBootstrap"
-	bootstrapChallengeRouteKey      = "auth.bootstrap.challenge"
-	bootstrapAuthenticateRouteKey   = "auth.bootstrap.authenticate"
-	bootstrapStageReady             = "BOOTSTRAP_STAGE_READY"
+	bootstrapServiceName          = "bms.auth.v1.AuthAuthorityBootstrapService"
+	bootstrapChallengeRouteKey    = "auth.bootstrap.challenge"
+	bootstrapAuthenticateRouteKey = "auth.bootstrap.authenticate"
 )
 
-type authAuthorityBootstrapRPCServer interface {
-	InitBootstrapChallenge(context.Context, *structpb.Struct) (*structpb.Struct, error)
-	AuthenticateBootstrap(context.Context, *structpb.Struct) (*structpb.Struct, error)
-}
-
-// AuthAuthorityBootstrapRPCService 提供 bootstrap 最小真实调用能力。
-// 该实现采用 structpb 作为跨模块的临时传输契约，避免在本阶段引入代码生成。
+// AuthAuthorityBootstrapRPCService 提供 bootstrap 最小真实 proto 调用能力。
 type AuthAuthorityBootstrapRPCService struct {
+	authv1.UnimplementedAuthAuthorityBootstrapServiceServer
+
 	orchestrator   orchestrationif.IAuthRequestOrchestrator
 	trafficStation communicationif.ITrafficStation
 }
@@ -59,12 +52,16 @@ func RegisterAuthAuthorityBootstrapRPC(
 	if server == nil {
 		return
 	}
-	server.RegisterService(&authAuthorityBootstrapServiceDesc, NewAuthAuthorityBootstrapRPCService(orchestrator, trafficStation))
+	authv1.RegisterAuthAuthorityBootstrapServiceServer(
+		server,
+		NewAuthAuthorityBootstrapRPCService(orchestrator, trafficStation),
+	)
 }
 
 func (s *AuthAuthorityBootstrapRPCService) InitBootstrapChallenge(
-	ctx context.Context, req *structpb.Struct,
-) (*structpb.Struct, error) {
+	ctx context.Context,
+	req *authv1.BootstrapChallengeRequest,
+) (*authv1.BootstrapChallengeResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "challenge request payload is required")
 	}
@@ -72,28 +69,33 @@ func (s *AuthAuthorityBootstrapRPCService) InitBootstrapChallenge(
 		return nil, status.Error(codes.Internal, modelsystem.ErrBootstrapRPCDependenciesRequired.Error())
 	}
 
-	payload := req.AsMap()
-	if err := s.ensureInboundAccepted(ctx, payload, bootstrapInitMethodName); err != nil {
+	if err := s.ensureInboundAccepted(
+		ctx,
+		buildBootstrapChallengeRoutingInput(req),
+		buildBootstrapChallengeInboundHeaders(req),
+	); err != nil {
 		return nil, err
 	}
 
-	challenge, err := s.orchestrator.HandleBootstrapChallenge(
-		ctx,
-		mapStructToChallengeRequest(payload),
-	)
+	challengeReq, err := mapProtoChallengeRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	challenge, err := s.orchestrator.HandleBootstrapChallenge(ctx, challengeReq)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "init bootstrap challenge failed: %v", err)
 	}
 	resp, err := buildChallengeResponse(challenge)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "build challenge response failed: %v", err)
+		return nil, err
 	}
 	return resp, nil
 }
 
 func (s *AuthAuthorityBootstrapRPCService) AuthenticateBootstrap(
-	ctx context.Context, req *structpb.Struct,
-) (*structpb.Struct, error) {
+	ctx context.Context,
+	req *authv1.BootstrapAuthenticateRequest,
+) (*authv1.BootstrapAuthenticateResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "bootstrap auth payload is required")
 	}
@@ -101,38 +103,40 @@ func (s *AuthAuthorityBootstrapRPCService) AuthenticateBootstrap(
 		return nil, status.Error(codes.Internal, modelsystem.ErrBootstrapRPCDependenciesRequired.Error())
 	}
 
-	payload := req.AsMap()
-	if err := s.ensureInboundAccepted(ctx, payload, bootstrapAuthenticateMethodName); err != nil {
+	if err := s.ensureInboundAccepted(
+		ctx,
+		buildBootstrapAuthenticateRoutingInput(req),
+		buildBootstrapAuthenticateInboundHeaders(req),
+	); err != nil {
 		return nil, err
 	}
 
-	authReq, err := mapStructToBootstrapAuthRequest(payload)
+	authReq, err := mapProtoBootstrapAuthRequest(req)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid bootstrap auth payload: %v", err)
+		return nil, err
 	}
 
 	result, err := s.orchestrator.HandleBootstrapAuthenticate(ctx, authReq)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "authenticate bootstrap failed: %v", err)
 	}
-
 	resp, err := buildBootstrapAuthResponse(result)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "build bootstrap auth response failed: %v", err)
+		return nil, err
 	}
 	return resp, nil
 }
 
 func (s *AuthAuthorityBootstrapRPCService) ensureInboundAccepted(
 	ctx context.Context,
-	payload map[string]any,
-	methodName string,
+	route *communicationif.RoutingInput,
+	headers map[string]string,
 ) error {
 	decision, err := s.trafficStation.HandleInbound(
 		ctx,
 		&communicationif.InboundTrafficRequest{
-			Route:   buildBootstrapRoutingInput(payload, methodName),
-			Headers: buildBootstrapInboundHeaders(payload),
+			Route:   route,
+			Headers: headers,
 			Payload: "",
 		},
 	)
@@ -152,350 +156,421 @@ func (s *AuthAuthorityBootstrapRPCService) ensureInboundAccepted(
 	return nil
 }
 
-func buildBootstrapRoutingInput(payload map[string]any, methodName string) *communicationif.RoutingInput {
-	routeKey := resolveBootstrapRouteKey(methodName)
-	path := "/" + bootstrapServiceName + "/" + strings.TrimSpace(methodName)
+func buildBootstrapChallengeRoutingInput(req *authv1.BootstrapChallengeRequest) *communicationif.RoutingInput {
 	metadata := map[string]string{
 		"grpc_service": bootstrapServiceName,
-		"grpc_method":  strings.TrimSpace(methodName),
-		"operation":    strings.TrimSpace(methodName),
+		"grpc_method":  "InitBootstrapChallenge",
+		"operation":    "InitBootstrapChallenge",
 	}
-
-	requestID := readString(payload, "request_id")
-	if requestID != "" {
+	if requestID := strings.TrimSpace(req.GetRequestId()); requestID != "" {
 		metadata["request_id"] = requestID
 	}
-	traceID := readString(payload, "trace_id")
-	if traceID != "" {
+	if traceID := strings.TrimSpace(req.GetTraceId()); traceID != "" {
 		metadata["trace_id"] = traceID
 	}
 
 	return &communicationif.RoutingInput{
-		RouteKey:          routeKey,
+		RouteKey:          bootstrapChallengeRouteKey,
 		Transport:         "grpc",
 		Method:            "POST",
-		Path:              path,
-		SourceService:     resolveBootstrapSourceService(payload),
+		Path:              authv1.AuthAuthorityBootstrapService_InitBootstrapChallenge_FullMethodName,
+		SourceService:     resolveChallengeSourceService(req),
 		TargetService:     "certification_server",
 		TargetServiceHint: "certification_server",
 		Metadata:          metadata,
 	}
 }
 
-func buildBootstrapInboundHeaders(payload map[string]any) map[string]string {
+func buildBootstrapAuthenticateRoutingInput(req *authv1.BootstrapAuthenticateRequest) *communicationif.RoutingInput {
+	metadata := map[string]string{
+		"grpc_service": bootstrapServiceName,
+		"grpc_method":  "AuthenticateBootstrap",
+		"operation":    "AuthenticateBootstrap",
+	}
+	if challenge := req.GetChallenge(); challenge != nil {
+		if challengeID := strings.TrimSpace(challenge.GetChallengeId()); challengeID != "" {
+			metadata["challenge_id"] = challengeID
+		}
+	}
+
+	return &communicationif.RoutingInput{
+		RouteKey:          bootstrapAuthenticateRouteKey,
+		Transport:         "grpc",
+		Method:            "POST",
+		Path:              authv1.AuthAuthorityBootstrapService_AuthenticateBootstrap_FullMethodName,
+		SourceService:     resolveAuthenticateSourceService(req),
+		TargetService:     "certification_server",
+		TargetServiceHint: "certification_server",
+		Metadata:          metadata,
+	}
+}
+
+func buildBootstrapChallengeInboundHeaders(req *authv1.BootstrapChallengeRequest) map[string]string {
 	headers := map[string]string{}
 
-	if requestID := readString(payload, "request_id"); requestID != "" {
+	if requestID := strings.TrimSpace(req.GetRequestId()); requestID != "" {
 		headers["x-request-id"] = requestID
 	}
-	if traceID := readString(payload, "trace_id"); traceID != "" {
+	if traceID := strings.TrimSpace(req.GetTraceId()); traceID != "" {
 		headers["x-trace-id"] = traceID
 	}
-	if clientID := readString(payload, "client_id"); clientID != "" {
+	if clientID := strings.TrimSpace(req.GetClientId()); clientID != "" {
 		headers["x-client-id"] = clientID
 	}
-	if gatewayID := readString(payload, "gateway_id"); gatewayID != "" {
+	if gatewayID := strings.TrimSpace(req.GetGatewayId()); gatewayID != "" {
 		headers["x-gateway-id"] = gatewayID
 	}
-	if sourceIP := readString(payload, "source_ip"); sourceIP != "" {
+	if sourceIP := strings.TrimSpace(req.GetSourceIp()); sourceIP != "" {
 		headers["x-source-ip"] = sourceIP
 	}
-	if userAgent := readString(payload, "user_agent"); userAgent != "" {
+	if userAgent := strings.TrimSpace(req.GetUserAgent()); userAgent != "" {
 		headers["x-user-agent"] = userAgent
-	}
-
-	if challenge := readMap(payload, "challenge"); len(challenge) > 0 {
-		if requestID := readString(challenge, "request_id"); requestID != "" {
-			headers["x-request-id"] = requestID
-		}
-		if traceID := readString(challenge, "trace_id"); traceID != "" {
-			headers["x-trace-id"] = traceID
-		}
-		if gatewayID := readString(challenge, "gateway_id"); gatewayID != "" {
-			headers["x-gateway-id"] = gatewayID
-		}
 	}
 
 	return headers
 }
 
-func resolveBootstrapRouteKey(methodName string) string {
-	switch strings.TrimSpace(methodName) {
-	case bootstrapInitMethodName:
-		return bootstrapChallengeRouteKey
-	case bootstrapAuthenticateMethodName:
-		return bootstrapAuthenticateRouteKey
-	default:
-		return bootstrapAuthenticateRouteKey
+func buildBootstrapAuthenticateInboundHeaders(req *authv1.BootstrapAuthenticateRequest) map[string]string {
+	headers := map[string]string{}
+	if challenge := req.GetChallenge(); challenge != nil {
+		if challengeID := strings.TrimSpace(challenge.GetChallengeId()); challengeID != "" {
+			headers["x-bootstrap-challenge-id"] = challengeID
+		}
 	}
+	return headers
 }
 
-func resolveBootstrapSourceService(payload map[string]any) string {
-	if sourceService := readString(payload, "source_service"); sourceService != "" {
-		return sourceService
+func resolveChallengeSourceService(req *authv1.BootstrapChallengeRequest) string {
+	if runtime := req.GetRuntime(); runtime != nil {
+		if source := strings.TrimSpace(runtime.GetEntityName()); source != "" {
+			return source
+		}
+		if source := strings.TrimSpace(runtime.GetInstanceName()); source != "" {
+			return source
+		}
+		if source := strings.TrimSpace(runtime.GetInstanceId()); source != "" {
+			return source
+		}
 	}
-	if entityID := readString(payload, "entity_id"); entityID != "" {
-		return entityID
+	if source := strings.TrimSpace(req.GetEntityId()); source != "" {
+		return source
 	}
-	if challenge := readMap(payload, "challenge"); len(challenge) > 0 {
-		if entityID := readString(challenge, "entity_id"); entityID != "" {
-			return entityID
+	return "unknown_source"
+}
+
+func resolveAuthenticateSourceService(req *authv1.BootstrapAuthenticateRequest) string {
+	if challenge := req.GetChallenge(); challenge != nil {
+		if source := strings.TrimSpace(challenge.GetEntityId()); source != "" {
+			return source
 		}
 	}
 	return "unknown_source"
 }
 
-func mapStructToChallengeRequest(input map[string]any) *authmodel.ChallengeRequest {
-	ttlSec := readInt64(input, "ttl_sec", 60)
+func mapProtoChallengeRequest(req *authv1.BootstrapChallengeRequest) (*authmodel.ChallengeRequest, error) {
+	ttlSec := req.GetTtlSec()
 	if ttlSec <= 0 {
 		ttlSec = 60
 	}
-
-	return &authmodel.ChallengeRequest{
-		EntityType: parseEntityType(readString(input, "entity_type")),
-		EntityID:   readString(input, "entity_id"),
-		KeyID:      readString(input, "key_id"),
-		Audience:   readString(input, "audience"),
-		ClientID:   readString(input, "client_id"),
-		GatewayID:  readString(input, "gateway_id"),
-		SourceIP:   readString(input, "source_ip"),
-		UserAgent:  readString(input, "user_agent"),
-		RequestID:  readString(input, "request_id"),
-		TraceID:    readString(input, "trace_id"),
-		TTLSec:     ttlSec,
-	}
-}
-
-func mapStructToBootstrapAuthRequest(input map[string]any) (*authmodel.BootstrapAuthRequest, error) {
-	challengeMap := readMap(input, "challenge")
-	if len(challengeMap) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "challenge payload is required")
-	}
-
-	challengeID, err := parseUUID(readString(challengeMap, "challenge_id"))
+	entityType, err := mapProtoEntityType(req.GetEntityType())
 	if err != nil {
 		return nil, err
 	}
-	challenge := authmodel.ChallengePayload{
-		ChallengeID: challengeID,
-		Issuer:      readString(challengeMap, "issuer"),
-		Audience:    readString(challengeMap, "audience"),
-		EntityType:  parseEntityType(readString(challengeMap, "entity_type")),
-		EntityID:    readString(challengeMap, "entity_id"),
-		KeyID:       readString(challengeMap, "key_id"),
-		Nonce:       readString(challengeMap, "nonce"),
-		IssuedAt:    parseUnixMillis(readInt64(challengeMap, "issued_at_ms", time.Now().UTC().UnixMilli())),
-		ExpiresAt:   parseUnixMillis(readInt64(challengeMap, "expires_at_ms", time.Now().UTC().Add(60*time.Second).UnixMilli())),
+
+	return &authmodel.ChallengeRequest{
+		EntityType: entityType,
+		EntityID:   strings.TrimSpace(req.GetEntityId()),
+		KeyID:      strings.TrimSpace(req.GetKeyId()),
+		Audience:   strings.TrimSpace(req.GetAudience()),
+		ClientID:   strings.TrimSpace(req.GetClientId()),
+		GatewayID:  strings.TrimSpace(req.GetGatewayId()),
+		SourceIP:   strings.TrimSpace(req.GetSourceIp()),
+		UserAgent:  strings.TrimSpace(req.GetUserAgent()),
+		RequestID:  strings.TrimSpace(req.GetRequestId()),
+		TraceID:    strings.TrimSpace(req.GetTraceId()),
+		TTLSec:     ttlSec,
+	}, nil
+}
+
+func mapProtoBootstrapAuthRequest(req *authv1.BootstrapAuthenticateRequest) (*authmodel.BootstrapAuthRequest, error) {
+	challengeProto := req.GetChallenge()
+	if challengeProto == nil {
+		return nil, status.Error(codes.InvalidArgument, "challenge payload is required")
+	}
+	signedProto := req.GetSigned()
+	if signedProto == nil {
+		return nil, status.Error(codes.InvalidArgument, "signed payload is required")
 	}
 
-	signedMap := readMap(input, "signed")
+	challengeID, err := parseUUID("challenge.challenge_id", challengeProto.GetChallengeId())
+	if err != nil {
+		return nil, err
+	}
+	challengeEntityType, err := mapProtoEntityType(challengeProto.GetEntityType())
+	if err != nil {
+		return nil, err
+	}
+	signatureAlgorithm, err := mapProtoSignatureAlgorithm(signedProto.GetSignatureAlgorithm())
+	if err != nil {
+		return nil, err
+	}
 	signedChallengeID := challengeID
-	if candidate := readString(signedMap, "challenge_id"); candidate != "" {
-		signedChallengeID, err = parseUUID(candidate)
+	if candidate := strings.TrimSpace(signedProto.GetChallengeId()); candidate != "" {
+		signedChallengeID, err = parseUUID("signed.challenge_id", candidate)
 		if err != nil {
 			return nil, err
 		}
 	}
-	signed := authmodel.SignedChallengeResponse{
-		ChallengeID:        signedChallengeID,
-		KeyID:              readString(signedMap, "key_id"),
-		SignatureAlgorithm: parseSignatureAlgorithm(readString(signedMap, "signature_algorithm")),
-		Signature:          readString(signedMap, "signature"),
-		SignedAt:           parseUnixMillis(readInt64(signedMap, "signed_at_ms", time.Now().UTC().UnixMilli())),
+
+	issuedAtMs := challengeProto.GetIssuedAtMs()
+	if issuedAtMs <= 0 {
+		issuedAtMs = time.Now().UTC().UnixMilli()
+	}
+	expiresAtMs := challengeProto.GetExpiresAtMs()
+	if expiresAtMs <= 0 {
+		expiresAtMs = time.Now().UTC().Add(60 * time.Second).UnixMilli()
+	}
+	signedAtMs := signedProto.GetSignedAtMs()
+	if signedAtMs <= 0 {
+		signedAtMs = time.Now().UTC().UnixMilli()
 	}
 
 	return &authmodel.BootstrapAuthRequest{
-		Challenge:              challenge,
-		Signed:                 signed,
-		Scopes:                 readStringSlice(input, "scopes"),
-		Role:                   readString(input, "role"),
-		RequireDownstreamToken: readBool(input, "require_downstream_token"),
+		Challenge: authmodel.ChallengePayload{
+			ChallengeID: challengeID,
+			Issuer:      strings.TrimSpace(challengeProto.GetIssuer()),
+			Audience:    strings.TrimSpace(challengeProto.GetAudience()),
+			EntityType:  challengeEntityType,
+			EntityID:    strings.TrimSpace(challengeProto.GetEntityId()),
+			KeyID:       strings.TrimSpace(challengeProto.GetKeyId()),
+			Nonce:       strings.TrimSpace(challengeProto.GetNonce()),
+			IssuedAt:    time.UnixMilli(issuedAtMs).UTC(),
+			ExpiresAt:   time.UnixMilli(expiresAtMs).UTC(),
+		},
+		Signed: authmodel.SignedChallengeResponse{
+			ChallengeID:        signedChallengeID,
+			KeyID:              strings.TrimSpace(signedProto.GetKeyId()),
+			SignatureAlgorithm: signatureAlgorithm,
+			Signature:          strings.TrimSpace(signedProto.GetSignature()),
+			SignedAt:           time.UnixMilli(signedAtMs).UTC(),
+		},
+		Scopes:                 append([]string(nil), req.GetScopes()...),
+		Role:                   strings.TrimSpace(req.GetRole()),
+		RequireDownstreamToken: req.GetRequireDownstreamToken(),
 	}, nil
 }
 
-func buildChallengeResponse(challenge *authmodel.ChallengePayload) (*structpb.Struct, error) {
+func buildChallengeResponse(challenge *authmodel.ChallengePayload) (*authv1.BootstrapChallengeResponse, error) {
 	if challenge == nil {
-		return structpb.NewStruct(map[string]any{"challenge": map[string]any{}})
+		return &authv1.BootstrapChallengeResponse{}, nil
+	}
+	entityType, err := mapModelEntityType(challenge.EntityType)
+	if err != nil {
+		return nil, err
 	}
 
-	return structpb.NewStruct(map[string]any{
-		"challenge": map[string]any{
-			"challenge_id":  challenge.ChallengeID.String(),
-			"issuer":        challenge.Issuer,
-			"audience":      challenge.Audience,
-			"entity_type":   string(challenge.EntityType),
-			"entity_id":     challenge.EntityID,
-			"key_id":        challenge.KeyID,
-			"nonce":         challenge.Nonce,
-			"issued_at_ms":  float64(challenge.IssuedAt.UnixMilli()),
-			"expires_at_ms": float64(challenge.ExpiresAt.UnixMilli()),
+	return &authv1.BootstrapChallengeResponse{
+		Challenge: &authv1.ChallengePayload{
+			ChallengeId: challenge.ChallengeID.String(),
+			Issuer:      strings.TrimSpace(challenge.Issuer),
+			Audience:    strings.TrimSpace(challenge.Audience),
+			EntityType:  entityType,
+			EntityId:    strings.TrimSpace(challenge.EntityID),
+			KeyId:       strings.TrimSpace(challenge.KeyID),
+			Nonce:       strings.TrimSpace(challenge.Nonce),
+			IssuedAtMs:  challenge.IssuedAt.UnixMilli(),
+			ExpiresAtMs: challenge.ExpiresAt.UnixMilli(),
 		},
-	})
+	}, nil
 }
 
-func buildBootstrapAuthResponse(result *authmodel.BootstrapAuthResult) (*structpb.Struct, error) {
+func buildBootstrapAuthResponse(result *authmodel.BootstrapAuthResult) (*authv1.BootstrapAuthenticateResponse, error) {
 	if result == nil {
-		return structpb.NewStruct(map[string]any{})
+		return &authv1.BootstrapAuthenticateResponse{}, nil
+	}
+	identity, err := buildProtoIdentityContext(result.Identity)
+	if err != nil {
+		return nil, err
+	}
+	session, err := buildProtoSessionInfo(result.Session)
+	if err != nil {
+		return nil, err
 	}
 
-	identity := map[string]any{}
-	if result.Identity != nil {
-		principal := map[string]any{
-			"entity_type":  string(result.Identity.Principal.EntityType),
-			"entity_id":    result.Identity.Principal.EntityID,
-			"principal_id": result.Identity.Principal.PrincipalID(),
-		}
-		identity = map[string]any{
-			"principal":       principal,
-			"entity_type":     string(result.Identity.EntityType),
-			"entity_id":       result.Identity.EntityID,
-			"principal_id":    result.Identity.PrincipalID,
-			"session_id":      uuidToString(result.Identity.SessionID),
-			"token_id":        uuidToString(result.Identity.TokenID),
-			"token_family_id": uuidToString(result.Identity.TokenFamilyID),
-			"role":            result.Identity.Role,
-			"scopes":          toAnySlice(result.Identity.Scopes),
-			"auth_method":     string(result.Identity.AuthMethod),
-			"source_ip":       result.Identity.SourceIP,
-			"client_id":       result.Identity.ClientID,
-			"gateway_id":      result.Identity.GatewayID,
-			"source_service":  result.Identity.SourceService,
-			"target_service":  result.Identity.TargetService,
-			"request_id":      result.Identity.RequestID,
-			"trace_id":        result.Identity.TraceID,
-			"issued_at_ms":    float64(result.Identity.IssuedAt.UnixMilli()),
-			"expires_at_ms":   float64(result.Identity.ExpiresAt.UnixMilli()),
-		}
-	}
-
-	session := map[string]any{}
-	if result.Session != nil {
-		session = map[string]any{
-			"session_id": uuidToString(result.Session.ID),
-			"principal": map[string]any{
-				"entity_type":  string(result.Session.Principal.EntityType),
-				"entity_id":    result.Session.Principal.EntityID,
-				"principal_id": result.Session.Principal.PrincipalID(),
-			},
-			"status":         string(result.Session.Status),
-			"auth_method":    string(result.Session.AuthMethod),
-			"client_id":      result.Session.ClientID,
-			"gateway_id":     result.Session.GatewayID,
-			"scope_snapshot": toAnySlice(result.Session.ScopeSnapshot),
-			"role_snapshot":  result.Session.RoleSnapshot,
-			"created_at_ms":  float64(result.Session.CreatedAt.UnixMilli()),
-			"expires_at_ms":  float64(result.Session.ExpiresAt.UnixMilli()),
-			"version":        float64(result.Session.Version),
-		}
-	}
-
-	tokens := map[string]any{}
-	if issued := buildIssuedTokenMap(result.Tokens.AccessToken); len(issued) > 0 {
-		tokens["access_token"] = issued
-	}
-	if issued := buildIssuedTokenMap(result.Tokens.RefreshToken); len(issued) > 0 {
-		tokens["refresh_token"] = issued
-	}
-	if issued := buildIssuedTokenMap(result.Tokens.DownstreamToken); len(issued) > 0 {
-		tokens["downstream_token"] = issued
-	}
-
-	stage := mapStage(result.Stage)
-	if stage == "" {
-		stage = bootstrapStageReady
-	}
-
-	return structpb.NewStruct(map[string]any{
-		"stage":              stage,
-		"identity":           identity,
-		"session":            session,
-		"tokens":             tokens,
-		"active_comm_key_id": strings.TrimSpace(result.ActiveCommKeyID),
-		"issued_at_ms":       float64(result.IssuedAt.UnixMilli()),
-		"expires_at_ms":      float64(result.ExpiresAt.UnixMilli()),
-	})
+	return &authv1.BootstrapAuthenticateResponse{
+		Stage:           mapBootstrapStage(result.Stage),
+		Identity:        identity,
+		Session:         session,
+		Tokens:          buildProtoTokenBundle(result.Tokens),
+		ActiveCommKeyId: strings.TrimSpace(result.ActiveCommKeyID),
+		IssuedAtMs:      result.IssuedAt.UnixMilli(),
+		ExpiresAtMs:     result.ExpiresAt.UnixMilli(),
+	}, nil
 }
 
-func mapStage(stage authmodel.BootstrapStage) string {
-	resolved := strings.TrimSpace(strings.ToLower(string(stage)))
-	switch resolved {
-	case "ready":
-		return "BOOTSTRAP_STAGE_READY"
-	case "challenging":
-		return "BOOTSTRAP_STAGE_CHALLENGING"
-	case "authenticating":
-		return "BOOTSTRAP_STAGE_AUTHENTICATING"
-	case "uninitialized":
-		return "BOOTSTRAP_STAGE_UNINITIALIZED"
-	default:
-		return strings.TrimSpace(string(stage))
+func buildProtoIdentityContext(identity *authmodel.IdentityContext) (*authv1.IdentityContext, error) {
+	if identity == nil {
+		return nil, nil
+	}
+	entityType, err := mapModelEntityType(identity.Principal.EntityType)
+	if err != nil {
+		return nil, err
+	}
+
+	principal := &authv1.Principal{
+		EntityType:  entityType,
+		EntityId:    strings.TrimSpace(identity.Principal.EntityID),
+		PrincipalId: strings.TrimSpace(identity.Principal.PrincipalID()),
+	}
+
+	return &authv1.IdentityContext{
+		Principal:     principal,
+		SessionId:     uuidToString(identity.SessionID),
+		TokenId:       uuidToString(identity.TokenID),
+		TokenFamilyId: uuidToString(identity.TokenFamilyID),
+		Role:          strings.TrimSpace(identity.Role),
+		Scopes:        append([]string(nil), identity.Scopes...),
+		AuthMethod:    strings.TrimSpace(string(identity.AuthMethod)),
+		SourceIp:      strings.TrimSpace(identity.SourceIP),
+		ClientId:      strings.TrimSpace(identity.ClientID),
+		GatewayId:     strings.TrimSpace(identity.GatewayID),
+		SourceService: strings.TrimSpace(identity.SourceService),
+		TargetService: strings.TrimSpace(identity.TargetService),
+		RequestId:     strings.TrimSpace(identity.RequestID),
+		TraceId:       strings.TrimSpace(identity.TraceID),
+		IssuedAtMs:    identity.IssuedAt.UnixMilli(),
+		ExpiresAtMs:   identity.ExpiresAt.UnixMilli(),
+	}, nil
+}
+
+func buildProtoSessionInfo(session *authmodel.Session) (*authv1.SessionInfo, error) {
+	if session == nil {
+		return nil, nil
+	}
+	entityType, err := mapModelEntityType(session.Principal.EntityType)
+	if err != nil {
+		return nil, err
+	}
+
+	principal := &authv1.Principal{
+		EntityType:  entityType,
+		EntityId:    strings.TrimSpace(session.Principal.EntityID),
+		PrincipalId: strings.TrimSpace(session.Principal.PrincipalID()),
+	}
+
+	return &authv1.SessionInfo{
+		SessionId:     uuidToString(session.ID),
+		Principal:     principal,
+		Status:        strings.TrimSpace(string(session.Status)),
+		AuthMethod:    strings.TrimSpace(string(session.AuthMethod)),
+		ClientId:      strings.TrimSpace(session.ClientID),
+		GatewayId:     strings.TrimSpace(session.GatewayID),
+		ScopeSnapshot: append([]string(nil), session.ScopeSnapshot...),
+		RoleSnapshot:  strings.TrimSpace(session.RoleSnapshot),
+		CreatedAtMs:   session.CreatedAt.UnixMilli(),
+		ExpiresAtMs:   session.ExpiresAt.UnixMilli(),
+		Version:       session.Version,
+	}, nil
+}
+
+func buildProtoTokenBundle(bundle authmodel.TokenBundle) *authv1.TokenBundle {
+	return &authv1.TokenBundle{
+		AccessToken:     buildProtoIssuedToken(bundle.AccessToken),
+		RefreshToken:    buildProtoIssuedToken(bundle.RefreshToken),
+		DownstreamToken: buildProtoIssuedToken(bundle.DownstreamToken),
 	}
 }
 
-func buildIssuedTokenMap(token *authmodel.IssuedToken) map[string]any {
+func buildProtoIssuedToken(token *authmodel.IssuedToken) *authv1.IssuedToken {
 	if token == nil {
 		return nil
 	}
-	return map[string]any{
-		"raw":        token.Raw,
-		"token_type": mapTokenType(token.Type),
-		"ttl_sec":    float64(token.TTLSec),
+	return &authv1.IssuedToken{
+		Raw:       strings.TrimSpace(token.Raw),
+		TokenType: mapModelTokenType(token.Type),
+		TtlSec:    token.TTLSec,
 	}
 }
 
-func mapTokenType(tokenType authmodel.TokenType) string {
-	resolved := strings.TrimSpace(strings.ToLower(string(tokenType)))
-	switch resolved {
+func mapProtoEntityType(entityType authv1.EntityType) (commonmodel.EntityType, error) {
+	switch entityType {
+	case authv1.EntityType_ENTITY_TYPE_USER:
+		return commonmodel.EntityUser, nil
+	case authv1.EntityType_ENTITY_TYPE_DEVICE:
+		return commonmodel.EntityDevice, nil
+	case authv1.EntityType_ENTITY_TYPE_SERVICE:
+		return commonmodel.EntityService, nil
+	default:
+		return "", status.Errorf(codes.InvalidArgument, "unsupported bootstrap entity_type: %s", entityType.String())
+	}
+}
+
+func mapModelEntityType(entityType commonmodel.EntityType) (authv1.EntityType, error) {
+	switch strings.TrimSpace(strings.ToLower(string(entityType))) {
+	case "user":
+		return authv1.EntityType_ENTITY_TYPE_USER, nil
+	case "device":
+		return authv1.EntityType_ENTITY_TYPE_DEVICE, nil
+	case "service":
+		return authv1.EntityType_ENTITY_TYPE_SERVICE, nil
+	default:
+		return authv1.EntityType_ENTITY_TYPE_UNSPECIFIED, status.Errorf(codes.Internal, "unsupported model entity_type: %q", strings.TrimSpace(string(entityType)))
+	}
+}
+
+func mapProtoSignatureAlgorithm(algorithm authv1.SignatureAlgorithm) (commsecmodel.SignatureAlgorithm, error) {
+	switch algorithm {
+	case authv1.SignatureAlgorithm_SIGNATURE_ALGORITHM_ED25519:
+		return commsecmodel.SignatureEd25519, nil
+	case authv1.SignatureAlgorithm_SIGNATURE_ALGORITHM_ECDSA_P256_SHA256:
+		return commsecmodel.SignatureECDSAP256SHA256, nil
+	case authv1.SignatureAlgorithm_SIGNATURE_ALGORITHM_RSA_PSS_SHA256:
+		return commsecmodel.SignatureRSAPSSSHA256, nil
+	default:
+		return "", status.Errorf(codes.InvalidArgument, "unsupported signature_algorithm: %s", algorithm.String())
+	}
+}
+
+func mapBootstrapStage(stage authmodel.BootstrapStage) authv1.BootstrapStage {
+	switch strings.TrimSpace(strings.ToLower(string(stage))) {
+	case "ready":
+		return authv1.BootstrapStage_BOOTSTRAP_STAGE_READY
+	case "challenging":
+		return authv1.BootstrapStage_BOOTSTRAP_STAGE_CHALLENGING
+	case "authenticating":
+		return authv1.BootstrapStage_BOOTSTRAP_STAGE_AUTHENTICATING
+	case "uninitialized":
+		return authv1.BootstrapStage_BOOTSTRAP_STAGE_UNINITIALIZED
+	default:
+		return authv1.BootstrapStage_BOOTSTRAP_STAGE_UNSPECIFIED
+	}
+}
+
+func mapModelTokenType(tokenType authmodel.TokenType) authv1.TokenType {
+	switch strings.TrimSpace(strings.ToLower(string(tokenType))) {
 	case "access":
-		return "TOKEN_TYPE_ACCESS"
+		return authv1.TokenType_TOKEN_TYPE_ACCESS
 	case "refresh":
-		return "TOKEN_TYPE_REFRESH"
+		return authv1.TokenType_TOKEN_TYPE_REFRESH
 	case "downstream":
-		return "TOKEN_TYPE_DOWNSTREAM"
+		return authv1.TokenType_TOKEN_TYPE_DOWNSTREAM
+	case "service":
+		return authv1.TokenType_TOKEN_TYPE_SERVICE
 	default:
-		return strings.TrimSpace(string(tokenType))
+		return authv1.TokenType_TOKEN_TYPE_UNSPECIFIED
 	}
 }
 
-func parseEntityType(raw string) commonmodel.EntityType {
-	resolved := strings.TrimSpace(strings.ToLower(raw))
-	switch commonmodel.EntityType(resolved) {
-	case commonmodel.EntityUser, commonmodel.EntityDevice, commonmodel.EntityService:
-		return commonmodel.EntityType(resolved)
-	default:
-		return commonmodel.EntityService
-	}
-}
-
-func parseSignatureAlgorithm(raw string) commsecmodel.SignatureAlgorithm {
-	resolved := strings.TrimSpace(strings.ToLower(raw))
-	switch resolved {
-	case "ecdsa_p256_sha256", "signature_algorithm_ecdsa_p256_sha256":
-		return commsecmodel.SignatureECDSAP256SHA256
-	case "rsa_pss_sha256", "signature_algorithm_rsa_pss_sha256":
-		return commsecmodel.SignatureRSAPSSSHA256
-	default:
-		return commsecmodel.SignatureEd25519
-	}
-}
-
-func parseUUID(raw string) (uuid.UUID, error) {
+func parseUUID(fieldName string, raw string) (uuid.UUID, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return uuid.Nil, status.Error(codes.InvalidArgument, "challenge_id is required")
+		return uuid.Nil, status.Errorf(codes.InvalidArgument, "%s is required", fieldName)
 	}
 	parsed, err := uuid.Parse(trimmed)
 	if err != nil {
-		return uuid.Nil, status.Errorf(codes.InvalidArgument, "invalid uuid: %v", err)
+		return uuid.Nil, status.Errorf(codes.InvalidArgument, "invalid %s: %v", fieldName, err)
 	}
 	return parsed, nil
-}
-
-func parseUnixMillis(ms int64) time.Time {
-	if ms <= 0 {
-		return time.Now().UTC()
-	}
-	return time.UnixMilli(ms).UTC()
 }
 
 func uuidToString(id uuid.UUID) string {
@@ -503,166 +578,4 @@ func uuidToString(id uuid.UUID) string {
 		return ""
 	}
 	return id.String()
-}
-
-func readString(m map[string]any, key string) string {
-	if len(m) == 0 {
-		return ""
-	}
-	v, ok := m[key]
-	if !ok || v == nil {
-		return ""
-	}
-	s, ok := v.(string)
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(s)
-}
-
-func readInt64(m map[string]any, key string, fallback int64) int64 {
-	if len(m) == 0 {
-		return fallback
-	}
-	v, ok := m[key]
-	if !ok || v == nil {
-		return fallback
-	}
-	n, ok := v.(float64)
-	if !ok {
-		return fallback
-	}
-	return int64(n)
-}
-
-func readBool(m map[string]any, key string) bool {
-	if len(m) == 0 {
-		return false
-	}
-	v, ok := m[key]
-	if !ok || v == nil {
-		return false
-	}
-	b, ok := v.(bool)
-	if ok {
-		return b
-	}
-	text, ok := v.(string)
-	if !ok {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(text), "true")
-}
-
-func readMap(m map[string]any, key string) map[string]any {
-	if len(m) == 0 {
-		return nil
-	}
-	v, ok := m[key]
-	if !ok || v == nil {
-		return nil
-	}
-	child, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	return child
-}
-
-func readStringSlice(m map[string]any, key string) []string {
-	if len(m) == 0 {
-		return nil
-	}
-	v, ok := m[key]
-	if !ok || v == nil {
-		return nil
-	}
-	raw, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(raw))
-	for _, item := range raw {
-		s, ok := item.(string)
-		if !ok {
-			continue
-		}
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		out = append(out, s)
-	}
-	return out
-}
-
-func toAnySlice(values []string) []any {
-	out := make([]any, 0, len(values))
-	for _, value := range values {
-		out = append(out, value)
-	}
-	return out
-}
-
-func authAuthorityBootstrapInitHandler(
-	srv any,
-	ctx context.Context,
-	dec func(any) error,
-	interceptor grpc.UnaryServerInterceptor,
-) (any, error) {
-	in := new(structpb.Struct)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(authAuthorityBootstrapRPCServer).InitBootstrapChallenge(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/" + bootstrapServiceName + "/" + bootstrapInitMethodName,
-	}
-	handler := func(execCtx context.Context, req any) (any, error) {
-		return srv.(authAuthorityBootstrapRPCServer).InitBootstrapChallenge(execCtx, req.(*structpb.Struct))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func authAuthorityBootstrapAuthenticateHandler(
-	srv any,
-	ctx context.Context,
-	dec func(any) error,
-	interceptor grpc.UnaryServerInterceptor,
-) (any, error) {
-	in := new(structpb.Struct)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(authAuthorityBootstrapRPCServer).AuthenticateBootstrap(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/" + bootstrapServiceName + "/" + bootstrapAuthenticateMethodName,
-	}
-	handler := func(execCtx context.Context, req any) (any, error) {
-		return srv.(authAuthorityBootstrapRPCServer).AuthenticateBootstrap(execCtx, req.(*structpb.Struct))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-var authAuthorityBootstrapServiceDesc = grpc.ServiceDesc{
-	ServiceName: bootstrapServiceName,
-	HandlerType: (*authAuthorityBootstrapRPCServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: bootstrapInitMethodName,
-			Handler:    authAuthorityBootstrapInitHandler,
-		},
-		{
-			MethodName: bootstrapAuthenticateMethodName,
-			Handler:    authAuthorityBootstrapAuthenticateHandler,
-		},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "schemas/proto/auth/v1/auth_authority_bootstrap.proto",
 }

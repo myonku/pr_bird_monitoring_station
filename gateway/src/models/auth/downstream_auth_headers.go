@@ -7,7 +7,6 @@ const (
 
 	HeaderDownstreamSourceService                = "x-downstream-source-service"
 	HeaderDownstreamTargetService                = "x-downstream-target-service"
-	HeaderDownstreamBindingType                  = "x-downstream-binding-type"
 	HeaderDownstreamGrantIssuedAt                = "x-downstream-grant-issued-at"
 	HeaderDownstreamGrantExpiresAt               = "x-downstream-grant-expires-at"
 	HeaderDownstreamAuthVerifyMode               = "x-downstream-auth-verify-mode"

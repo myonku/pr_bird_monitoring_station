@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package bms.auth.v1;
+
+import "auth/v1/auth_authority_bootstrap.proto";
+import "auth/v1/auth_authority_remote_auth.proto";
+
+option go_package = "pr_bird_monitoring_station/schemas/proto/auth/v1;authv1";
+
+// AuthAuthorityExternalAuthService handles auth.external.forward.user_password.
+service AuthAuthorityExternalAuthService {
+  // auth.external.forward.user_password -> ForwardUserPassword.
+  rpc ForwardUserPassword(UserPasswordAuthRequest) returns (UserPasswordAuthResult);
+}
+
+message UserPasswordAuthRequest {
+  string username = 1;
+  string password = 2;
+
+  string audience = 3;
+  repeated string scopes = 4;
+
+  string client_id = 5;
+  string gateway_id = 6;
+  string source_ip = 7;
+  string user_agent = 8;
+
+  string request_id = 9;
+  string trace_id = 10;
+}
+
+message UserPasswordAuthResult {
+  IdentityContext identity = 1;
+  Session session = 2;
+  TokenBundle tokens = 3;
+
+  int64 issued_at_ms = 4;
+  int64 expires_at_ms = 5;
+}

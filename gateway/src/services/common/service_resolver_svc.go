@@ -19,9 +19,12 @@ const (
 	externalAuthForwardRouteKey    = "auth.external.forward.user_password"
 	businessForwardRouteKey        = "business.forward.generic"
 	targetReverifyRouteKey         = "auth.target.reverify.forwarded_context"
-	bootstrapInitMethodPath        = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
-	bootstrapAuthMethodPath        = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBootstrap"
 	trustedInternalCallMetadataKey = "trusted_internal_call"
+)
+
+const (
+	bootstrapInitMethodPath = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
+	bootstrapAuthMethodPath = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBootstrap"
 )
 
 var _ commonif.IServiceResolver = (*ServiceResolverService)(nil)

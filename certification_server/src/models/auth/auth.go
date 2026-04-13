@@ -5,7 +5,6 @@ import (
 	"time"
 
 	commonmodel "certification_server/src/models/common"
-	commsec "certification_server/src/models/commsec"
 
 	"github.com/google/uuid"
 )
@@ -91,10 +90,6 @@ type IdentityContext struct {
 	UserAgent string // 认证请求的User-Agent信息
 	RequestID string // 认证请求的唯一标识符（如果有的话）
 	TraceID   string // 认证请求的Trace ID（如果有的话）
-
-	SecureChannelID     uuid.UUID                   // 当前请求绑定的应用层加密通道ID
-	SecureChannelStatus commsec.SecureChannelStatus // 当前加密通道状态
-	CipherSuite         commsec.CipherSuite         // 当前请求使用的对称加密套件
 
 	IssuedAt  time.Time // 认证上下文的签发时间
 	ExpiresAt time.Time // 认证上下文的过期时间
@@ -243,12 +238,8 @@ type DownstreamAccessGrant struct {
 	SessionID   uuid.UUID
 	TokenID     uuid.UUID
 	PrincipalID string
-	BindingType commsec.ChannelBindingType
 
 	Scopes []string
-
-	SecureChannelID uuid.UUID
-	CipherSuite     commsec.CipherSuite
 
 	IssuedAt  time.Time
 	ExpiresAt time.Time

@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 from __future__ import annotations
 
 import asyncio
@@ -6,8 +7,8 @@ import time
 from dataclasses import dataclass
 
 import grpc
-from google.protobuf import json_format
-from google.protobuf import struct_pb2
+from src.gen.auth.v1 import auth_authority_bootstrap_pb2 as bootstrap_pb2
+from src.gen.auth.v1 import auth_authority_bootstrap_pb2_grpc as bootstrap_pb2_grpc
 
 
 BOOTSTRAP_INIT_METHOD = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
@@ -58,88 +59,75 @@ class AuthAuthorityBootstrapRPCClient:
                 channel.channel_ready(),
                 timeout=self._dial_timeout_sec,
             )
+            stub = bootstrap_pb2_grpc.AuthAuthorityBootstrapServiceStub(channel)
 
-            init_call = channel.unary_unary(
-                BOOTSTRAP_INIT_METHOD,
-                request_serializer=_serialize_struct,
-                response_deserializer=_deserialize_struct,
-            )
-            challenge_resp = await init_call(
-                _dict_to_struct(payload),
+            challenge_resp = await stub.InitBootstrapChallenge(
+                bootstrap_pb2.BootstrapChallengeRequest(
+                    entity_type=_to_proto_entity_type(payload["entity_type"]),
+                    entity_id=payload["entity_id"],
+                    key_id=payload["key_id"],
+                    audience=payload["audience"],
+                    ttl_sec=60,
+                ),
                 timeout=self._call_timeout_sec,
             )
-            challenge_envelope = _struct_to_dict(challenge_resp)
-            challenge = challenge_envelope.get("challenge")
-            if not isinstance(challenge, dict):
-                challenge = challenge_envelope
-            challenge_id = str(challenge.get("challenge_id", "")).strip()
-            challenge_key_id = str(challenge.get("key_id", "")).strip() or payload["key_id"]
+
+            challenge = challenge_resp.challenge
+            challenge_id = (challenge.challenge_id or "").strip()
+            challenge_key_id = (challenge.key_id or "").strip() or payload["key_id"]
             if not challenge_id:
                 raise RuntimeError("bootstrap challenge response missing challenge_id")
 
-            auth_call = channel.unary_unary(
-                BOOTSTRAP_AUTH_METHOD,
-                request_serializer=_serialize_struct,
-                response_deserializer=_deserialize_struct,
-            )
-            auth_req = {
-                "challenge": challenge,
-                "signed": {
-                    "challenge_id": challenge_id,
-                    "key_id": challenge_key_id,
-                    "signature_algorithm": "ed25519",
-                    "signature": base64.b64encode(
-                        f"bootstrap:{challenge_id}".encode("utf-8")
-                    ).decode("utf-8"),
-                    "signed_at_ms": int(time.time() * 1000),
-                },
-                "scopes": ["service:bootstrap"],
-                "role": "service",
-                "require_downstream_token": False,
-            }
-            auth_resp = await auth_call(
-                _dict_to_struct(auth_req),
+            auth_resp = await stub.AuthenticateBootstrap(
+                bootstrap_pb2.BootstrapAuthenticateRequest(
+                    challenge=challenge,
+                    signed=bootstrap_pb2.SignedChallengeResponse(
+                        challenge_id=challenge_id,
+                        key_id=challenge_key_id,
+                        signature_algorithm=(
+                            bootstrap_pb2.SIGNATURE_ALGORITHM_ED25519
+                        ),
+                        signature=base64.b64encode(
+                            f"bootstrap:{challenge_id}".encode("utf-8")
+                        ).decode("utf-8"),
+                        signed_at_ms=int(time.time() * 1000),
+                    ),
+                    scopes=["service:bootstrap"],
+                    role="service",
+                    require_downstream_token=False,
+                ),
                 timeout=self._call_timeout_sec,
             )
 
-        auth_payload = _struct_to_dict(auth_resp)
-        stage = _normalize_bootstrap_stage(str(auth_payload.get("stage", "")).strip())
+        stage = _normalize_bootstrap_stage(auth_resp.stage)
         if not stage:
             raise RuntimeError("bootstrap authenticate response missing stage")
         return BootstrapHandshakeResult(
             stage=stage,
-            active_comm_key_id=str(auth_payload.get("active_comm_key_id", "")).strip(),
+            active_comm_key_id=(auth_resp.active_comm_key_id or "").strip(),
         )
 
 
-def _dict_to_struct(payload: dict) -> struct_pb2.Struct:
-    msg = struct_pb2.Struct()
-    msg.update(payload)
-    return msg
+def _to_proto_entity_type(raw: str) -> int:
+    entity = (raw or "").strip().lower()
+    if entity == "user":
+        return bootstrap_pb2.ENTITY_TYPE_USER
+    if entity == "device":
+        return bootstrap_pb2.ENTITY_TYPE_DEVICE
+    if entity == "service":
+        return bootstrap_pb2.ENTITY_TYPE_SERVICE
+    raise ValueError(f"unsupported bootstrap entity_type: {raw!r}")
 
 
-def _struct_to_dict(payload: struct_pb2.Struct) -> dict:
-    return json_format.MessageToDict(payload, preserving_proto_field_name=True)
-
-
-def _serialize_struct(payload: struct_pb2.Struct) -> bytes:
-    return payload.SerializeToString()
-
-
-def _deserialize_struct(raw: bytes) -> struct_pb2.Struct:
-    msg = struct_pb2.Struct()
-    msg.ParseFromString(raw)
-    return msg
-
-
-def _normalize_bootstrap_stage(raw: str) -> str:
-    stage = (raw or "").strip().lower()
-    if stage in {"ready", "bootstrap_stage_ready", "4"}:
+def _normalize_bootstrap_stage(stage: int) -> str:
+    if stage == bootstrap_pb2.BOOTSTRAP_STAGE_READY:
         return "ready"
-    if stage in {"uninitialized", "bootstrap_stage_uninitialized", "1"}:
+    if stage == bootstrap_pb2.BOOTSTRAP_STAGE_UNINITIALIZED:
         return "uninitialized"
-    if stage in {"challenging", "bootstrap_stage_challenging", "2"}:
+    if stage == bootstrap_pb2.BOOTSTRAP_STAGE_CHALLENGING:
         return "challenging"
-    if stage in {"authenticating", "bootstrap_stage_authenticating", "3"}:
+    if stage == bootstrap_pb2.BOOTSTRAP_STAGE_AUTHENTICATING:
         return "authenticating"
-    return stage
+    if stage == bootstrap_pb2.BOOTSTRAP_STAGE_UNSPECIFIED:
+        return ""
+    return (bootstrap_pb2.BootstrapStage.Name(stage) or "").strip().lower()

@@ -59,10 +59,6 @@ class IdentityContext(Struct, kw_only=True):
     request_id: str
     trace_id: str
 
-    secure_channel_id: UUID
-    secure_channel_status: str
-    cipher_suite: str
-
     issued_at: float
     expires_at: float
 

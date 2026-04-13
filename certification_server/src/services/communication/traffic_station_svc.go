@@ -48,9 +48,6 @@ func (s *TrafficStationService) HandleInbound(
 		"target_service_name": strings.TrimSpace(policy.RouteProfile.TargetServiceName),
 		"target_endpoint":     strings.TrimSpace(policy.RouteProfile.TargetEndpoint),
 	}
-	if policy.RequireSecureChannel {
-		metadata["commsec_required"] = "true"
-	}
 	if len(policy.RequiredScopes) > 0 {
 		metadata["required_scopes"] = strings.Join(policy.RequiredScopes, ",")
 	}

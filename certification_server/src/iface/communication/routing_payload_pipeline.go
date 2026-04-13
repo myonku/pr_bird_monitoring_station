@@ -10,7 +10,6 @@ const (
 	FlowCategoryRemoteAuthVerify FlowCategory = "remote_auth_verify"
 	FlowCategoryExternalAuth     FlowCategory = "external_auth_forward"
 	FlowCategoryTargetReverify   FlowCategory = "target_reverify_call"
-	FlowCategoryCommsecCall      FlowCategory = "commsec_call"
 )
 
 // SecurityPolicy 定义安全通道要求级别。
@@ -26,15 +25,13 @@ const (
 type InboundPolicyPlan struct {
 	RouteProfile *RouteProfile
 
-	RequireSecureChannel bool
-	RequiredScopes       []string
-	Tags                 map[string]string
+	RequiredScopes []string
+	Tags           map[string]string
 }
 
 // IRoutingPayloadPipeline 定义 certification_server 的路由分类与策略构建。
 //
 // 下游接口调用：
-//   - communication.ICommsecChannelManager.EnsureChannel
 //   - common.IKeyManager.LookupPublicKey
 type IRoutingPayloadPipeline interface {
 	ResolveRouteProfile(ctx context.Context, input *RoutingInput) (*RouteProfile, error)

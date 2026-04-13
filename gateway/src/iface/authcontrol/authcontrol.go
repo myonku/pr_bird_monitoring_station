@@ -4,7 +4,6 @@ import (
 	"context"
 
 	authmodel "gateway/src/models/auth"
-	commsecmodel "gateway/src/models/commsec"
 )
 
 // InboundAuthRequest 是网关入站认证控制请求。
@@ -27,10 +26,7 @@ type OutboundAuthRequest struct {
 	Identity *authmodel.IdentityContext
 
 	TargetService string
-	BindingType   commsecmodel.ChannelBindingType
-
-	RequireEncryption bool
-	TTLSec            int64
+	TTLSec        int64
 
 	RateLimitInput *InboundRateLimitInput
 }

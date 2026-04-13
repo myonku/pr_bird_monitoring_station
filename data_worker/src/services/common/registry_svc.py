@@ -3,6 +3,7 @@ import contextlib
 from time import time
 from uuid import UUID
 
+from src.iface.common.registry_manager import IRegistryManager
 from src.models.common.instance import ServiceInstance, ServiceSnapshot
 from src.repo.etcd_client import (
     EtcdAsyncClient,
@@ -19,7 +20,7 @@ from src.utils.selector_policy import (
 )
 
 
-class RegistryService:
+class RegistryService(IRegistryManager):
     """服务注册与发现快照服务。"""
 
     def __init__(
