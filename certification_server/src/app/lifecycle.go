@@ -84,12 +84,14 @@ func Run() error {
 	}
 	sessionManager := commonsvc.NewSessionService(redisClient)
 	tokenManager := commonsvc.NewTokenService(mysqlClient, redisClient)
+	userCredentialManager := commonsvc.NewUserCredentialService()
 	routingPipeline := communicationsvc.NewRoutingPayloadPipelineService()
 	trafficStation := communicationsvc.NewTrafficStationService(routingPipeline)
 	authOrchestrator := orchestrationsvc.NewAuthRequestOrchestratorServiceWithDeps(
 		keyManager,
 		sessionManager,
 		tokenManager,
+		userCredentialManager,
 	)
 	if runtimeCfg.RunMode != modelsystem.RuntimeRunModeNoAuth &&
 		strings.TrimSpace(startupParams.ActiveKeyID) == "" &&
@@ -116,6 +118,9 @@ func Run() error {
 
 	grpcServer := grpc.NewServer()
 	communicationsvc.RegisterAuthAuthorityBootstrapRPC(grpcServer, authOrchestrator, trafficStation)
+	communicationsvc.RegisterAuthAuthorityRemoteAuthRPC(grpcServer, authOrchestrator, trafficStation)
+	communicationsvc.RegisterAuthAuthorityExternalAuthRPC(grpcServer, authOrchestrator, trafficStation)
+	communicationsvc.RegisterAuthAuthorityTargetReverifyRPC(grpcServer, authOrchestrator, trafficStation)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

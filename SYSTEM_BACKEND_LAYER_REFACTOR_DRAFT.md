@@ -458,9 +458,11 @@ LocalCredentialManager 职责：
 
 1. 网关接收外部模块的 bootstrap 或密码认证请求。
 2. 通信下层分类为 external_auth_forward。
-3. 网关将请求转发到认证中心。
-4. 认证中心在本地执行 bootstrap/密钥校验/密码认证权威能力并返回结果。
-5. 协议：外部到网关为 HTTP；网关到认证中心为 gRPC。
+3. 网关将请求转发到认证中心 external_auth 通道。
+4. 外部 bootstrap 固定通过 `ForwardBootstrapChallenge` + `ForwardBootstrapAuthenticate` 两步转发；不得复用网关自身 `bootstrap_call` 启动链路。
+5. 外部用户名密码认证通过 `ForwardUserPassword` 转发。
+6. 认证中心在本地执行 bootstrap/密钥校验/密码认证权威能力并返回结果。
+7. 协议：外部到网关为 HTTP；网关到认证中心为 gRPC。
 
 ## 6.4 类型四：网关向认证中心外模块转发业务流量
 

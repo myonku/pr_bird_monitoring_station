@@ -19,17 +19,23 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuthAuthorityExternalAuthService_ForwardUserPassword_FullMethodName = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
+	AuthAuthorityExternalAuthService_ForwardUserPassword_FullMethodName          = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
+	AuthAuthorityExternalAuthService_ForwardBootstrapChallenge_FullMethodName    = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapChallenge"
+	AuthAuthorityExternalAuthService_ForwardBootstrapAuthenticate_FullMethodName = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapAuthenticate"
 )
 
 // AuthAuthorityExternalAuthServiceClient is the client API for AuthAuthorityExternalAuthService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// AuthAuthorityExternalAuthService handles auth.external.forward.user_password.
+// AuthAuthorityExternalAuthService handles gateway external auth forwarding.
 type AuthAuthorityExternalAuthServiceClient interface {
 	// auth.external.forward.user_password -> ForwardUserPassword.
 	ForwardUserPassword(ctx context.Context, in *UserPasswordAuthRequest, opts ...grpc.CallOption) (*UserPasswordAuthResult, error)
+	// auth.external.forward.bootstrap.challenge -> ForwardBootstrapChallenge.
+	ForwardBootstrapChallenge(ctx context.Context, in *BootstrapChallengeRequest, opts ...grpc.CallOption) (*BootstrapChallengeResponse, error)
+	// auth.external.forward.bootstrap.authenticate -> ForwardBootstrapAuthenticate.
+	ForwardBootstrapAuthenticate(ctx context.Context, in *BootstrapAuthenticateRequest, opts ...grpc.CallOption) (*BootstrapAuthenticateResponse, error)
 }
 
 type authAuthorityExternalAuthServiceClient struct {
@@ -50,14 +56,38 @@ func (c *authAuthorityExternalAuthServiceClient) ForwardUserPassword(ctx context
 	return out, nil
 }
 
+func (c *authAuthorityExternalAuthServiceClient) ForwardBootstrapChallenge(ctx context.Context, in *BootstrapChallengeRequest, opts ...grpc.CallOption) (*BootstrapChallengeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BootstrapChallengeResponse)
+	err := c.cc.Invoke(ctx, AuthAuthorityExternalAuthService_ForwardBootstrapChallenge_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authAuthorityExternalAuthServiceClient) ForwardBootstrapAuthenticate(ctx context.Context, in *BootstrapAuthenticateRequest, opts ...grpc.CallOption) (*BootstrapAuthenticateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BootstrapAuthenticateResponse)
+	err := c.cc.Invoke(ctx, AuthAuthorityExternalAuthService_ForwardBootstrapAuthenticate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthAuthorityExternalAuthServiceServer is the server API for AuthAuthorityExternalAuthService service.
 // All implementations must embed UnimplementedAuthAuthorityExternalAuthServiceServer
 // for forward compatibility.
 //
-// AuthAuthorityExternalAuthService handles auth.external.forward.user_password.
+// AuthAuthorityExternalAuthService handles gateway external auth forwarding.
 type AuthAuthorityExternalAuthServiceServer interface {
 	// auth.external.forward.user_password -> ForwardUserPassword.
 	ForwardUserPassword(context.Context, *UserPasswordAuthRequest) (*UserPasswordAuthResult, error)
+	// auth.external.forward.bootstrap.challenge -> ForwardBootstrapChallenge.
+	ForwardBootstrapChallenge(context.Context, *BootstrapChallengeRequest) (*BootstrapChallengeResponse, error)
+	// auth.external.forward.bootstrap.authenticate -> ForwardBootstrapAuthenticate.
+	ForwardBootstrapAuthenticate(context.Context, *BootstrapAuthenticateRequest) (*BootstrapAuthenticateResponse, error)
 	mustEmbedUnimplementedAuthAuthorityExternalAuthServiceServer()
 }
 
@@ -70,6 +100,12 @@ type UnimplementedAuthAuthorityExternalAuthServiceServer struct{}
 
 func (UnimplementedAuthAuthorityExternalAuthServiceServer) ForwardUserPassword(context.Context, *UserPasswordAuthRequest) (*UserPasswordAuthResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method ForwardUserPassword not implemented")
+}
+func (UnimplementedAuthAuthorityExternalAuthServiceServer) ForwardBootstrapChallenge(context.Context, *BootstrapChallengeRequest) (*BootstrapChallengeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ForwardBootstrapChallenge not implemented")
+}
+func (UnimplementedAuthAuthorityExternalAuthServiceServer) ForwardBootstrapAuthenticate(context.Context, *BootstrapAuthenticateRequest) (*BootstrapAuthenticateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ForwardBootstrapAuthenticate not implemented")
 }
 func (UnimplementedAuthAuthorityExternalAuthServiceServer) mustEmbedUnimplementedAuthAuthorityExternalAuthServiceServer() {
 }
@@ -111,6 +147,42 @@ func _AuthAuthorityExternalAuthService_ForwardUserPassword_Handler(srv interface
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthAuthorityExternalAuthService_ForwardBootstrapChallenge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BootstrapChallengeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthAuthorityExternalAuthServiceServer).ForwardBootstrapChallenge(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthAuthorityExternalAuthService_ForwardBootstrapChallenge_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthAuthorityExternalAuthServiceServer).ForwardBootstrapChallenge(ctx, req.(*BootstrapChallengeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthAuthorityExternalAuthService_ForwardBootstrapAuthenticate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BootstrapAuthenticateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthAuthorityExternalAuthServiceServer).ForwardBootstrapAuthenticate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthAuthorityExternalAuthService_ForwardBootstrapAuthenticate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthAuthorityExternalAuthServiceServer).ForwardBootstrapAuthenticate(ctx, req.(*BootstrapAuthenticateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthAuthorityExternalAuthService_ServiceDesc is the grpc.ServiceDesc for AuthAuthorityExternalAuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -121,6 +193,14 @@ var AuthAuthorityExternalAuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ForwardUserPassword",
 			Handler:    _AuthAuthorityExternalAuthService_ForwardUserPassword_Handler,
+		},
+		{
+			MethodName: "ForwardBootstrapChallenge",
+			Handler:    _AuthAuthorityExternalAuthService_ForwardBootstrapChallenge_Handler,
+		},
+		{
+			MethodName: "ForwardBootstrapAuthenticate",
+			Handler:    _AuthAuthorityExternalAuthService_ForwardBootstrapAuthenticate_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

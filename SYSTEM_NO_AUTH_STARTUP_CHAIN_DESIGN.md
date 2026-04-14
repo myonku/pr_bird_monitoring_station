@@ -296,4 +296,4 @@
 ### 10.5 文档引用补充
 
 - 路由与 proto 合并基准见 `SYSTEM_BACKEND_ROUTE_PROTO_BASELINE.md`。
-- 后端启动链路阶段记录与时间线见 `SYSTEM_BACKEND_STARTUP_PROGRESS_TIMELINE.md`。
+- 后端启动链路阶段记录与时间线见 `SYSTEM_BACKEND_PROGRESS_TIMELINE.md`。

@@ -12,19 +12,27 @@ import (
 const defaultGatewayAuthAuthorityService = "certification_server"
 
 const (
-	bootstrapChallengeRouteKey     = "auth.bootstrap.challenge"
-	bootstrapAuthenticateRouteKey  = "auth.bootstrap.authenticate"
-	remoteAuthVerifyRouteKey       = "auth.remote.verify.token"
-	remoteSessionValidateRouteKey  = "auth.remote.validate.session"
-	externalAuthForwardRouteKey    = "auth.external.forward.user_password"
-	businessForwardRouteKey        = "business.forward.generic"
-	targetReverifyRouteKey         = "auth.target.reverify.forwarded_context"
-	trustedInternalCallMetadataKey = "trusted_internal_call"
+	bootstrapChallengeRouteKey            = "auth.bootstrap.challenge"
+	bootstrapAuthenticateRouteKey         = "auth.bootstrap.authenticate"
+	remoteAuthVerifyRouteKey              = "auth.remote.verify.token"
+	remoteSessionValidateRouteKey         = "auth.remote.validate.session"
+	externalAuthForwardRouteKey           = "auth.external.forward.user_password"
+	externalBootstrapChallengeRouteKey    = "auth.external.forward.bootstrap.challenge"
+	externalBootstrapAuthenticateRouteKey = "auth.external.forward.bootstrap.authenticate"
+	businessForwardRouteKey               = "business.forward.generic"
+	targetReverifyRouteKey                = "auth.target.reverify.forwarded_context"
+	trustedInternalCallMetadataKey        = "trusted_internal_call"
 )
 
 const (
-	bootstrapInitMethodPath = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
-	bootstrapAuthMethodPath = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBootstrap"
+	bootstrapInitMethodPath                 = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
+	bootstrapAuthMethodPath                 = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBootstrap"
+	remoteVerifyMethodPath                  = "/bms.auth.v1.AuthAuthorityRemoteAuthService/VerifyToken"
+	remoteSessionMethodPath                 = "/bms.auth.v1.AuthAuthorityRemoteAuthService/ValidateSession"
+	externalAuthMethodPath                  = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
+	externalBootstrapChallengeMethodPath    = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapChallenge"
+	externalBootstrapAuthenticateMethodPath = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapAuthenticate"
+	targetReverifyMethodPath                = "/bms.auth.v1.AuthAuthorityTargetReverifyService/ReverifyForwardedContext"
 )
 
 var _ commonif.IServiceResolver = (*ServiceResolverService)(nil)
@@ -220,7 +228,9 @@ func resolveRouteKeyCategory(routeKey string) (commonif.FlowCategory, bool) {
 		return commonif.FlowCategoryBootstrapCall, true
 	case remoteAuthVerifyRouteKey, remoteSessionValidateRouteKey:
 		return commonif.FlowCategoryRemoteAuthVerify, true
-	case externalAuthForwardRouteKey:
+	case externalAuthForwardRouteKey,
+		externalBootstrapChallengeRouteKey,
+		externalBootstrapAuthenticateRouteKey:
 		return commonif.FlowCategoryExternalAuthRelay, true
 	case businessForwardRouteKey:
 		return commonif.FlowCategoryBusinessForward, true
@@ -243,6 +253,14 @@ func resolveStaticFlowCategory(flow *commonif.FlowRouteInput) (commonif.FlowCate
 	switch strings.TrimSpace(strings.ToLower(flow.Path)) {
 	case strings.ToLower(bootstrapInitMethodPath), strings.ToLower(bootstrapAuthMethodPath):
 		return commonif.FlowCategoryBootstrapCall, true
+	case strings.ToLower(remoteVerifyMethodPath), strings.ToLower(remoteSessionMethodPath):
+		return commonif.FlowCategoryRemoteAuthVerify, true
+	case strings.ToLower(externalAuthMethodPath),
+		strings.ToLower(externalBootstrapChallengeMethodPath),
+		strings.ToLower(externalBootstrapAuthenticateMethodPath):
+		return commonif.FlowCategoryExternalAuthRelay, true
+	case strings.ToLower(targetReverifyMethodPath):
+		return commonif.FlowCategoryTargetReverify, true
 	default:
 		return "", false
 	}

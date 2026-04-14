@@ -11,15 +11,23 @@ import (
 var _ communicationif.IRoutingPayloadPipeline = (*RoutingPayloadPipelineService)(nil)
 
 const (
-	remoteAuthVerifyRouteKey      = "auth.remote.verify.token"
-	remoteSessionValidateRouteKey = "auth.remote.validate.session"
-	externalAuthForwardRouteKey   = "auth.external.forward.user_password"
-	targetReverifyRouteKey        = "auth.target.reverify.forwarded_context"
+	remoteAuthVerifyRouteKey              = "auth.remote.verify.token"
+	remoteSessionValidateRouteKey         = "auth.remote.validate.session"
+	externalAuthForwardRouteKey           = "auth.external.forward.user_password"
+	externalBootstrapChallengeRouteKey    = "auth.external.forward.bootstrap.challenge"
+	externalBootstrapAuthenticateRouteKey = "auth.external.forward.bootstrap.authenticate"
+	targetReverifyRouteKey                = "auth.target.reverify.forwarded_context"
 )
 
 const (
-	routingBootstrapInitMethodPath = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
-	routingBootstrapAuthMethodPath = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBootstrap"
+	routingBootstrapInitMethodPath                 = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
+	routingBootstrapAuthMethodPath                 = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBootstrap"
+	routingRemoteVerifyMethodPath                  = "/bms.auth.v1.AuthAuthorityRemoteAuthService/VerifyToken"
+	routingSessionCheckMethodPath                  = "/bms.auth.v1.AuthAuthorityRemoteAuthService/ValidateSession"
+	routingExternalAuthMethodPath                  = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
+	routingExternalBootstrapChallengeMethodPath    = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapChallenge"
+	routingExternalBootstrapAuthenticateMethodPath = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapAuthenticate"
+	routingTargetReverifyMethodPath                = "/bms.auth.v1.AuthAuthorityTargetReverifyService/ReverifyForwardedContext"
 )
 
 // RoutingPayloadPipelineService 提供认证中心入站路由分类与策略构建能力。
@@ -129,7 +137,9 @@ func parseFlowCategory(raw string) (communicationif.FlowCategory, bool) {
 		return communicationif.FlowCategoryBootstrapCall, true
 	case remoteAuthVerifyRouteKey, remoteSessionValidateRouteKey:
 		return communicationif.FlowCategoryRemoteAuthVerify, true
-	case externalAuthForwardRouteKey:
+	case externalAuthForwardRouteKey,
+		externalBootstrapChallengeRouteKey,
+		externalBootstrapAuthenticateRouteKey:
 		return communicationif.FlowCategoryExternalAuth, true
 	case targetReverifyRouteKey:
 		return communicationif.FlowCategoryTargetReverify, true
@@ -151,6 +161,14 @@ func parseStaticFlowCategory(input *communicationif.RoutingInput) (communication
 	switch strings.TrimSpace(strings.ToLower(input.Path)) {
 	case strings.ToLower(routingBootstrapInitMethodPath), strings.ToLower(routingBootstrapAuthMethodPath):
 		return communicationif.FlowCategoryBootstrapCall, true
+	case strings.ToLower(routingRemoteVerifyMethodPath), strings.ToLower(routingSessionCheckMethodPath):
+		return communicationif.FlowCategoryRemoteAuthVerify, true
+	case strings.ToLower(routingExternalAuthMethodPath),
+		strings.ToLower(routingExternalBootstrapChallengeMethodPath),
+		strings.ToLower(routingExternalBootstrapAuthenticateMethodPath):
+		return communicationif.FlowCategoryExternalAuth, true
+	case strings.ToLower(routingTargetReverifyMethodPath):
+		return communicationif.FlowCategoryTargetReverify, true
 	default:
 		return "", false
 	}

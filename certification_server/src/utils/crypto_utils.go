@@ -21,6 +21,8 @@ import (
 
 	modelsystem "certification_server/src/models/system"
 
+	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -35,6 +37,26 @@ const (
 
 // 用于收纳常用的加密相关工具函数。
 type CryptoUtils struct {
+}
+
+// Argon2Hash 使用 Argon2 算法对字符串进行哈希处理，返回 Base64 编码的哈希值。
+func (c *CryptoUtils) Argon2Hash(plainText string) (string, error) {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", err
+	}
+	hash := argon2.IDKey([]byte(plainText), salt, 1, 64*1024, 4, 32)
+	combined := append(salt, hash...)
+	return base64.StdEncoding.EncodeToString(combined), nil
+}
+
+// BcryptHash 使用 bcrypt 算法对字符串进行哈希处理，返回 Base64 编码的哈希值。
+func (c *CryptoUtils) BcryptHash(plainText string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(plainText), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(hash), nil
 }
 
 // DeriveRandomSymmetricKey 生成一个确定长度的随机的 AES 对称密钥，返回 Base64 编码的字符串形式。

@@ -3,14 +3,19 @@ syntax = "proto3";
 package bms.auth.v1;
 
 import "auth/v1/auth_authority_bootstrap.proto";
-import "auth/v1/auth_authority_remote_auth.proto";
 
 option go_package = "pr_bird_monitoring_station/schemas/proto/auth/v1;authv1";
 
-// AuthAuthorityExternalAuthService handles auth.external.forward.user_password.
+// AuthAuthorityExternalAuthService handles gateway external auth forwarding.
 service AuthAuthorityExternalAuthService {
   // auth.external.forward.user_password -> ForwardUserPassword.
   rpc ForwardUserPassword(UserPasswordAuthRequest) returns (UserPasswordAuthResult);
+
+  // auth.external.forward.bootstrap.challenge -> ForwardBootstrapChallenge.
+  rpc ForwardBootstrapChallenge(BootstrapChallengeRequest) returns (BootstrapChallengeResponse);
+
+  // auth.external.forward.bootstrap.authenticate -> ForwardBootstrapAuthenticate.
+  rpc ForwardBootstrapAuthenticate(BootstrapAuthenticateRequest) returns (BootstrapAuthenticateResponse);
 }
 
 message UserPasswordAuthRequest {

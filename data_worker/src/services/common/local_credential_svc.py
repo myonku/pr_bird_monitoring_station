@@ -9,6 +9,7 @@ from redis.asyncio.cluster import RedisCluster
 from src.iface.common.local_credential_manager import (
     ILocalCredentialManager,
     ModuleCredentialSnapshot,
+    BootstrapStage,
 )
 
 
@@ -79,9 +80,11 @@ class LocalCredentialService(ILocalCredentialManager):
         if not isinstance(metadata, dict):
             metadata = {}
 
+        get_stage = lambda s: s if s in BootstrapStage else "uninitialized"
+        
         return ModuleCredentialSnapshot(
             principal_id=str(payload.get("principal_id", "")).strip(),
-            stage=str(payload.get("stage", "uninitialized")).strip() or "uninitialized",
+            stage=get_stage(str(payload.get("stage", "uninitialized")).strip() or "uninitialized"),
             active_comm_key_id=str(payload.get("active_comm_key_id", "")).strip(),
             issued_at=float(payload.get("issued_at", 0.0) or 0.0),
             expires_at=float(payload.get("expires_at", 0.0) or 0.0),

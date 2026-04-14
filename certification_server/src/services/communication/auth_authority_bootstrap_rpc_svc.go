@@ -11,7 +11,6 @@ import (
 	authmodel "certification_server/src/models/auth"
 	commonmodel "certification_server/src/models/common"
 	commsecmodel "certification_server/src/models/commsec"
-	modelsystem "certification_server/src/models/system"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -19,8 +18,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const bootstrapServiceName = "bms.auth.v1.AuthAuthorityBootstrapService"
+
 const (
-	bootstrapServiceName          = "bms.auth.v1.AuthAuthorityBootstrapService"
 	bootstrapChallengeRouteKey    = "auth.bootstrap.challenge"
 	bootstrapAuthenticateRouteKey = "auth.bootstrap.authenticate"
 )
@@ -29,8 +29,7 @@ const (
 type AuthAuthorityBootstrapRPCService struct {
 	authv1.UnimplementedAuthAuthorityBootstrapServiceServer
 
-	orchestrator   orchestrationif.IAuthRequestOrchestrator
-	trafficStation communicationif.ITrafficStation
+	bootstrapHandler *BootstrapFlowHandler
 }
 
 func NewAuthAuthorityBootstrapRPCService(
@@ -38,8 +37,7 @@ func NewAuthAuthorityBootstrapRPCService(
 	trafficStation communicationif.ITrafficStation,
 ) *AuthAuthorityBootstrapRPCService {
 	return &AuthAuthorityBootstrapRPCService{
-		orchestrator:   orchestrator,
-		trafficStation: trafficStation,
+		bootstrapHandler: NewBootstrapFlowHandler(orchestrator, trafficStation),
 	}
 }
 
@@ -62,98 +60,30 @@ func (s *AuthAuthorityBootstrapRPCService) InitBootstrapChallenge(
 	ctx context.Context,
 	req *authv1.BootstrapChallengeRequest,
 ) (*authv1.BootstrapChallengeResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "challenge request payload is required")
+	if s.bootstrapHandler == nil {
+		return nil, status.Error(codes.Internal, "bootstrap flow handler is required")
 	}
-	if s.orchestrator == nil || s.trafficStation == nil {
-		return nil, status.Error(codes.Internal, modelsystem.ErrBootstrapRPCDependenciesRequired.Error())
-	}
-
-	if err := s.ensureInboundAccepted(
+	return s.bootstrapHandler.HandleBootstrapChallenge(
 		ctx,
+		req,
 		buildBootstrapChallengeRoutingInput(req),
 		buildBootstrapChallengeInboundHeaders(req),
-	); err != nil {
-		return nil, err
-	}
-
-	challengeReq, err := mapProtoChallengeRequest(req)
-	if err != nil {
-		return nil, err
-	}
-	challenge, err := s.orchestrator.HandleBootstrapChallenge(ctx, challengeReq)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "init bootstrap challenge failed: %v", err)
-	}
-	resp, err := buildChallengeResponse(challenge)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
+	)
 }
 
 func (s *AuthAuthorityBootstrapRPCService) AuthenticateBootstrap(
 	ctx context.Context,
 	req *authv1.BootstrapAuthenticateRequest,
 ) (*authv1.BootstrapAuthenticateResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "bootstrap auth payload is required")
+	if s.bootstrapHandler == nil {
+		return nil, status.Error(codes.Internal, "bootstrap flow handler is required")
 	}
-	if s.orchestrator == nil || s.trafficStation == nil {
-		return nil, status.Error(codes.Internal, modelsystem.ErrBootstrapRPCDependenciesRequired.Error())
-	}
-
-	if err := s.ensureInboundAccepted(
+	return s.bootstrapHandler.HandleBootstrapAuthenticate(
 		ctx,
+		req,
 		buildBootstrapAuthenticateRoutingInput(req),
 		buildBootstrapAuthenticateInboundHeaders(req),
-	); err != nil {
-		return nil, err
-	}
-
-	authReq, err := mapProtoBootstrapAuthRequest(req)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := s.orchestrator.HandleBootstrapAuthenticate(ctx, authReq)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "authenticate bootstrap failed: %v", err)
-	}
-	resp, err := buildBootstrapAuthResponse(result)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
-}
-
-func (s *AuthAuthorityBootstrapRPCService) ensureInboundAccepted(
-	ctx context.Context,
-	route *communicationif.RoutingInput,
-	headers map[string]string,
-) error {
-	decision, err := s.trafficStation.HandleInbound(
-		ctx,
-		&communicationif.InboundTrafficRequest{
-			Route:   route,
-			Headers: headers,
-			Payload: "",
-		},
 	)
-	if err != nil {
-		return status.Errorf(codes.Internal, "inbound traffic station failed: %v", err)
-	}
-	if decision == nil {
-		return status.Error(codes.Internal, "inbound traffic decision is nil")
-	}
-	if !decision.Accepted {
-		reason := strings.TrimSpace(decision.Reason)
-		if reason == "" {
-			reason = "rejected"
-		}
-		return status.Errorf(codes.PermissionDenied, "inbound traffic rejected: %s", reason)
-	}
-	return nil
 }
 
 func buildBootstrapChallengeRoutingInput(req *authv1.BootstrapChallengeRequest) *communicationif.RoutingInput {
@@ -392,10 +322,7 @@ func buildBootstrapAuthResponse(result *authmodel.BootstrapAuthResult) (*authv1.
 	if err != nil {
 		return nil, err
 	}
-	session, err := buildProtoSessionInfo(result.Session)
-	if err != nil {
-		return nil, err
-	}
+	session := buildSessionProto(result.Session)
 
 	return &authv1.BootstrapAuthenticateResponse{
 		Stage:           mapBootstrapStage(result.Stage),
@@ -440,36 +367,6 @@ func buildProtoIdentityContext(identity *authmodel.IdentityContext) (*authv1.Ide
 		TraceId:       strings.TrimSpace(identity.TraceID),
 		IssuedAtMs:    identity.IssuedAt.UnixMilli(),
 		ExpiresAtMs:   identity.ExpiresAt.UnixMilli(),
-	}, nil
-}
-
-func buildProtoSessionInfo(session *authmodel.Session) (*authv1.SessionInfo, error) {
-	if session == nil {
-		return nil, nil
-	}
-	entityType, err := mapModelEntityType(session.Principal.EntityType)
-	if err != nil {
-		return nil, err
-	}
-
-	principal := &authv1.Principal{
-		EntityType:  entityType,
-		EntityId:    strings.TrimSpace(session.Principal.EntityID),
-		PrincipalId: strings.TrimSpace(session.Principal.PrincipalID()),
-	}
-
-	return &authv1.SessionInfo{
-		SessionId:     uuidToString(session.ID),
-		Principal:     principal,
-		Status:        strings.TrimSpace(string(session.Status)),
-		AuthMethod:    strings.TrimSpace(string(session.AuthMethod)),
-		ClientId:      strings.TrimSpace(session.ClientID),
-		GatewayId:     strings.TrimSpace(session.GatewayID),
-		ScopeSnapshot: append([]string(nil), session.ScopeSnapshot...),
-		RoleSnapshot:  strings.TrimSpace(session.RoleSnapshot),
-		CreatedAtMs:   session.CreatedAt.UnixMilli(),
-		ExpiresAtMs:   session.ExpiresAt.UnixMilli(),
-		Version:       session.Version,
 	}, nil
 }
 

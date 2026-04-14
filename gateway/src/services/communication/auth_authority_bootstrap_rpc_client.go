@@ -1,4 +1,4 @@
-package authcontrol
+package communication
 
 import (
 	"context"

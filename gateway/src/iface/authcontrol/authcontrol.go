@@ -3,13 +3,14 @@ package authcontrol
 import (
 	"context"
 
+	authif "gateway/src/iface/auth"
 	authmodel "gateway/src/models/auth"
 )
 
 // InboundAuthRequest 是网关入站认证控制请求。
 type InboundAuthRequest struct {
-	TokenVerifyRequest     *TokenVerifyRequest
-	SessionValidateRequest *SessionValidateRequest
+	TokenVerifyRequest     *authif.TokenVerifyRequest
+	SessionValidateRequest *authif.SessionValidateRequest
 	RateLimitInput         *InboundRateLimitInput
 }
 

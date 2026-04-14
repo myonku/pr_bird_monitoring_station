@@ -1,4 +1,4 @@
-package authcontrol
+package auth
 
 import (
 	"context"

@@ -26,6 +26,7 @@ type AuthRequestOrchestratorService struct {
 	keyManager     commonif.IKeyManager
 	sessionManager commonif.ISessionManager
 	tokenManager   commonif.ITokenManager
+	userCredential commonif.IUserCredentialManager
 
 	mu              sync.RWMutex
 	bootstrapByID   map[uuid.UUID]authmodel.ChallengePayload
@@ -34,18 +35,20 @@ type AuthRequestOrchestratorService struct {
 
 // NewAuthRequestOrchestratorService 创建最小可编译编排服务骨架。
 func NewAuthRequestOrchestratorService() *AuthRequestOrchestratorService {
-	return NewAuthRequestOrchestratorServiceWithDeps(nil, nil, nil)
+	return NewAuthRequestOrchestratorServiceWithDeps(nil, nil, nil, nil)
 }
 
 func NewAuthRequestOrchestratorServiceWithDeps(
 	keyManager commonif.IKeyManager,
 	sessionManager commonif.ISessionManager,
 	tokenManager commonif.ITokenManager,
+	userCredential commonif.IUserCredentialManager,
 ) *AuthRequestOrchestratorService {
 	return &AuthRequestOrchestratorService{
 		keyManager:      keyManager,
 		sessionManager:  sessionManager,
 		tokenManager:    tokenManager,
+		userCredential:  userCredential,
 		bootstrapByID:   make(map[uuid.UUID]authmodel.ChallengePayload),
 		defaultAudience: "certification_server",
 	}
@@ -223,7 +226,136 @@ func (s *AuthRequestOrchestratorService) HandleUserPasswordAuth(
 	if req == nil {
 		return nil, &modelsystem.ErrUserPasswordAuthRequestNil
 	}
-	return nil, errAuthRequestOrchestratorNotImplemented
+	if s.userCredential == nil || s.sessionManager == nil || s.tokenManager == nil {
+		return nil, &modelsystem.ErrUserCredentialDepsNotReady
+	}
+
+	username := strings.TrimSpace(req.Username)
+	if username == "" {
+		return nil, &modelsystem.ErrUsernameRequired
+	}
+	if strings.TrimSpace(req.Password) == "" {
+		return nil, &modelsystem.ErrPasswordRequired
+	}
+
+	credential, err := s.userCredential.ValidateCredentials(
+		ctx,
+		commonif.UserPwdCredentialRequest{
+			Username:    username,
+			Password:    req.Password,
+			Timestamp:   time.Now().Unix(),
+			Fingerprint: strings.TrimSpace(req.UserAgent),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if credential == nil {
+		return nil, &modelsystem.ErrInvalidUserCredentials
+	}
+
+	principal := credential.Principal
+	if principal.EntityType == "" {
+		principal.EntityType = commonmodel.EntityUser
+	}
+	if strings.TrimSpace(principal.EntityID) == "" {
+		principal.EntityID = username
+	}
+	if strings.TrimSpace(principal.PrincipalID()) == "" {
+		return nil, &modelsystem.ErrInvalidUserCredentials
+	}
+
+	role := strings.TrimSpace(credential.Role)
+	if role == "" {
+		role = "user"
+	}
+	scopes := normalizeUserScopes(req.Scopes, credential.Scopes)
+
+	now := time.Now().UTC()
+	session, err := s.sessionManager.CreateSession(
+		ctx,
+		&commonif.SessionIssueRequest{
+			Principal:  principal,
+			Role:       role,
+			Scopes:     append([]string(nil), scopes...),
+			AuthMethod: authmodel.AuthMethodPassword,
+			ClientID:   strings.TrimSpace(req.ClientID),
+			GatewayID:  strings.TrimSpace(req.GatewayID),
+			SourceIP:   strings.TrimSpace(req.SourceIP),
+			UserAgent:  strings.TrimSpace(req.UserAgent),
+			ExpiresAt:  now.Add(15 * time.Minute),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	audience := strings.TrimSpace(req.Audience)
+	if audience == "" {
+		audience = "client"
+	}
+	sourceService := strings.TrimSpace(req.GatewayID)
+	if sourceService == "" {
+		sourceService = "gateway"
+	}
+
+	tokens, err := s.tokenManager.IssueTokenBundle(
+		ctx,
+		session,
+		&commonif.TokenIssueRequest{
+			Principal:     principal,
+			SessionID:     session.ID,
+			FamilyID:      session.TokenFamilyID,
+			Audience:      audience,
+			Role:          role,
+			Scopes:        append([]string(nil), scopes...),
+			AuthMethod:    authmodel.AuthMethodPassword,
+			ClientID:      strings.TrimSpace(req.ClientID),
+			GatewayID:     strings.TrimSpace(req.GatewayID),
+			SourceService: sourceService,
+			TargetService: "certification_server",
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	issuedAt, expiresAt, tokenID, familyID := resolveBootstrapTokenContext(session, tokens)
+	identity := &authmodel.IdentityContext{
+		Principal:     principal,
+		EntityType:    principal.EntityType,
+		EntityID:      principal.EntityID,
+		PrincipalID:   principal.PrincipalID(),
+		SessionID:     session.ID,
+		TokenID:       tokenID,
+		TokenFamilyID: familyID,
+		TokenType:     authmodel.TokenAccess,
+		Role:          role,
+		Scopes:        append([]string(nil), scopes...),
+		AuthMethod:    authmodel.AuthMethodPassword,
+		SourceIP:      strings.TrimSpace(req.SourceIP),
+		ClientID:      strings.TrimSpace(req.ClientID),
+		GatewayID:     strings.TrimSpace(req.GatewayID),
+		SourceService: sourceService,
+		TargetService: "certification_server",
+		UserAgent:     strings.TrimSpace(req.UserAgent),
+		RequestID:     strings.TrimSpace(req.RequestID),
+		TraceID:       strings.TrimSpace(req.TraceID),
+		IssuedAt:      issuedAt,
+		ExpiresAt:     expiresAt,
+	}
+
+	out := &orchestrationif.UserPasswordAuthResult{
+		Identity:  identity,
+		Session:   session,
+		IssuedAt:  issuedAt,
+		ExpiresAt: expiresAt,
+	}
+	if tokens != nil {
+		out.Tokens = *tokens
+	}
+
+	return out, nil
 }
 
 func (s *AuthRequestOrchestratorService) HandleTokenVerify(
@@ -232,7 +364,10 @@ func (s *AuthRequestOrchestratorService) HandleTokenVerify(
 	if req == nil {
 		return nil, &modelsystem.ErrRawTokenRequired
 	}
-	return nil, errAuthRequestOrchestratorNotImplemented
+	if s.tokenManager == nil {
+		return nil, &modelsystem.ErrBootstrapDepsNotReady
+	}
+	return s.tokenManager.VerifyToken(ctx, req)
 }
 
 func (s *AuthRequestOrchestratorService) HandleSessionValidate(
@@ -241,7 +376,10 @@ func (s *AuthRequestOrchestratorService) HandleSessionValidate(
 	if req == nil {
 		return nil, &modelsystem.ErrSessionValidateRequestNil
 	}
-	return nil, errAuthRequestOrchestratorNotImplemented
+	if s.sessionManager == nil {
+		return nil, &modelsystem.ErrBootstrapDepsNotReady
+	}
+	return s.sessionManager.ValidateSession(ctx, req)
 }
 
 func (s *AuthRequestOrchestratorService) HandleTokenRefresh(
@@ -330,6 +468,38 @@ func normalizeScopes(raw []string) []string {
 		return []string{"service:bootstrap"}
 	}
 	return out
+}
+
+func normalizeUserScopes(reqScopes []string, credentialScopes []string) []string {
+	if len(credentialScopes) > 0 {
+		out := make([]string, 0, len(credentialScopes))
+		for _, item := range credentialScopes {
+			trimmed := strings.TrimSpace(item)
+			if trimmed == "" {
+				continue
+			}
+			out = append(out, trimmed)
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+
+	if len(reqScopes) > 0 {
+		out := make([]string, 0, len(reqScopes))
+		for _, item := range reqScopes {
+			trimmed := strings.TrimSpace(item)
+			if trimmed == "" {
+				continue
+			}
+			out = append(out, trimmed)
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+
+	return []string{"user:read"}
 }
 
 func resolveBootstrapTokenContext(

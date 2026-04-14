@@ -31,6 +31,12 @@ TRUSTED_INTERNAL_CALL_METADATA_KEY = "trusted_internal_call"
 
 BOOTSTRAP_INIT_PATH = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
 BOOTSTRAP_AUTH_PATH = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBootstrap"
+REMOTE_VERIFY_PATH = "/bms.auth.v1.AuthAuthorityRemoteAuthService/VerifyToken"
+REMOTE_SESSION_PATH = "/bms.auth.v1.AuthAuthorityRemoteAuthService/ValidateSession"
+EXTERNAL_AUTH_PATH = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
+TARGET_REVERIFY_PATH = (
+    "/bms.auth.v1.AuthAuthorityTargetReverifyService/ReverifyForwardedContext"
+)
 
 
 class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
@@ -85,8 +91,9 @@ class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
             if parsed is not None:
                 return parsed
 
-        if _matches_bootstrap_path(flow):
-            return "bootstrap_call"
+        parsed_static = _parse_static_flow_category(flow)
+        if parsed_static is not None:
+            return parsed_static
 
         raise RuntimeError("route rule not found")
 
@@ -220,13 +227,22 @@ def _parse_route_key(raw: str) -> FlowCategory | None:
     return None
 
 
-def _matches_bootstrap_path(flow: FlowRouteInput) -> bool:
-    return (
-        (flow.transport or "").strip().lower() == "grpc"
-        and (flow.method or "").strip().lower() == "post"
-        and (flow.path or "").strip().lower()
-        in {BOOTSTRAP_INIT_PATH.lower(), BOOTSTRAP_AUTH_PATH.lower()}
-    )
+def _parse_static_flow_category(flow: FlowRouteInput) -> FlowCategory | None:
+    if (flow.transport or "").strip().lower() != "grpc":
+        return None
+    if (flow.method or "").strip().lower() != "post":
+        return None
+
+    path = (flow.path or "").strip().lower()
+    if path in {BOOTSTRAP_INIT_PATH.lower(), BOOTSTRAP_AUTH_PATH.lower()}:
+        return "bootstrap_call"
+    if path in {REMOTE_VERIFY_PATH.lower(), REMOTE_SESSION_PATH.lower()}:
+        return "remote_auth_verify"
+    if path == EXTERNAL_AUTH_PATH.lower():
+        return "external_auth_forward"
+    if path == TARGET_REVERIFY_PATH.lower():
+        return "target_reverify_call"
+    return None
 
 
 def _is_trusted_internal_call(flow: FlowRouteInput) -> bool:

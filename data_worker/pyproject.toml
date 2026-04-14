@@ -16,3 +16,8 @@ dependencies = [
     "pydantic>=2.12.5",
     "redis>=7.3.0",
 ]
+
+[tool.uv.workspace]
+members = [
+    "data_server",
+]
