@@ -11,7 +11,7 @@ import (
 	authmodel "gateway/src/models/auth"
 	commonmodel "gateway/src/models/common"
 	modelsystem "gateway/src/models/system"
-	communicationsvc "gateway/src/services/communication"
+	rpcclient "gateway/src/services/communication/rpc_client"
 )
 
 const defaultBootstrapAuthorityServiceName = "certification_server"
@@ -87,10 +87,10 @@ func (s *BootstrapStartupOrchestratorService) EnsureReady(
 		keyID = strings.TrimSpace(runtime.InstanceID)
 	}
 
-	bootstrapClient := communicationsvc.NewBootstrapRPCClient(authorityEndpoint)
+	bootstrapClient := rpcclient.NewBootstrapRPCClient(authorityEndpoint)
 	handshakeResult, callErr := bootstrapClient.ExecuteBootstrapHandshake(
 		ctx,
-		&communicationsvc.BootstrapHandshakeRequest{
+		&rpcclient.BootstrapHandshakeRequest{
 			EntityType: runtime.EntityType,
 			EntityID:   runtime.InstanceID,
 			Audience:   runtime.ServiceName,

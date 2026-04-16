@@ -1,6 +1,6 @@
 # 后端路由与 Proto 基准约定（合并版）
 
-版本：1.5.0
+版本：1.5.1
 状态：Baseline
 适用模块：gateway / certification_server / data_worker
 
@@ -43,7 +43,7 @@
    - 输出：challenge payload（至少包含 challenge_id、nonce、过期时间）。
 2. `AuthenticateBootstrap`
    - 输入：challenge 原文 + 签名证明 + scopes/role 等最小控制字段。
-   - 输出：bootstrap stage + 最小凭证快照（含 active_comm_key_id、issued/expires）。
+   - 输出：bootstrap stage + 统一凭证结果结构；当前实现以 TokenBundle 作为核心令牌子集，可附加最小身份快照（含 active_comm_key_id、issued/expires）。
 
 ### 3.3 标识与时间规范
 
@@ -76,6 +76,7 @@
 - 其中 remote_auth、external_auth 保持现行最小实现；target_reverify 与 downstream grant 相关设计已于 2026-04-16 裁撤，不再纳入当前基线。
 - 其中 token_refresh 通路已冻结为独立 refresh 链路：gateway 外部转发使用 `auth.external.forward.token_refresh_bundle`，后端模块自刷新使用 `auth.module.refresh.token_bundle`。
 - 本轮 external_auth 的外部 bootstrap 转发修补只涉及 gateway 与 certification_server；token_refresh 路由与 client 适配已同步对齐 gateway / certification_server / data_worker。
+- bootstrap 与用户名密码认证成功后的凭证载体统一按统一凭证结果结构处理；当前实现以 TokenBundle 作为核心令牌子集，必要时可附加 identity/session 等上下文，不按调用模块拆分成功结果结构。
 
 ### 3.6 令牌生命周期通路（refresh 已冻结，revoke 待补）
 

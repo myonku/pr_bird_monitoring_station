@@ -1,4 +1,4 @@
-package communication
+package rpcservice
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	orchestrationif "certification_server/src/iface/orchestration"
 	authmodel "certification_server/src/models/auth"
 	modelsystem "certification_server/src/models/system"
+	communication "certification_server/src/services/communication"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -87,7 +88,7 @@ func (s *AuthAuthorityRemoteAuthRPCService) VerifyToken(
 		},
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "verify token failed: %v", err)
+		return nil, MapAuthRPCError(err, codes.Internal, "verify token failed")
 	}
 
 	return buildTokenVerificationProto(result), nil
@@ -127,7 +128,7 @@ func (s *AuthAuthorityRemoteAuthRPCService) ValidateSession(
 		},
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.PermissionDenied, "validate session failed: %v", err)
+		return nil, MapAuthRPCError(err, codes.Internal, "validate session failed")
 	}
 
 	return buildSessionProto(session), nil
@@ -147,7 +148,7 @@ func (s *AuthAuthorityRemoteAuthRPCService) ensureInboundAccepted(
 		},
 	)
 	if err != nil {
-		return status.Errorf(codes.Internal, "inbound traffic station failed: %v", err)
+		return MapAuthRPCError(err, codes.Internal, "inbound traffic station failed")
 	}
 	if decision == nil {
 		return status.Error(codes.Internal, "inbound traffic decision is nil")
@@ -176,7 +177,7 @@ func buildVerifyTokenRoutingInput(req *authv1.TokenVerifyRequest) *communication
 	}
 
 	return &communicationif.RoutingInput{
-		RouteKey:          remoteAuthVerifyRouteKey,
+		RouteKey:          communication.RemoteAuthVerifyRouteKey,
 		Transport:         "grpc",
 		Method:            "POST",
 		Path:              authv1.AuthAuthorityRemoteAuthService_VerifyToken_FullMethodName,
@@ -201,7 +202,7 @@ func buildValidateSessionRoutingInput(req *authv1.SessionValidateRequest) *commu
 	}
 
 	return &communicationif.RoutingInput{
-		RouteKey:          remoteSessionValidateRouteKey,
+		RouteKey:          communication.RemoteSessionValidateRouteKey,
 		Transport:         "grpc",
 		Method:            "POST",
 		Path:              authv1.AuthAuthorityRemoteAuthService_ValidateSession_FullMethodName,

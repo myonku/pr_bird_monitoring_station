@@ -41,7 +41,6 @@ Capability Modules 最小集合：
 
 - AuthControl（含 RateLimit）
 - Bootstrap
-- CommsecChannelManager
 
 Data Managers 最小集合：
 
@@ -59,7 +58,7 @@ Data Managers 最小集合：
 2. 流量分类必须在通信下层完成，不允许在顶层按 auth/business 直接分叉实现。
 3. AuthControl 内聚认证决策与限流决策，不再单列独立 RateLimit 模块。
 4. Gateway AuthControl 负责远程认证调用结果消费和限流决策。
-5. AuthControl 不得调用 Bootstrap、CommsecChannelManager、LocalCredentialManager。
+5. AuthControl 不得调用 Bootstrap、LocalCredentialManager。
 6. Bootstrap 成功判定依赖 LocalCredentialManager 写入 Redis 成功；写入失败必须上抛错误。
 7. 业务转发必须先获取授权并确保通道可用，再执行加密转发。
 8. 目标服务必须执行二次认证复核；该复核属于目标服务独立能力，不属于 gateway AuthControl。
@@ -84,7 +83,7 @@ Data Managers 最小集合：
 2. Traffic Station 接管。
 3. 通信下层完成路由分类与策略决策。
 4. AuthControl（远程认证结果消费 + 限流）。
-5. CommsecChannelManager 确保通道并处理载荷。
+5. 通信下层负责载荷处理与出站准备。
 6. gRPC client 出站转发。
 
 ---

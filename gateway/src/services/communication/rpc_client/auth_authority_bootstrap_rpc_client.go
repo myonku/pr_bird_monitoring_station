@@ -1,4 +1,4 @@
-package communication
+package rpcclient
 
 import (
 	"context"

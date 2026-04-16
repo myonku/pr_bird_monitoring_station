@@ -11,16 +11,6 @@ import (
 var _ communicationif.IRoutingPayloadPipeline = (*RoutingPayloadPipelineService)(nil)
 
 const (
-	remoteAuthVerifyRouteKey              = "auth.remote.verify.token"
-	remoteSessionValidateRouteKey         = "auth.remote.validate.session"
-	externalAuthForwardRouteKey           = "auth.external.forward.user_password"
-	externalRefreshTokenBundleRouteKey    = "auth.external.forward.token_refresh_bundle"
-	externalBootstrapChallengeRouteKey    = "auth.external.forward.bootstrap.challenge"
-	externalBootstrapAuthenticateRouteKey = "auth.external.forward.bootstrap.authenticate"
-	moduleTokenRefreshRouteKey            = "auth.module.refresh.token_bundle"
-)
-
-const (
 	routingBootstrapInitMethodPath                 = "/bms.auth.v1.AuthAuthorityBootstrapService/InitBootstrapChallenge"
 	routingBootstrapAuthMethodPath                 = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBootstrap"
 	routingRemoteVerifyMethodPath                  = "/bms.auth.v1.AuthAuthorityRemoteAuthService/VerifyToken"

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -15,8 +14,10 @@ import (
 	commonmodel "certification_server/src/models/common"
 	modelsystem "certification_server/src/models/system"
 	"certification_server/src/repo"
+	authcontrolsvc "certification_server/src/services/authcontrol"
 	commonsvc "certification_server/src/services/common"
 	communicationsvc "certification_server/src/services/communication"
+	rpcservice "certification_server/src/services/communication/rpc_service"
 	orchestrationsvc "certification_server/src/services/orchestration"
 
 	"github.com/google/uuid"
@@ -29,15 +30,20 @@ const (
 	defaultCertificationRegistryTTL = int64(30)
 )
 
-// Run 启动认证中心最小生命周期：配置 -> 依赖 -> 跳过自身bootstrap -> 注册 -> 最小gRPC运行。
+// Run 启动认证中心最小生命周期：配置 -> no-auth 保护 -> 依赖 -> 跳过自身bootstrap -> 注册 -> 最小gRPC运行。
 func Run() error {
 	cfg, err := modelsystem.LoadConfig(defaultCertificationConfigPath)
 	if err != nil {
 		return err
 	}
 
-	runtimeCfg := cfg.Runtime.Normalized("certification_server")
+	normalizedCfg := cfg.Normalized("certification_server")
+	runtimeCfg := *normalizedCfg.Runtime
 	log.Printf("stage=config_loaded service=%s run_mode=%s", runtimeCfg.ServiceName, runtimeCfg.RunMode)
+	if runtimeCfg.RunMode == modelsystem.RuntimeRunModeNoAuth {
+		log.Printf("stage=no_auth_self_stop service=%s reason=run_mode_no_auth", runtimeCfg.ServiceName)
+		return nil
+	}
 
 	var mysqlClient *repo.MySQLClient
 	if cfg.MySQL != nil {
@@ -65,7 +71,7 @@ func Run() error {
 		}()
 	}
 
-	etcdCfg := resolveCertificationEtcdConfig(cfg)
+	etcdCfg := resolveCertificationEtcdConfig(&normalizedCfg)
 	etcdClient, err := repo.NewEtcdClient(etcdCfg)
 	if err != nil {
 		return err
@@ -78,26 +84,22 @@ func Run() error {
 
 	registrySvc := commonsvc.NewRegistryService(etcdClient, "", 0)
 
-	keyManager, startupParams, err := commonsvc.NewSecretKeyServiceFromProjectConfig(cfg, nil, mysqlClient)
+	keyManager, startupParams, err := commonsvc.NewSecretKeyServiceFromProjectConfig(&normalizedCfg, nil, mysqlClient)
 	if err != nil {
 		return err
 	}
+	authControl := authcontrolsvc.NewInboundAuthControlService(*normalizedCfg.AuthControl)
 	sessionManager := commonsvc.NewSessionService(redisClient)
 	tokenManager := commonsvc.NewTokenService(mysqlClient, redisClient)
-	userCredentialManager := commonsvc.NewUserCredentialService()
+	userCredentialManager := commonsvc.NewUserCredentialService(mysqlClient)
 	routingPipeline := communicationsvc.NewRoutingPayloadPipelineService()
-	trafficStation := communicationsvc.NewTrafficStationService(routingPipeline)
+	trafficStation := communicationsvc.NewTrafficStationService(routingPipeline, authControl)
 	authOrchestrator := orchestrationsvc.NewAuthRequestOrchestratorServiceWithDeps(
 		keyManager,
 		sessionManager,
 		tokenManager,
 		userCredentialManager,
 	)
-	if runtimeCfg.RunMode != modelsystem.RuntimeRunModeNoAuth &&
-		strings.TrimSpace(startupParams.ActiveKeyID) == "" &&
-		strings.TrimSpace(runtimeCfg.InstanceID) == "" {
-		return fmt.Errorf("bootstrap identity requires active_key_id or instance_id")
-	}
 	log.Printf("stage=dependencies_initialized service=%s", runtimeCfg.ServiceName)
 
 	log.Printf("stage=bootstrap_skipped_or_ready service=%s mode=%s reason=authority_self_bootstrap_disabled", runtimeCfg.ServiceName, runtimeCfg.RunMode)
@@ -117,10 +119,10 @@ func Run() error {
 	}
 
 	grpcServer := grpc.NewServer()
-	communicationsvc.RegisterAuthAuthorityBootstrapRPC(grpcServer, authOrchestrator, trafficStation)
-	communicationsvc.RegisterAuthAuthorityRemoteAuthRPC(grpcServer, authOrchestrator, trafficStation)
-	communicationsvc.RegisterAuthAuthorityExternalAuthRPC(grpcServer, authOrchestrator, trafficStation)
-	communicationsvc.RegisterAuthAuthorityTokenRefreshRPC(grpcServer, authOrchestrator, trafficStation)
+	rpcservice.RegisterAuthAuthorityBootstrapRPC(grpcServer, authOrchestrator, trafficStation)
+	rpcservice.RegisterAuthAuthorityRemoteAuthRPC(grpcServer, authOrchestrator, trafficStation)
+	rpcservice.RegisterAuthAuthorityExternalAuthRPC(grpcServer, authOrchestrator, trafficStation)
+	rpcservice.RegisterAuthAuthorityTokenRefreshRPC(grpcServer, authOrchestrator, trafficStation)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -154,6 +156,7 @@ func buildCertificationListenAddr(runtime modelsystem.RuntimeConfig) string {
 	return net.JoinHostPort(runtime.GRPCListenHost, strconv.Itoa(runtime.GRPCListenPort))
 }
 
+// buildCertificationInstance 使用启动阶段解析出的有效公钥引用ID；active_key_id 缺失时已在启动参数中回退到 instance_id。
 func buildCertificationInstance(runtime modelsystem.RuntimeConfig, activeKeyID string) *commonmodel.ServiceInstance {
 	instanceID := parseOrCreateCertificationUUID(runtime.InstanceID)
 	serviceID := strings.TrimSpace(runtime.InstanceID)

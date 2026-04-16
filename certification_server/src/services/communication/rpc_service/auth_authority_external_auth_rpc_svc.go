@@ -1,4 +1,4 @@
-package communication
+package rpcservice
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	communicationif "certification_server/src/iface/communication"
 	orchestrationif "certification_server/src/iface/orchestration"
 	modelsystem "certification_server/src/models/system"
+	communication "certification_server/src/services/communication"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -87,7 +88,7 @@ func (s *AuthAuthorityExternalAuthRPCService) ForwardUserPassword(
 		},
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.PermissionDenied, "user password auth failed: %v", err)
+		return nil, MapAuthRPCError(err, codes.Internal, "user password auth failed")
 	}
 
 	if result == nil {
@@ -135,7 +136,7 @@ func (s *AuthAuthorityExternalAuthRPCService) ForwardRefreshTokenBundle(
 		},
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.PermissionDenied, "token refresh failed: %v", err)
+		return nil, MapAuthRPCError(err, codes.Internal, "token refresh failed")
 	}
 	if result == nil {
 		return nil, status.Error(codes.Internal, "token refresh result is nil")
@@ -190,7 +191,7 @@ func (s *AuthAuthorityExternalAuthRPCService) ensureInboundAccepted(
 		},
 	)
 	if err != nil {
-		return status.Errorf(codes.Internal, "inbound traffic station failed: %v", err)
+		return MapAuthRPCError(err, codes.Internal, "inbound traffic station failed")
 	}
 	if decision == nil {
 		return status.Error(codes.Internal, "inbound traffic decision is nil")
@@ -219,7 +220,7 @@ func buildUserPasswordRoutingInput(req *authv1.UserPasswordAuthRequest) *communi
 	}
 
 	return &communicationif.RoutingInput{
-		RouteKey:          externalAuthForwardRouteKey,
+		RouteKey:          communication.ExternalAuthForwardRouteKey,
 		Transport:         "grpc",
 		Method:            "POST",
 		Path:              authv1.AuthAuthorityExternalAuthService_ForwardUserPassword_FullMethodName,
@@ -269,7 +270,7 @@ func buildExternalRefreshTokenRoutingInput(req *authv1.TokenRefreshRequest) *com
 	}
 
 	return &communicationif.RoutingInput{
-		RouteKey:          externalRefreshTokenBundleRouteKey,
+		RouteKey:          communication.ExternalRefreshTokenBundleRouteKey,
 		Transport:         "grpc",
 		Method:            "POST",
 		Path:              authv1.AuthAuthorityExternalAuthService_ForwardRefreshTokenBundle_FullMethodName,
@@ -332,7 +333,7 @@ func buildExternalBootstrapChallengeRoutingInput(req *authv1.BootstrapChallengeR
 	}
 
 	return &communicationif.RoutingInput{
-		RouteKey:          externalBootstrapChallengeRouteKey,
+		RouteKey:          communication.ExternalBootstrapChallengeRouteKey,
 		Transport:         "grpc",
 		Method:            "POST",
 		Path:              authv1.AuthAuthorityExternalAuthService_ForwardBootstrapChallenge_FullMethodName,
@@ -358,7 +359,7 @@ func buildExternalBootstrapAuthenticateRoutingInput(req *authv1.BootstrapAuthent
 	}
 
 	return &communicationif.RoutingInput{
-		RouteKey:          externalBootstrapAuthenticateRouteKey,
+		RouteKey:          communication.ExternalBootstrapAuthenticateRouteKey,
 		Transport:         "grpc",
 		Method:            "POST",
 		Path:              authv1.AuthAuthorityExternalAuthService_ForwardBootstrapAuthenticate_FullMethodName,

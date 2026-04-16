@@ -1,6 +1,6 @@
 # 后端模块推进记录与时间线基准
 
-版本：1.3.0
+版本：1.3.1
 状态：Baseline-Timeline
 适用范围：gateway / certification_server / data_worker
 
@@ -95,7 +95,16 @@
 - 本轮已将 target_reverify 与 downstream grant 相关设计从代码、proto、接口层和生成物中移除，并同步补齐文档收口。
 - 当前后端现行基线仅保留 bootstrap、remote_auth、external_auth 与 business_forward 主线；目标侧二次复核不再作为独立设计项。
 - runtime token refresh 已补齐独立 route/proto 通路：gateway 侧新增 `auth.external.forward.token_refresh_bundle` / `ForwardRefreshTokenBundle`，认证中心侧新增 `auth.module.refresh.token_bundle` / `AuthAuthorityTokenRefreshService.RefreshTokenBundle`；revoke 仍保留在能力层接口与启动链语义中，尚未冻结独立 route/proto 约定。
+- 认证中心 no-auth 处理已明确为暂时性设计方向：默认不启动；若被拉起，则在判定 run_mode=no-auth 后自主停止或仅保留健康检查壳。bootstrap / 用户密码认证成功后的凭证统一按统一凭证结果结构处理，当前实现以 TokenBundle 作为核心令牌子集，Gateway 之外的 AuthControl 仅保留本地资源级限流语义。
+- 认证中心自身凭证不纳入当前设计边界，本轮不讨论自签发、自持有或自管理。
+- 认证中心的 commsec 通道设计已从当前基线移除；能力主线进一步收口到 AuthControl、Bootstrap、Session、Token、Registry 与 Key 管理器。近期已补齐启动参数回退、authcontrol 描述符构建、RPC 错误映射的最小单测，并完成一次 `go test ./...` 校验。
 - 阶段记录已更新为当前状态说明，旧的 2026-04-14~2026-04-15 记录仅作为历史快照保留。
+
+### 2026-04-16（P2 测试收口）
+
+- certification_server 已补齐 user_credential / session / token / secret_key / orchestrator 的最小单测，覆盖成功、缺参、过期、失活、找不到、依赖缺失与错误码映射。
+- certification_server 已补齐编排层 smoke test，串起 bootstrap、用户名密码、token refresh、session validate 四条主路径。
+- certification_server 已通过 `go test ./...` 全量校验。
 
 ## 5. 阶段问题精简结论（来自已归档问题单）
 

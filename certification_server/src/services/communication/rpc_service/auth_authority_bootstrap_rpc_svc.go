@@ -1,4 +1,4 @@
-package communication
+package rpcservice
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	authmodel "certification_server/src/models/auth"
 	commonmodel "certification_server/src/models/common"
 	commsecmodel "certification_server/src/models/commsec"
+	communication "certification_server/src/services/communication"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -19,11 +20,6 @@ import (
 )
 
 const bootstrapServiceName = "bms.auth.v1.AuthAuthorityBootstrapService"
-
-const (
-	bootstrapChallengeRouteKey    = "auth.bootstrap.challenge"
-	bootstrapAuthenticateRouteKey = "auth.bootstrap.authenticate"
-)
 
 // AuthAuthorityBootstrapRPCService 提供 bootstrap 最小真实 proto 调用能力。
 type AuthAuthorityBootstrapRPCService struct {
@@ -100,7 +96,7 @@ func buildBootstrapChallengeRoutingInput(req *authv1.BootstrapChallengeRequest) 
 	}
 
 	return &communicationif.RoutingInput{
-		RouteKey:          bootstrapChallengeRouteKey,
+		RouteKey:          communication.BootstrapChallengeRouteKey,
 		Transport:         "grpc",
 		Method:            "POST",
 		Path:              authv1.AuthAuthorityBootstrapService_InitBootstrapChallenge_FullMethodName,
@@ -124,7 +120,7 @@ func buildBootstrapAuthenticateRoutingInput(req *authv1.BootstrapAuthenticateReq
 	}
 
 	return &communicationif.RoutingInput{
-		RouteKey:          bootstrapAuthenticateRouteKey,
+		RouteKey:          communication.BootstrapAuthenticateRouteKey,
 		Transport:         "grpc",
 		Method:            "POST",
 		Path:              authv1.AuthAuthorityBootstrapService_AuthenticateBootstrap_FullMethodName,
@@ -328,7 +324,7 @@ func buildBootstrapAuthResponse(result *authmodel.BootstrapAuthResult) (*authv1.
 		Stage:           mapBootstrapStage(result.Stage),
 		Identity:        identity,
 		Session:         session,
-		Tokens:          buildProtoTokenBundle(result.Tokens),
+		Tokens:          buildTokenBundleProto(result.Tokens),
 		ActiveCommKeyId: strings.TrimSpace(result.ActiveCommKeyID),
 		IssuedAtMs:      result.IssuedAt.UnixMilli(),
 		ExpiresAtMs:     result.ExpiresAt.UnixMilli(),
@@ -368,25 +364,6 @@ func buildProtoIdentityContext(identity *authmodel.IdentityContext) (*authv1.Ide
 		IssuedAtMs:    identity.IssuedAt.UnixMilli(),
 		ExpiresAtMs:   identity.ExpiresAt.UnixMilli(),
 	}, nil
-}
-
-func buildProtoTokenBundle(bundle authmodel.TokenBundle) *authv1.TokenBundle {
-	return &authv1.TokenBundle{
-		AccessToken:     buildProtoIssuedToken(bundle.AccessToken),
-		RefreshToken:    buildProtoIssuedToken(bundle.RefreshToken),
-		DownstreamToken: buildProtoIssuedToken(bundle.DownstreamToken),
-	}
-}
-
-func buildProtoIssuedToken(token *authmodel.IssuedToken) *authv1.IssuedToken {
-	if token == nil {
-		return nil
-	}
-	return &authv1.IssuedToken{
-		Raw:       strings.TrimSpace(token.Raw),
-		TokenType: mapModelTokenType(token.Type),
-		TtlSec:    token.TTLSec,
-	}
 }
 
 func mapProtoEntityType(entityType authv1.EntityType) (commonmodel.EntityType, error) {

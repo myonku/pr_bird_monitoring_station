@@ -27,6 +27,7 @@ const (
 // 用户实体定义，包含用户的基本信息和认证相关字段。
 type User struct {
 	ID                uuid.UUID         `json:"id"`                  // 用户ID，唯一标识一个用户
+	UserProfileID     uuid.UUID         `json:"user_profile_id"`     // 关联业务侧 profile 的唯一标识（profile 本体由外部模块维护）
 	Name              string            `json:"name"`                // 用户名称
 	Role              UserRole          `json:"role"`                // 用户角色，如管理员或普通用户
 	PasswordHash      string            `json:"password_hash"`       // 用户密码的哈希值，用于认证验证

@@ -20,6 +20,8 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
+const defaultRegistryMaxStaleWindow = 30 * time.Second
+
 var _ commonif.IRegistryManager = (*RegistryService)(nil)
 
 // RegistryService 基于 Etcd 实现服务注册与发现数据源。
@@ -51,6 +53,7 @@ func NewRegistryService(
 		opTimeout:    opTimeout,
 		leaseIDs:     make(map[string]clientv3.LeaseID),
 		leaseCancels: make(map[string]context.CancelFunc),
+		maxStale:     defaultRegistryMaxStaleWindow,
 	}
 }
 
@@ -200,10 +203,11 @@ func (d *RegistryService) ChooseEndpoint(
 		if inst == nil {
 			continue
 		}
-		if inst.HeartBeat > 0 && d.maxStale > 0 {
-			if nowMS-inst.HeartBeat > d.maxStale.Milliseconds() {
-				continue
-			}
+		if inst.HeartBeat <= 0 {
+			continue
+		}
+		if d.maxStale > 0 && nowMS-inst.HeartBeat > d.maxStale.Milliseconds() {
+			continue
 		}
 		alive = append(alive, inst)
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 
 	authmodel "certification_server/src/models/auth"
+
+	"github.com/google/uuid"
 )
 
 // UserPwdCredentialRequest 是用户密码凭证验证的请求结构。
@@ -18,9 +20,10 @@ type UserPwdCredentialRequest struct {
 
 // UserCredentialValidationResult 是用户凭证校验输出。
 type UserCredentialValidationResult struct {
-	Principal authmodel.Principal
-	Role      string
-	Scopes    []string
+	Principal     authmodel.Principal
+	UserProfileID uuid.UUID
+	Role          string
+	Scopes        []string
 }
 
 // IUserCredentialManager 定义用户凭证验证相关操作。

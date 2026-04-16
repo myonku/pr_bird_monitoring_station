@@ -1,4 +1,4 @@
-package communication
+package rpcservice
 
 import (
 	"context"
@@ -51,7 +51,7 @@ func (h *BootstrapFlowHandler) HandleBootstrapChallenge(
 	}
 	challenge, err := h.orchestrator.HandleBootstrapChallenge(ctx, challengeReq)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "init bootstrap challenge failed: %v", err)
+		return nil, MapAuthRPCError(err, codes.Internal, "init bootstrap challenge failed")
 	}
 
 	resp, err := buildChallengeResponse(challenge)
@@ -83,7 +83,7 @@ func (h *BootstrapFlowHandler) HandleBootstrapAuthenticate(
 	}
 	result, err := h.orchestrator.HandleBootstrapAuthenticate(ctx, authReq)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "authenticate bootstrap failed: %v", err)
+		return nil, MapAuthRPCError(err, codes.Internal, "authenticate bootstrap failed")
 	}
 
 	resp, err := buildBootstrapAuthResponse(result)
@@ -107,7 +107,7 @@ func (h *BootstrapFlowHandler) ensureInboundAccepted(
 		},
 	)
 	if err != nil {
-		return status.Errorf(codes.Internal, "inbound traffic station failed: %v", err)
+		return MapAuthRPCError(err, codes.Internal, "inbound traffic station failed")
 	}
 	if decision == nil {
 		return status.Error(codes.Internal, "inbound traffic decision is nil")

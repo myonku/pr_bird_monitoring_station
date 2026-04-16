@@ -1,4 +1,4 @@
-package communication
+package rpcservice
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	communicationif "certification_server/src/iface/communication"
 	orchestrationif "certification_server/src/iface/orchestration"
 	modelsystem "certification_server/src/models/system"
+	communication "certification_server/src/services/communication"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -82,7 +83,7 @@ func (s *AuthAuthorityTokenRefreshRPCService) RefreshTokenBundle(
 		},
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.PermissionDenied, "token refresh failed: %v", err)
+		return nil, MapAuthRPCError(err, codes.Internal, "token refresh failed")
 	}
 	if result == nil {
 		return nil, status.Error(codes.Internal, "token refresh result is nil")
@@ -105,7 +106,7 @@ func (s *AuthAuthorityTokenRefreshRPCService) ensureInboundAccepted(
 		},
 	)
 	if err != nil {
-		return status.Errorf(codes.Internal, "inbound traffic station failed: %v", err)
+		return MapAuthRPCError(err, codes.Internal, "inbound traffic station failed")
 	}
 	if decision == nil {
 		return status.Error(codes.Internal, "inbound traffic decision is nil")
@@ -136,7 +137,7 @@ func buildTokenRefreshRoutingInput(req *authv1.TokenRefreshRequest) *communicati
 	}
 
 	return &communicationif.RoutingInput{
-		RouteKey:          moduleTokenRefreshRouteKey,
+		RouteKey:          communication.ModuleTokenRefreshRouteKey,
 		Transport:         "grpc",
 		Method:            "POST",
 		Path:              authv1.AuthAuthorityTokenRefreshService_RefreshTokenBundle_FullMethodName,

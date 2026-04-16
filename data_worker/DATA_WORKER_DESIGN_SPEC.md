@@ -42,8 +42,6 @@ Capability Modules 最小集合：
 
 - AuthControl（含 RateLimit，且仅本地资源级控制）
 - Bootstrap
-- CommsecChannelManager
-- TargetReverify（目标服务二次复核能力）
 
 Data Managers 最小集合：
 
@@ -58,10 +56,10 @@ Data Managers 最小集合：
 1. 所有入站/出站流量都必须先进入 Traffic Station。
 2. 流量分类必须在通信下层完成，能力层不得自行分流绕过。
 3. AuthControl 内聚本地资源级认证控制与限流，不做远程认证调用。
-4. AuthControl 不得调用 Bootstrap、CommsecChannelManager、LocalCredentialManager。
+4. AuthControl 不得调用 Bootstrap、LocalCredentialManager。
 5. Bootstrap 成功判定依赖 LocalCredentialManager 写入 Redis 成功；失败必须上抛错误。
-6. 跨服务调用必须先 EnsureChannel 再执行业务调用，禁止明文降级。
-7. 当 data_worker 作为目标服务接收网关业务流量时，必须在本模块 AuthControl 之后执行 TargetReverify。
+6. 跨服务调用必须先完成出站准备，再执行业务调用，禁止明文降级。
+7. 当 data_worker 作为目标服务接收网关业务流量时，必须在本模块 AuthControl 之后直接进入业务处理。
 8. no-auth 模式下必须禁用认证链路、限流与通道加密要求。
 9. 配置文件只允许在启动期读取一次，运行期按参数快照传递。
 
@@ -82,8 +80,8 @@ Data Managers 最小集合：
 2. Traffic Station 接管。
 3. 通信下层分类。
 4. AuthControl（本地控制 + 限流）。
-5. 如需跨服务调用：CommsecChannelManager 确保通道后由 gRPC client 出站。
-6. 如为网关转发到本模块的业务流量：执行 TargetReverify 后再进入业务处理。
+5. 如需跨服务调用：由 gRPC client 出站。
+6. 如为网关转发到本模块的业务流量：执行本模块 AuthControl 后再进入业务处理。
 
 ---
 

@@ -12,12 +12,14 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/subtle"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
 	"io"
+	"strings"
 
 	modelsystem "certification_server/src/models/system"
 
@@ -57,6 +59,59 @@ func (c *CryptoUtils) BcryptHash(plainText string) (string, error) {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(hash), nil
+}
+
+// VerifyPasswordHash 使用给定算法校验密码哈希。
+func (c *CryptoUtils) VerifyPasswordHash(algorithm, storedHash, plainText string) error {
+	normalized := strings.ToLower(strings.TrimSpace(algorithm))
+	switch normalized {
+	case "argon2", "argon2id":
+		if c.verifyArgon2Hash(storedHash, plainText) {
+			return nil
+		}
+		return &modelsystem.ErrInvalidUserCredentials
+	case "", "bcrypt":
+		if c.verifyBcryptHash(storedHash, plainText) {
+			return nil
+		}
+		return &modelsystem.ErrInvalidUserCredentials
+	default:
+		if c.verifyBcryptHash(storedHash, plainText) || c.verifyArgon2Hash(storedHash, plainText) {
+			return nil
+		}
+		return &modelsystem.ErrInvalidUserCredentials
+	}
+}
+
+func (c *CryptoUtils) verifyBcryptHash(storedHash, plainText string) bool {
+	hashBytes := c.decodeMaybeBase64(storedHash)
+	if len(hashBytes) == 0 {
+		return false
+	}
+	return bcrypt.CompareHashAndPassword(hashBytes, []byte(plainText)) == nil
+}
+
+func (c *CryptoUtils) verifyArgon2Hash(storedHash, plainText string) bool {
+	decoded := c.decodeMaybeBase64(storedHash)
+	if len(decoded) < 48 {
+		return false
+	}
+	salt := decoded[:16]
+	expected := decoded[16:]
+	computed := argon2.IDKey([]byte(plainText), salt, 1, 64*1024, 4, 32)
+	return subtle.ConstantTimeCompare(expected, computed) == 1
+}
+
+func (c *CryptoUtils) decodeMaybeBase64(raw string) []byte {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(trimmed)
+	if err != nil || len(decoded) == 0 {
+		return []byte(trimmed)
+	}
+	return decoded
 }
 
 // DeriveRandomSymmetricKey 生成一个确定长度的随机的 AES 对称密钥，返回 Base64 编码的字符串形式。
@@ -414,7 +469,10 @@ func (c *CryptoUtils) VerifyByAlgorithm(algorithm string, message []byte, signat
 			return &modelsystem.ErrPublicKeyNotRSA
 		}
 		h := sha256.Sum256(message)
-		return rsa.VerifyPSS(pub, crypto.SHA256, h[:], sig, nil)
+		if err := rsa.VerifyPSS(pub, crypto.SHA256, h[:], sig, nil); err != nil {
+			return &modelsystem.ErrSignatureVerificationFailed
+		}
+		return nil
 	default:
 		return fmt.Errorf("%w: %s", &modelsystem.ErrUnsupportedSignatureAlgorithm, algorithm)
 	}

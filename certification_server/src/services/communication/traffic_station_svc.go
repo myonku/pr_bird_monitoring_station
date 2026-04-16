@@ -2,9 +2,12 @@ package communication
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
+	authcontrolif "certification_server/src/iface/authcontrol"
 	communicationif "certification_server/src/iface/communication"
+	authmodel "certification_server/src/models/auth"
 	modelsystem "certification_server/src/models/system"
 )
 
@@ -13,12 +16,17 @@ var _ communicationif.ITrafficStation = (*TrafficStationService)(nil)
 // TrafficStationService 提供认证中心统一入站流量站点实现。
 type TrafficStationService struct {
 	routingPipeline communicationif.IRoutingPayloadPipeline
+	authControl     authcontrolif.IInboundAuthControl
 }
 
 func NewTrafficStationService(
 	routingPipeline communicationif.IRoutingPayloadPipeline,
+	authControl authcontrolif.IInboundAuthControl,
 ) communicationif.ITrafficStation {
-	return &TrafficStationService{routingPipeline: routingPipeline}
+	return &TrafficStationService{
+		routingPipeline: routingPipeline,
+		authControl:     authControl,
+	}
 }
 
 func (s *TrafficStationService) HandleInbound(
@@ -66,6 +74,38 @@ func (s *TrafficStationService) HandleInbound(
 		Metadata: metadata,
 	}
 
+	if s.authControl == nil {
+		return decision, nil
+	}
+
+	controlResult, err := s.authControl.EnforceInbound(
+		ctx,
+		&authcontrolif.InboundControlRequest{
+			RateLimitInput: buildInboundRateLimitInput(req, policy),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if controlResult == nil || controlResult.RateLimitDecision == nil {
+		return nil, &modelsystem.ErrRateLimitRequestInvalid
+	}
+
+	decision.Metadata["rate_limit_allowed"] = strconv.FormatBool(controlResult.RateLimitDecision.Allowed)
+	decision.Metadata["rate_limit_rule_id"] = strings.TrimSpace(controlResult.RateLimitDecision.ViolatedRuleID)
+	decision.Metadata["rate_limit_subject_key"] = strings.TrimSpace(controlResult.RateLimitDecision.SubjectKey)
+	decision.Metadata["rate_limit_remaining"] = strconv.FormatInt(controlResult.RateLimitDecision.Remaining, 10)
+	decision.Metadata["rate_limit_retry_after_sec"] = strconv.FormatInt(controlResult.RateLimitDecision.RetryAfterSec, 10)
+
+	if !controlResult.RateLimitDecision.Allowed {
+		decision.Accepted = false
+		reason := strings.TrimSpace(controlResult.RateLimitDecision.Reason)
+		if reason == "" {
+			reason = "rate limited"
+		}
+		decision.Reason = reason
+	}
+
 	return decision, nil
 }
 
@@ -100,4 +140,67 @@ func (s *TrafficStationService) SendOutbound(
 			"target_endpoint":     strings.TrimSpace(profile.TargetEndpoint),
 		},
 	}, nil
+}
+
+func buildInboundRateLimitInput(
+	req *communicationif.InboundTrafficRequest,
+	policy *communicationif.InboundPolicyPlan,
+) *authcontrolif.InboundRateLimitInput {
+	if req == nil || req.Route == nil || policy == nil || policy.RouteProfile == nil {
+		return nil
+	}
+
+	headers := map[string]string{}
+	for key, value := range req.Headers {
+		trimmedKey := strings.ToLower(strings.TrimSpace(key))
+		trimmedValue := strings.TrimSpace(value)
+		if trimmedKey == "" || trimmedValue == "" {
+			continue
+		}
+		headers[trimmedKey] = trimmedValue
+	}
+
+	tags := make(map[string]string, len(policy.Tags)+len(policy.RouteProfile.Metadata))
+	for key, value := range policy.RouteProfile.Metadata {
+		trimmedValue := strings.TrimSpace(value)
+		if trimmedValue == "" {
+			continue
+		}
+		tags[key] = trimmedValue
+	}
+	for key, value := range policy.Tags {
+		trimmedValue := strings.TrimSpace(value)
+		if trimmedValue == "" {
+			continue
+		}
+		tags[key] = trimmedValue
+	}
+	for key, value := range headers {
+		tags["header."+key] = value
+	}
+
+	return &authcontrolif.InboundRateLimitInput{
+		Scope:         authmodel.RateLimitScopeAuth,
+		Transport:     strings.TrimSpace(req.Route.Transport),
+		Module:        strings.TrimSpace(policy.RouteProfile.TargetServiceName),
+		Action:        strings.TrimSpace(policy.RouteProfile.Operation),
+		Route:         strings.TrimSpace(req.Route.RouteKey),
+		Method:        strings.TrimSpace(req.Route.Method),
+		SourceIP:      headers["x-source-ip"],
+		GatewayID:     firstNonEmpty(headers["x-gateway-id"], req.Route.SourceService),
+		ClientID:      headers["x-client-id"],
+		SourceService: strings.TrimSpace(req.Route.SourceService),
+		TargetService: strings.TrimSpace(req.Route.TargetService),
+		Headers:       headers,
+		Tags:          tags,
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

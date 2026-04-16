@@ -62,23 +62,19 @@ func NewSecretKeyServiceFromProjectConfig(
 }
 
 // NewSecretKeyServiceFromStartupParams 基于启动参数构建密钥服务。
-// 该构造器负责装载并校验本地私钥/公钥，同时保留全局公钥目录查询能力。
+// 本地密钥对文件名固定为 public.pem/private.pem，路径由 secret_key_dir 决定；KeyID 仅作为对外引用标识。
 func NewSecretKeyServiceFromStartupParams(
 	params modelsystem.SecretKeyStartupParams,
 	catalog []commsecmodel.ServicePublicKeyRecord,
 	mysql *repo.MySQLClient,
 ) (*SecretKeyService, error) {
-	if strings.TrimSpace(params.ActiveKeyID) == "" {
-		return NewSecretKeyService(
-			mysql,
-			commsecmodel.ServicePublicKeyRecord{},
-			commsecmodel.LocalPrivateKeyRef{},
-			catalog,
-		), nil
+	bootstrapKeyID := resolveBootstrapKeyID(params)
+	if bootstrapKeyID == "" {
+		return nil, &modelsystem.ErrLocalPrivateKeyRefNotConfigured
 	}
 
-	publicRef := strings.TrimSpace(params.ActiveKeyID) + ".public.pem"
-	privateRef := strings.TrimSpace(params.ActiveKeyID) + ".private.pem"
+	publicRef := "public.pem"
+	privateRef := "private.pem"
 
 	publicPEM, err := loadPEMBytesFromRef(publicRef, params.SecretKeyDir)
 	if err != nil {
@@ -113,7 +109,7 @@ func NewSecretKeyServiceFromStartupParams(
 
 	now := time.Now()
 	localPublic := commsecmodel.ServicePublicKeyRecord{
-		KeyID:        strings.TrimSpace(params.ActiveKeyID),
+		KeyID:        bootstrapKeyID,
 		Owner:        owner,
 		PublicKeyPEM: string(publicPEM),
 		Fingerprint:  sha256Hex(publicPEM),
@@ -124,7 +120,7 @@ func NewSecretKeyServiceFromStartupParams(
 		RevokedAt:    time.Time{},
 	}
 	localPrivate := commsecmodel.LocalPrivateKeyRef{
-		KeyID:         strings.TrimSpace(params.ActiveKeyID),
+		KeyID:         bootstrapKeyID,
 		Owner:         owner,
 		PrivateKeyRef: string(privatePEM),
 		LoadedAt:      now,
@@ -158,6 +154,17 @@ func NewSecretKeyService(
 		mysql:        mysql,
 		catalogByKey: m,
 	}
+}
+
+// resolveBootstrapKeyID 解析本地密钥对对外使用的有效引用ID，优先 active_key_id，缺失时回退到 instance_id。
+func resolveBootstrapKeyID(params modelsystem.SecretKeyStartupParams) string {
+	for _, candidate := range []string{params.ActiveKeyID, params.InstanceID, params.EntityID} {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // GetPublicKey 获取本地服务的公钥信息。

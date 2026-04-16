@@ -28,11 +28,40 @@ const (
 
 // Config 定义了认证服务器的整体配置结构体。
 type ProjectConfig struct {
-	MySQL   *MySQLConfig
-	Redis   *RedisClientConfig
-	Etcd    *EtcdClientConfig
-	Runtime *RuntimeConfig
-	Auth    *AuthConfig
+	MySQL       *MySQLConfig
+	Redis       *RedisClientConfig
+	Etcd        *EtcdClientConfig
+	Runtime     *RuntimeConfig
+	Auth        *AuthConfig
+	AuthControl *AuthControlConfig
+}
+
+// Normalized 返回包含默认值的配置快照。
+func (c *ProjectConfig) Normalized(defaultInstanceID string) ProjectConfig {
+	normalized := ProjectConfig{}
+	if c != nil {
+		normalized.MySQL = c.MySQL
+		normalized.Redis = c.Redis
+		normalized.Etcd = c.Etcd
+	}
+
+	runtimeCfg := (&RuntimeConfig{}).Normalized(defaultInstanceID)
+	if c != nil && c.Runtime != nil {
+		runtimeCfg = c.Runtime.Normalized(defaultInstanceID)
+	}
+	authCfg := (&AuthConfig{}).Normalized()
+	if c != nil && c.Auth != nil {
+		authCfg = c.Auth.Normalized()
+	}
+	authControlCfg := (&AuthControlConfig{}).Normalized(runtimeCfg.ServiceName)
+	if c != nil && c.AuthControl != nil {
+		authControlCfg = c.AuthControl.Normalized(runtimeCfg.ServiceName)
+	}
+
+	normalized.Runtime = &runtimeCfg
+	normalized.Auth = &authCfg
+	normalized.AuthControl = &authControlCfg
+	return normalized
 }
 
 // RuntimeConfig 定义服务本体运行时标识配置。
@@ -94,9 +123,9 @@ func normalizeRuntimeRunMode(raw string) RuntimeRunMode {
 func parseRuntimeRunMode(raw string) (RuntimeRunMode, bool) {
 	mode := strings.ToLower(strings.TrimSpace(raw))
 	switch mode {
-	case "", "development", "dev", "local", "test":
+	case "", "development":
 		return RuntimeRunModeDevelopment, true
-	case "no_auth", "no-auth", "noauth":
+	case "no_auth":
 		return RuntimeRunModeNoAuth, true
 	default:
 		return "", false
@@ -104,7 +133,7 @@ func parseRuntimeRunMode(raw string) (RuntimeRunMode, bool) {
 }
 
 // AuthConfig 定义认证相关配置。
-// 根据全局约束，密钥配置仅保留目录与 active_key_id。
+// 根据全局约束，密钥配置仅保留目录与 active_key_id；active_key_id 缺失时可回退到 instance_id 继续 bootstrap。
 type AuthConfig struct {
 	SecretKeyDir string
 	ActiveKeyID  string
@@ -127,6 +156,7 @@ func (c *AuthConfig) Normalized() AuthConfig {
 
 // SecretKeyStartupParams 是启动期注入到密钥服务的参数快照。
 // 仅由 main 在读取配置后构建，后续在主流程按参数传递。
+// ActiveKeyID 表示有效的 bootstrap 公钥引用ID，优先来自 active_key_id，缺失时回退到 instance_id。
 type SecretKeyStartupParams struct {
 	SecretKeyDir string
 	ActiveKeyID  string
@@ -139,20 +169,19 @@ type SecretKeyStartupParams struct {
 }
 
 // BuildSecretKeyStartupParams 从 ProjectConfig 构建密钥服务启动参数。
+// active_key_id 缺失时回退到 instance_id，保证本地固定密钥文件仍可支持 bootstrap。
 func (c *ProjectConfig) BuildSecretKeyStartupParams(defaultInstanceID string) SecretKeyStartupParams {
-	var runtimeCfg *RuntimeConfig
-	var authCfg *AuthConfig
-	if c != nil {
-		runtimeCfg = c.Runtime
-		authCfg = c.Auth
+	normalized := c.Normalized(defaultInstanceID)
+	runtime := normalized.Runtime
+	auth := normalized.Auth
+	bootstrapKeyID := strings.TrimSpace(auth.ActiveKeyID)
+	if bootstrapKeyID == "" {
+		bootstrapKeyID = strings.TrimSpace(runtime.InstanceID)
 	}
-
-	runtime := runtimeCfg.Normalized(defaultInstanceID)
-	auth := authCfg.Normalized()
 
 	return SecretKeyStartupParams{
 		SecretKeyDir: auth.SecretKeyDir,
-		ActiveKeyID:  auth.ActiveKeyID,
+		ActiveKeyID:  bootstrapKeyID,
 		EntityType:   runtime.EntityType,
 		EntityID:     runtime.InstanceID,
 		EntityName:   runtime.ServiceName,

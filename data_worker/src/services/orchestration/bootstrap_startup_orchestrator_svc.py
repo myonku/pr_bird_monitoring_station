@@ -10,7 +10,7 @@ from src.iface.common.local_credential_manager import (
 from src.iface.communication.routing_contract import FlowRouteInput
 from src.iface.communication.traffic_station import ITrafficStation, OutboundTrafficRequest
 from src.models.sys.config import RuntimeConfig, SecretKeyStartupParams
-from src.services.communication.auth_authority_bootstrap_rpc_client import (
+from src.services.communication.rpc_client.auth_authority_bootstrap_rpc_client import (
     BOOTSTRAP_AUTH_METHOD,
     AuthAuthorityBootstrapRPCClient,
 )
