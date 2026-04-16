@@ -14,7 +14,6 @@ const (
 	FlowCategoryRemoteAuthVerify  FlowCategory = "remote_auth_verify"
 	FlowCategoryExternalAuthRelay FlowCategory = "external_auth_forward"
 	FlowCategoryBusinessForward   FlowCategory = "business_forward"
-	FlowCategoryTargetReverify    FlowCategory = "target_reverify_call"
 )
 
 // SecurityPolicy 定义通信下层对安全通道的要求。

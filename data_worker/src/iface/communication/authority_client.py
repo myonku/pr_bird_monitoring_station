@@ -10,10 +10,6 @@ from src.models.auth.bootstrap import (
     ChallengePayload,
     ChallengeRequest,
 )
-from src.models.auth.forwarded_auth import (
-    ForwardedAuthContext,
-    ForwardedAuthVerificationResult,
-)
 
 
 class TokenRevokeRequest(Struct, kw_only=True):
@@ -55,13 +51,6 @@ class IAuthAuthorityClient(ABC):
     async def authenticate_bootstrap(
         self, req: BootstrapAuthRequest
     ) -> BootstrapAuthResult:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def reverify_forwarded_context(
-        self,
-        ctx: ForwardedAuthContext,
-    ) -> ForwardedAuthVerificationResult:
         raise NotImplementedError
 
     @abstractmethod

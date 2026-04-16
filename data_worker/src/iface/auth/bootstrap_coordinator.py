@@ -18,7 +18,7 @@ class IBootstrapCoordinator(ABC):
 
     下游接口调用：
       - common.IKeyManager.get_private_key_ref / get_public_key
-      - authcontrol.IAuthAuthorityClient.init_bootstrap_challenge / authenticate_bootstrap / refresh_token_bundle / revoke_token
+      - communication.IAuthAuthorityClient.init_bootstrap_challenge / authenticate_bootstrap / refresh_token_bundle / revoke_token
       - common.ILocalCredentialManager.save_bootstrap_credential / load_active_credential / mark_credential_expired / revoke_credential
     """
 

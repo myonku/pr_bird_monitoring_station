@@ -8,14 +8,6 @@ import (
 	authmodel "certification_server/src/models/auth"
 )
 
-// DownstreamGrantRequest 定义网关申请下游服务授权参数。
-type DownstreamGrantRequest struct {
-	Identity authmodel.IdentityContext
-
-	TargetService string
-	TTLSec        int64
-}
-
 // UserPasswordAuthRequest 定义客户端用户通过用户名/密码发起认证的参数。
 type UserPasswordAuthRequest struct {
 	Username string
@@ -61,6 +53,4 @@ type IAuthRequestOrchestrator interface {
 
 	HandleTokenRefresh(ctx context.Context, req *commonif.TokenRefreshRequest) (*authmodel.TokenBundle, error)
 	HandleTokenRevoke(ctx context.Context, req *commonif.TokenRevokeRequest) error
-
-	HandleDownstreamGrant(ctx context.Context, req *DownstreamGrantRequest) (*authmodel.DownstreamAccessGrant, error)
 }

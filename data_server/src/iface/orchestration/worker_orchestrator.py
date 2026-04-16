@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 from src.iface.communication.routing_contract import FlowRouteInput, RouteProfile
-from src.models.auth.forwarded_auth import ForwardedAuthVerificationResult
 
 
 @dataclass(slots=True, kw_only=True)
@@ -26,9 +25,6 @@ class WorkerResult:
     outbound_headers: dict[str, str] = field(default_factory=dict)
     outbound_payload: str = ""
 
-    forwarded_verification: ForwardedAuthVerificationResult | None = None
-    grant_state_key: str = ""
-
 
 class IWorkerOrchestrator(ABC):
     """data_worker 顶层编排契约。
@@ -37,9 +33,7 @@ class IWorkerOrchestrator(ABC):
       - communication.ITrafficStation.handle_inbound / send_outbound
       - communication.IRoutingPayloadPipeline.resolve_route_profile / build_outbound_payload
       - authcontrol.IAuthControl.enforce_inbound / prepare_outbound
-      - authcontrol.ITargetReverify.reverify_forwarded_context
       - common.ILocalCredentialManager.load_active_credential
-      - common.IGrantStateManager.save_grant（可选路径）
     """
 
     @abstractmethod

@@ -190,7 +190,7 @@
 
 - 所有后端模块必须提供 `no-auth` 运行模式，用于最基本业务功能测试。
 - `no-auth` 模式下默认屏蔽认证中心依赖：启动与运行不以认证中心可用为前置条件。
-- `no-auth` 模式下默认短路认证链：bootstrap/session/token/downstream grant 相关流程不作为必经链路。
+- `no-auth` 模式下默认短路认证链：bootstrap/session/token 相关流程不作为必经链路。
 - `no-auth` 模式下默认禁用限流器（包括入站限流与转发链路限流）。
 - `no-auth` 模式仅用于开发测试与联调，不作为生产运行基线。
 

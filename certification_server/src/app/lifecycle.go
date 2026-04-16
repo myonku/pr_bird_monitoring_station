@@ -120,7 +120,6 @@ func Run() error {
 	communicationsvc.RegisterAuthAuthorityBootstrapRPC(grpcServer, authOrchestrator, trafficStation)
 	communicationsvc.RegisterAuthAuthorityRemoteAuthRPC(grpcServer, authOrchestrator, trafficStation)
 	communicationsvc.RegisterAuthAuthorityExternalAuthRPC(grpcServer, authOrchestrator, trafficStation)
-	communicationsvc.RegisterAuthAuthorityTargetReverifyRPC(grpcServer, authOrchestrator, trafficStation)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

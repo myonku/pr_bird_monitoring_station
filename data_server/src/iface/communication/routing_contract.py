@@ -7,7 +7,6 @@ FlowCategory = Literal[
     "remote_auth_verify",
     "external_auth_forward",
     "business_forward",
-    "target_reverify_call",
 ]
 
 SecurityPolicy = Literal["required", "optional", "disabled"]

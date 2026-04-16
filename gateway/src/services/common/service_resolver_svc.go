@@ -20,7 +20,6 @@ const (
 	externalBootstrapChallengeRouteKey    = "auth.external.forward.bootstrap.challenge"
 	externalBootstrapAuthenticateRouteKey = "auth.external.forward.bootstrap.authenticate"
 	businessForwardRouteKey               = "business.forward.generic"
-	targetReverifyRouteKey                = "auth.target.reverify.forwarded_context"
 	trustedInternalCallMetadataKey        = "trusted_internal_call"
 )
 
@@ -32,7 +31,6 @@ const (
 	externalAuthMethodPath                  = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
 	externalBootstrapChallengeMethodPath    = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapChallenge"
 	externalBootstrapAuthenticateMethodPath = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapAuthenticate"
-	targetReverifyMethodPath                = "/bms.auth.v1.AuthAuthorityTargetReverifyService/ReverifyForwardedContext"
 )
 
 var _ commonif.IServiceResolver = (*ServiceResolverService)(nil)
@@ -198,8 +196,7 @@ func (s *ServiceResolverService) resolveTargetServiceName(
 	switch category {
 	case commonif.FlowCategoryBootstrapCall,
 		commonif.FlowCategoryExternalAuthRelay,
-		commonif.FlowCategoryRemoteAuthVerify,
-		commonif.FlowCategoryTargetReverify:
+		commonif.FlowCategoryRemoteAuthVerify:
 		return s.authAuthorityService
 	default:
 		return ""
@@ -234,8 +231,6 @@ func resolveRouteKeyCategory(routeKey string) (commonif.FlowCategory, bool) {
 		return commonif.FlowCategoryExternalAuthRelay, true
 	case businessForwardRouteKey:
 		return commonif.FlowCategoryBusinessForward, true
-	case targetReverifyRouteKey:
-		return commonif.FlowCategoryTargetReverify, true
 	}
 	return "", false
 }
@@ -259,8 +254,6 @@ func resolveStaticFlowCategory(flow *commonif.FlowRouteInput) (commonif.FlowCate
 		strings.ToLower(externalBootstrapChallengeMethodPath),
 		strings.ToLower(externalBootstrapAuthenticateMethodPath):
 		return commonif.FlowCategoryExternalAuthRelay, true
-	case strings.ToLower(targetReverifyMethodPath):
-		return commonif.FlowCategoryTargetReverify, true
 	default:
 		return "", false
 	}
@@ -280,8 +273,7 @@ func resolveDefaultSecurityPolicy(category commonif.FlowCategory) commonif.Secur
 		return commonif.SecurityPolicyOptional
 	case commonif.FlowCategoryBusinessForward,
 		commonif.FlowCategoryExternalAuthRelay,
-		commonif.FlowCategoryRemoteAuthVerify,
-		commonif.FlowCategoryTargetReverify:
+		commonif.FlowCategoryRemoteAuthVerify:
 		return commonif.SecurityPolicyRequired
 	default:
 		return commonif.SecurityPolicyOptional

@@ -37,12 +37,13 @@
 当前达成（截至 2026-04-14）：
 
 1. 三模块（gateway/certification_server/data_worker）已形成统一的启动主链结构，bootstrap 就绪、注册与最小运行态基线保持有效。
-2. gateway 与 data_worker 已具备 bootstrap 就绪链路，并已按路由 / Proto 基线补齐 remote_auth / external_auth / target_reverify 的最小内部通路。
-3. certification_server 已注册 bootstrap、remote_auth、external_auth、target_reverify 四类 gRPC 服务，认证编排层补入用户凭证返回契约。
+2. gateway 与 data_worker 已具备 bootstrap 就绪链路，并已按路由 / Proto 基线补齐 remote_auth / external_auth 的最小内部通路；下游授权与目标侧复核已在本阶段裁撤。
+3. certification_server 已注册 bootstrap、remote_auth、external_auth 三类 gRPC 服务，认证编排层补入用户凭证返回契约。
 4. 用户凭证验证结果现可返回最小身份快照，支持会话与令牌组装，但仍保持业务逻辑最小实现。
 5. 服务发现注册路径、最小实例字段、失败回退与阶段日志保持可执行基线。
 6. bootstrap 及内部认证通路的 route_key 与方法映射已完成收敛。
 7. 路由匹配优先级与未知规则失败语义已完成本阶段收敛。
+8. 目前仍有两项推进差距需要后续补齐：gateway 的对外启动链路与运行态接线尚未闭环，data_worker 的顶层编排与实际调用接线也仍停留在骨架/预留层。
 
 ## 4. 时间线（精简记录）
 
@@ -71,12 +72,28 @@
 
 ### 2026-04-14（内部通道最小推进）
 
-- certification_server 新增 remote_auth / external_auth / target_reverify 三类 RPC 服务注册，bootstrap 之外的内部认证通路进入最小闭环。
+- certification_server 当时新增 remote_auth / external_auth / target_reverify 三类 RPC 服务注册（现已裁撤 target_reverify），bootstrap 之外的内部认证通路进入最小闭环。
 - external_auth 已补入外部 bootstrap 转发（ForwardBootstrapChallenge / ForwardBootstrapAuthenticate），并明确与 gateway 启动期 bootstrap_call 解耦；本次修补仅涉及 gateway 与 certification_server。
 - IUserCredentialManager 返回契约收敛为最小身份快照，ValidateCredentials 不再是空声明，编排层可以继续组装 session / token。
 - gateway / data_worker 侧补齐对应 route_key 静态映射与 client 适配，占位调用链已能对接认证中心新 RPC。
 - business.forward.generic 仍未展开，下一轮优先补齐面向业务服务的转发链路与目标映射。
 - 编译与基础校验仍待执行，作为本轮收口动作。
+
+### 2026-04-15（阶段诊断补充）
+
+- 当前现状：gateway 与 data_worker 都已经具备部分认证路由、proto 和 client/adapter 骨架，但启动链路与运行态接线尚未完成，距离“可直接承载业务”的完整主链仍有差距。
+- 当前现状：certification_server 的 external_auth / bootstrap / remote_auth / target_reverify（当时状态，现已裁撤）已按当时基线接入，external bootstrap 复用共享 bootstrap 处理器的方向正确，暂不需要再拆分新的 bootstrap 逻辑。
+- 当前现状：关于认证中心和no-auth 模式的说明：暂时在该模式下将认证中心视为透明，本轮不调整其处理语义；若后续直接选择 no-auth 下不启动认证中心，也无需为其单独补改认证链路。
+- 当前现状：SessionInfo 与 Session 的冲突已不再存在，当前代码与 proto 语义已经统一到 Session，剩余的是少量旧注释、骨架接口名和文档表述需要收尾。
+- 后续方向：优先补全 gateway 的启动链路与对外接入，再补全 data_worker 的顶层编排与真实调用链接线。
+- 后续方向：继续保持 external_auth_forward 等既定通道约定；target_reverify_call 已裁撤，不再额外引入并行认证旁路。
+- 后续方向：统一更新过时注释、接口说明和阶段文档中的旧命名，减少 Session / external_auth / route 分类的语义漂移。
+
+### 2026-04-16（设计裁剪与文档同步）
+
+- 本轮已将 target_reverify 与 downstream grant 相关设计从代码、proto、接口层和生成物中移除，并同步补齐文档收口。
+- 当前后端现行基线仅保留 bootstrap、remote_auth、external_auth 与 business_forward 主线；目标侧二次复核不再作为独立设计项。
+- 阶段记录已更新为当前状态说明，旧的 2026-04-14~2026-04-15 记录仅作为历史快照保留。
 
 ## 5. 阶段问题精简结论（来自已归档问题单）
 
@@ -92,16 +109,16 @@
 ## 6. 临时整改清单（不含网关路由映射方案）
 
 1. 将 gateway 的业务流量映射策略保持为待定事项，暂不在本文件内展开 route mapping 设计方案。
-3. 继续沿现有启动主链推进后端最小运行态，不把尚未推进到的额外安全准备与 gRPC 端口接线纳入当前问题单。
-4. 保持启动、注册、阶段日志、回退注销等基线不变，作为后续业务闭环的共同前提。
-5. 认证内部通道的最小 RPC 已完成，后续问题单仅继续跟踪 business.forward.generic 与验收补强。
+2. 继续沿现有启动主链推进后端最小运行态，不把尚未推进到的额外安全准备与 gRPC 端口接线纳入当前问题单。
+3. 保持启动、注册、阶段日志、回退注销等基线不变，作为后续业务闭环的共同前提。
+4. 认证内部通道的最小 RPC 已完成，后续问题单仅继续跟踪 business.forward.generic 与验收补强。
 
 ## 7. 下一步可推进项
 
 ### 7.1 路由与认证链扩展
 
 1. 将 `business.forward.generic` 按相同规则逐步落地，并补齐面向业务服务的目标映射与调用链。
-2. 将已落地的 remote_auth / external_auth / target_reverify 通路保持为稳定约定，不再新增并行动态旁路。
+2. 将已落地的 remote_auth / external_auth 通路保持为稳定约定，不再新增并行动态旁路。
 
 ### 7.2 认证与模式治理
 
@@ -114,6 +131,13 @@
 2. 为注册失败、启动失败、注销回退以及新补齐的认证内部通路补充回归测试用例。
 3. 运行编译与基础校验，确保本轮最小通路可落地。
 4. 对 route mapping version、matched_by、trace/request 形成统一审计采样。
+
+### 7.4 本次诊断后的补充推进项
+
+1. gateway 先补全启动链路与运行态接线，作为当前优先级最高的追赶项。
+2. data_worker 按同样标准补全启动链路与运行态接线，避免只停留在路由/适配骨架。
+3. no-auth 模式本轮暂不变更，按“认证中心透明、可直接不启动认证中心”的现状处理。
+4. 后续统一整理注释与接口说明，清理已过时的骨架命名和旧语义描述。
 
 ## 8. 后续维护规则（时间线更新规则）
 

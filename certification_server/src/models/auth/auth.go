@@ -229,22 +229,6 @@ type TokenVerificationResult struct {
 	FailureReason        string
 }
 
-// DownstreamAccessGrant 描述网关向内部服务转发的 gRPC 访问授权上下文。
-type DownstreamAccessGrant struct {
-	GatewayID     string
-	SourceService string
-	TargetService string
-
-	SessionID   uuid.UUID
-	TokenID     uuid.UUID
-	PrincipalID string
-
-	Scopes []string
-
-	IssuedAt  time.Time
-	ExpiresAt time.Time
-}
-
 // SessionTouchMeta 包含了更新会话信息时需要的上下文信息，这些信息可以帮助认证服务进行安全审计和异常检测。
 type SessionTouchMeta struct {
 	SourceIP  string

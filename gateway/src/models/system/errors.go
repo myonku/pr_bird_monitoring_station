@@ -144,7 +144,6 @@ var (
 	ErrChallengeNotFound                        Error = *NewError(AuthErr, "challenge not found")
 	ErrChallengeExpired                         Error = *NewError(AuthErr, "challenge expired")
 	ErrChallengeResponseMismatch                Error = *NewError(AuthErr, "challenge response mismatch")
-	ErrDownstreamGrantRequestNil                Error = *NewError(AuthErr, "downstream grant request is nil")
 	ErrIdentityPrincipalRequired                Error = *NewError(AuthErr, "identity principal is required")
 	ErrTargetServiceRequired                    Error = *NewError(AuthErr, "target service is required")
 	ErrUserAuthClientNotConfigured              Error = *NewError(AuthErr, "user auth client is not configured")

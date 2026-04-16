@@ -134,7 +134,6 @@ var (
 	ErrPasswordRequired                       Error = *NewError(AuthErr, "password is required")
 	ErrInvalidUserCredentials                 Error = *NewError(AuthErr, "invalid user credentials")
 	ErrEntityIDRequired                       Error = *NewError(AuthErr, "entity id is required")
-	ErrDownstreamGrantRequestNil              Error = *NewError(AuthErr, "downstream grant request is nil")
 	ErrIdentityPrincipalRequired              Error = *NewError(AuthErr, "identity principal is required")
 	ErrTargetServiceRequired                  Error = *NewError(AuthErr, "target service is required")
 	ErrCommSecurityServiceRequired            Error = *NewError(CommSecErr, "comm security service is required")

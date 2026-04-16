@@ -8,14 +8,6 @@ import (
 	authmodel "gateway/src/models/auth"
 )
 
-// DownstreamGrantRequest 定义网关申请下游授权请求。
-type DownstreamGrantRequest struct {
-	Identity authmodel.IdentityContext
-
-	TargetService string
-	TTLSec        int64
-}
-
 // UserPasswordAuthRequest 定义用户名密码认证请求。
 type UserPasswordAuthRequest struct {
 	Username string
@@ -50,7 +42,6 @@ type IAuthAuthorityClient interface {
 
 	VerifyToken(ctx context.Context, req *authif.TokenVerifyRequest) (*authmodel.TokenVerificationResult, error)
 	ValidateSession(ctx context.Context, req *authif.SessionValidateRequest) (*authmodel.Session, error)
-	IssueDownstreamGrant(ctx context.Context, req *DownstreamGrantRequest) (*authmodel.DownstreamAccessGrant, error)
 
 	AuthenticateUserPassword(ctx context.Context, req *UserPasswordAuthRequest) (*UserPasswordAuthResult, error)
 

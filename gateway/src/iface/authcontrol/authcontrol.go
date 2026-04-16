@@ -34,18 +34,15 @@ type OutboundAuthRequest struct {
 
 // OutboundAuthResult 是网关出站授权+限流结果。
 type OutboundAuthResult struct {
-	Grant             *authmodel.DownstreamAccessGrant
 	RateLimitDecision *authmodel.RateLimitDecision
-	GrantStateKey     string
 }
 
 // IGatewayAuthControl 定义网关认证与限流控制点。
 //
 // 下游接口调用：
-//   - authcontrol.IAuthAuthorityClient.VerifyToken / ValidateSession / IssueDownstreamGrant
+//   - communication.IAuthAuthorityClient.VerifyToken / ValidateSession
 //   - authcontrol.IDescriptorFactory.Build
 //   - authcontrol.IRateLimiter.Decide
-//   - common.IGrantStateManager.SaveGrant（可选路径）
 type IGatewayAuthControl interface {
 	EnforceInbound(ctx context.Context, req *InboundAuthRequest) (*InboundAuthResult, error)
 	PrepareOutbound(ctx context.Context, req *OutboundAuthRequest) (*OutboundAuthResult, error)

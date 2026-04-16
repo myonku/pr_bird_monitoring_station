@@ -60,10 +60,11 @@ Data Managers 最小集合：
 3. AuthControl 内聚认证决策结果消费和限流决策，不再单列独立 RateLimit 模块。
 4. AuthControl 不得调用 Bootstrap 或 CommsecChannelManager。
 5. CommsecChannelManager 只做通道生命周期与载荷处理，不做认证策略决策。
-6. 认证中心必须提供 bootstrap、remote_auth_verify、external_auth_forward、target_reverify_call 对应权威处理能力。
-7. gRPC handler 不得直连 repo，必须通过编排层/能力层端口。
-8. no-auth 模式下认证中心默认屏蔽或不启动。
-9. 配置文件只允许在启动期读取一次，运行期按参数快照传递。
+6. 认证中心必须提供 bootstrap、remote_auth_verify、external_auth_forward 对应权威处理能力。
+7. target_reverify_call 与下游授权二次复核已裁撤，不再作为当前硬约束。
+8. gRPC handler 不得直连 repo，必须通过编排层/能力层端口。
+9. no-auth 模式下认证中心默认屏蔽或不启动。
+10. 配置文件只允许在启动期读取一次，运行期按参数快照传递。
 
 ---
 

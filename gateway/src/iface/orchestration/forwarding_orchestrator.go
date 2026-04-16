@@ -4,7 +4,6 @@ import (
 	"context"
 
 	commonif "gateway/src/iface/common"
-	authmodel "gateway/src/models/auth"
 )
 
 // ForwardingRequest 是网关转发流程的编排请求。
@@ -25,7 +24,6 @@ type ForwardingResult struct {
 	RouteProfile   *commonif.RouteProfile
 	TargetEndpoint string
 
-	DownstreamGrant *authmodel.DownstreamAccessGrant
 	OutboundHeaders map[string]string
 	OutboundPayload string
 }
@@ -37,7 +35,6 @@ type ForwardingResult struct {
 //   - communication.IRoutingPayloadPipeline.ResolveRouteProfile / BuildOutboundPayload
 //   - authcontrol.IGatewayAuthControl.PrepareOutbound
 //   - common.IServiceResolver.ResolveTargetInstance
-//   - common.IGrantStateManager.SaveGrant（可选路径）
 type IForwardingOrchestrator interface {
 	HandleBusinessForward(ctx context.Context, req *ForwardingRequest) (*ForwardingResult, error)
 	HandleExternalAuthForward(ctx context.Context, req *ForwardingRequest) (*ForwardingResult, error)

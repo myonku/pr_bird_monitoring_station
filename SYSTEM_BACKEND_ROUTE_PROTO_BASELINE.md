@@ -67,13 +67,11 @@
    - `ForwardUserPassword`
    - `ForwardBootstrapChallenge`
    - `ForwardBootstrapAuthenticate`
-- `AuthAuthorityTargetReverifyService`
-   - `ReverifyForwardedContext`
 
 说明：
 
 - 以上 RPC 已接入认证中心 gRPC 注册链，并在 gateway / data_worker 侧补齐最小 client 或调用适配。
-- 其中 remote_auth、external_auth、target_reverify 仍保持最小实现，不等同于完整业务语义收敛。
+- 其中 remote_auth、external_auth 保持现行最小实现；target_reverify 与 downstream grant 相关设计已于 2026-04-16 裁撤，不再纳入当前基线。
 - 本轮 external_auth 的外部 bootstrap 转发修补只涉及 gateway 与 certification_server，不扩散到其他模块。
 
 ## 4. 路由输入输出语义
@@ -119,9 +117,10 @@
 - remote_auth_verify
 - external_auth_forward
 - business_forward
-- target_reverify_call
 
 补充：
+
+- target_reverify_call 已裁撤，不再作为现行 FlowCategory。
 
 - certification_server 内部可保留额外实现分类，但不在本文件中定义新的安全策略字段。
 
@@ -179,13 +178,8 @@
    - flow_category：external_auth_forward
    - target_service_type：auth_authority
    - target_service_name：certification_server
-6. `auth.target.reverify.forwarded_context`
 
-   - flow_category：target_reverify_call
-   - target_service_type：auth_authority
-   - target_service_name：certification_server
-
-补充：以上 route_key 已完成最小 RPC 通路与静态路由对齐，仍保持业务逻辑最小实现。
+补充：以上 route_key 已完成最小 RPC 通路与静态路由对齐，仍保持业务逻辑最小实现。target_reverify 对应 route_key 已裁撤。
 
 ### 7.3 仍预留
 
@@ -205,25 +199,24 @@ bootstrap 固定映射：
 - `ForwardUserPassword` -> `auth.external.forward.user_password`
 - `ForwardBootstrapChallenge` -> `auth.external.forward.bootstrap.challenge`
 - `ForwardBootstrapAuthenticate` -> `auth.external.forward.bootstrap.authenticate`
-- `ReverifyForwardedContext` -> `auth.target.reverify.forwarded_context`
 
 ## 9. 模块职责基线
 
 ### 9.1 gateway
 
-- 实现完整匹配优先级，已接入 bootstrap / remote_auth / external_auth / target_reverify 的最小路由与 client 适配。
+- 实现完整匹配优先级，已接入 bootstrap / remote_auth / external_auth 的最小路由与 client 适配。
 - 外部输入内部目标字段必须忽略或拒绝。
 - 输出完整 RouteProfile 核心字段。
 
 ### 9.2 certification_server
 
-- 对认证相关 route_key 做权威处理，当前已覆盖 bootstrap + remote_auth + external_auth + target_reverify 的最小 RPC。
+- 对认证相关 route_key 做权威处理，当前已覆盖 bootstrap + remote_auth + external_auth 的最小 RPC。
 - 未识别 route_key 必须显式失败，不做宽松回退。
 - 可保留 operation-centric 扩展字段，但不得破坏统一输入输出语义。
 
 ### 9.3 data_worker
 
-- 至少支持 bootstrap_call、remote_auth_verify、external_auth_forward、target_reverify_call 出站映射到 certification_server。
+- 至少支持 bootstrap_call、remote_auth_verify、external_auth_forward 出站映射到 certification_server。
 - `business.forward.generic` 仍保留为后续阶段项。
 
 ## 10. 观测与审计最小字段
@@ -263,7 +256,7 @@ bootstrap 固定映射：
 
 1. P0（已落地）：bootstrap 最小链路遵循统一字段语义，可通过结构化动态适配层接入。
 2. P1（已落地）：固化 bootstrap proto 生成桩，gateway/data_worker 出站优先走真实 proto 调用。
-3. P2（本轮推进中）：remote_auth / external_auth / target_reverify 的 proto service、gateway/data_worker 侧 client 适配与静态路由已完成最小闭环，相关业务逻辑保持最小实现。
+3. P2（本轮推进中）：remote_auth / external_auth 的 proto service、gateway/data_worker 侧 client 适配与静态路由已完成最小闭环，相关业务逻辑保持最小实现。
 4. P3：将动态调用路径降级为兼容路径，仅用于灰度与回滚。
 5. P4：在兼容窗口结束后，收敛为“生成桩优先，动态通道按需保留”。
 
@@ -281,6 +274,6 @@ bootstrap 固定映射：
 
 ## 13. 当前推进状态（2026-04-14）
 
-1. 已完成：bootstrap、remote_auth、external_auth、target_reverify 的最小路由 / Proto 通路。
+1. 已完成：bootstrap、remote_auth、external_auth 的最小路由 / Proto 通路。
 2. 进行中：`business.forward.generic` 与面向业务服务的目标映射。
 3. 待办：编译与基础校验、后续回归测试。

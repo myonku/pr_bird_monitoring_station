@@ -133,12 +133,6 @@ func buildDefaultGatewayRouteMappings(runMode string) map[string]commonif.RouteP
 			FlowCategory:      commonif.FlowCategoryBusinessForward,
 			SecurityPolicy:    securityRequired,
 		},
-		string(commonif.FlowCategoryTargetReverify): {
-			TargetServiceType: commonif.TargetServiceTypeAuthAuthority,
-			TargetServiceName: "certification_server",
-			FlowCategory:      commonif.FlowCategoryTargetReverify,
-			SecurityPolicy:    securityRequired,
-		},
 	}
 }
 

@@ -16,7 +16,6 @@ const (
 	externalAuthForwardRouteKey           = "auth.external.forward.user_password"
 	externalBootstrapChallengeRouteKey    = "auth.external.forward.bootstrap.challenge"
 	externalBootstrapAuthenticateRouteKey = "auth.external.forward.bootstrap.authenticate"
-	targetReverifyRouteKey                = "auth.target.reverify.forwarded_context"
 )
 
 const (
@@ -27,7 +26,6 @@ const (
 	routingExternalAuthMethodPath                  = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
 	routingExternalBootstrapChallengeMethodPath    = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapChallenge"
 	routingExternalBootstrapAuthenticateMethodPath = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapAuthenticate"
-	routingTargetReverifyMethodPath                = "/bms.auth.v1.AuthAuthorityTargetReverifyService/ReverifyForwardedContext"
 )
 
 // RoutingPayloadPipelineService 提供认证中心入站路由分类与策略构建能力。
@@ -141,8 +139,6 @@ func parseFlowCategory(raw string) (communicationif.FlowCategory, bool) {
 		externalBootstrapChallengeRouteKey,
 		externalBootstrapAuthenticateRouteKey:
 		return communicationif.FlowCategoryExternalAuth, true
-	case targetReverifyRouteKey:
-		return communicationif.FlowCategoryTargetReverify, true
 	default:
 		return "", false
 	}
@@ -167,8 +163,6 @@ func parseStaticFlowCategory(input *communicationif.RoutingInput) (communication
 		strings.ToLower(routingExternalBootstrapChallengeMethodPath),
 		strings.ToLower(routingExternalBootstrapAuthenticateMethodPath):
 		return communicationif.FlowCategoryExternalAuth, true
-	case strings.ToLower(routingTargetReverifyMethodPath):
-		return communicationif.FlowCategoryTargetReverify, true
 	default:
 		return "", false
 	}
@@ -211,8 +205,7 @@ func resolveInboundSecurityPolicy(category communicationif.FlowCategory) communi
 	case communicationif.FlowCategoryBootstrapCall:
 		return communicationif.SecurityPolicyOptional
 	case communicationif.FlowCategoryRemoteAuthVerify,
-		communicationif.FlowCategoryExternalAuth,
-		communicationif.FlowCategoryTargetReverify:
+		communicationif.FlowCategoryExternalAuth:
 		return communicationif.SecurityPolicyRequired
 	default:
 		return communicationif.SecurityPolicyOptional
@@ -223,8 +216,7 @@ func resolveTargetServiceType(category communicationif.FlowCategory) string {
 	switch category {
 	case communicationif.FlowCategoryBootstrapCall,
 		communicationif.FlowCategoryRemoteAuthVerify,
-		communicationif.FlowCategoryExternalAuth,
-		communicationif.FlowCategoryTargetReverify:
+		communicationif.FlowCategoryExternalAuth:
 		return "auth_authority"
 	default:
 		return "unknown"
@@ -235,8 +227,7 @@ func resolveTargetServiceName(category communicationif.FlowCategory) string {
 	switch category {
 	case communicationif.FlowCategoryBootstrapCall,
 		communicationif.FlowCategoryRemoteAuthVerify,
-		communicationif.FlowCategoryExternalAuth,
-		communicationif.FlowCategoryTargetReverify:
+		communicationif.FlowCategoryExternalAuth:
 		return "certification_server"
 	default:
 		return ""
@@ -251,8 +242,6 @@ func resolveRequiredScopes(category communicationif.FlowCategory) []string {
 		return []string{"token:verify"}
 	case communicationif.FlowCategoryExternalAuth:
 		return []string{"user:authenticate"}
-	case communicationif.FlowCategoryTargetReverify:
-		return []string{"service:downstream_grant"}
 	default:
 		return []string{}
 	}

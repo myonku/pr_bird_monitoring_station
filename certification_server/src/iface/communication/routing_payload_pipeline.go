@@ -9,7 +9,6 @@ const (
 	FlowCategoryBootstrapCall    FlowCategory = "bootstrap_call"
 	FlowCategoryRemoteAuthVerify FlowCategory = "remote_auth_verify"
 	FlowCategoryExternalAuth     FlowCategory = "external_auth_forward"
-	FlowCategoryTargetReverify   FlowCategory = "target_reverify_call"
 )
 
 // SecurityPolicy 定义安全通道要求级别。

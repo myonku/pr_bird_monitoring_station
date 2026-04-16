@@ -400,15 +400,6 @@ func (s *AuthRequestOrchestratorService) HandleTokenRevoke(
 	return errAuthRequestOrchestratorNotImplemented
 }
 
-func (s *AuthRequestOrchestratorService) HandleDownstreamGrant(
-	ctx context.Context, req *orchestrationif.DownstreamGrantRequest,
-) (*authmodel.DownstreamAccessGrant, error) {
-	if req == nil {
-		return nil, &modelsystem.ErrDownstreamGrantRequestNil
-	}
-	return nil, errAuthRequestOrchestratorNotImplemented
-}
-
 func (s *AuthRequestOrchestratorService) resolveChallenge(
 	req *authmodel.BootstrapAuthRequest,
 ) (*authmodel.ChallengePayload, error) {

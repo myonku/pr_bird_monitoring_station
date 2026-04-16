@@ -25,7 +25,6 @@ REMOTE_AUTH_VERIFY_ROUTE_KEY = "auth.remote.verify.token"
 REMOTE_SESSION_VALIDATE_ROUTE_KEY = "auth.remote.validate.session"
 EXTERNAL_AUTH_FORWARD_ROUTE_KEY = "auth.external.forward.user_password"
 BUSINESS_FORWARD_ROUTE_KEY = "business.forward.generic"
-TARGET_REVERIFY_ROUTE_KEY = "auth.target.reverify.forwarded_context"
 TRUSTED_INTERNAL_CALL_METADATA_KEY = "trusted_internal_call"
 
 
@@ -34,9 +33,6 @@ BOOTSTRAP_AUTH_PATH = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBo
 REMOTE_VERIFY_PATH = "/bms.auth.v1.AuthAuthorityRemoteAuthService/VerifyToken"
 REMOTE_SESSION_PATH = "/bms.auth.v1.AuthAuthorityRemoteAuthService/ValidateSession"
 EXTERNAL_AUTH_PATH = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
-TARGET_REVERIFY_PATH = (
-    "/bms.auth.v1.AuthAuthorityTargetReverifyService/ReverifyForwardedContext"
-)
 
 
 class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
@@ -156,7 +152,6 @@ class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
         if category in {
             "bootstrap_call",
             "remote_auth_verify",
-            "target_reverify_call",
             "external_auth_forward",
         }:
             return self._auth_authority_service
@@ -179,7 +174,6 @@ class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
         if category in {
             "remote_auth_verify",
             "external_auth_forward",
-            "target_reverify_call",
             "business_forward",
         }:
             return "required"
@@ -208,7 +202,6 @@ class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
             "bootstrap_call",
             "remote_auth_verify",
             "external_auth_forward",
-            "target_reverify_call",
         }
 
 
@@ -222,8 +215,6 @@ def _parse_route_key(raw: str) -> FlowCategory | None:
         return "external_auth_forward"
     if resolved == BUSINESS_FORWARD_ROUTE_KEY:
         return "business_forward"
-    if resolved == TARGET_REVERIFY_ROUTE_KEY:
-        return "target_reverify_call"
     return None
 
 
@@ -240,8 +231,6 @@ def _parse_static_flow_category(flow: FlowRouteInput) -> FlowCategory | None:
         return "remote_auth_verify"
     if path == EXTERNAL_AUTH_PATH.lower():
         return "external_auth_forward"
-    if path == TARGET_REVERIFY_PATH.lower():
-        return "target_reverify_call"
     return None
 
 
