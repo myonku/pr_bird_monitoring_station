@@ -6,9 +6,10 @@ import "context"
 type FlowCategory string
 
 const (
-	FlowCategoryBootstrapCall    FlowCategory = "bootstrap_call"
-	FlowCategoryRemoteAuthVerify FlowCategory = "remote_auth_verify"
-	FlowCategoryExternalAuth     FlowCategory = "external_auth_forward"
+	FlowCategoryBootstrapCall      FlowCategory = "bootstrap_call"
+	FlowCategoryRemoteAuthVerify   FlowCategory = "remote_auth_verify"
+	FlowCategoryExternalAuth       FlowCategory = "external_auth_forward"
+	FlowCategoryModuleTokenRefresh FlowCategory = "module_token_refresh"
 )
 
 // SecurityPolicy 定义安全通道要求级别。

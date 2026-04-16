@@ -1,6 +1,6 @@
 # 系统 no-auth 运行模式启动链路说明（对照 development）
 
-版本：1.1.0
+版本：1.1.1
 状态：Baseline
 
 ## 1. 文档目的
@@ -79,7 +79,7 @@
 
 禁用：
 
-- bootstrap/refresh/verify/revoke/grant。
+- bootstrap/refresh/verify/revoke。
 - 入站/出站限流决策。
 - 额外下游准备与应用层加密。
 

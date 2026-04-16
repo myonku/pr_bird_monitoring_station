@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	authv1 "certification_server/src/gen/auth/v1"
+	commonif "certification_server/src/iface/common"
 	communicationif "certification_server/src/iface/communication"
 	orchestrationif "certification_server/src/iface/orchestration"
 	modelsystem "certification_server/src/models/system"
@@ -100,6 +101,47 @@ func (s *AuthAuthorityExternalAuthRPCService) ForwardUserPassword(
 		IssuedAtMs:  toUnixMillis(result.IssuedAt),
 		ExpiresAtMs: toUnixMillis(result.ExpiresAt),
 	}, nil
+}
+
+func (s *AuthAuthorityExternalAuthRPCService) ForwardRefreshTokenBundle(
+	ctx context.Context,
+	req *authv1.TokenRefreshRequest,
+) (*authv1.TokenBundle, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "token refresh payload is required")
+	}
+	if s.orchestrator == nil || s.trafficStation == nil {
+		return nil, status.Error(codes.Internal, modelsystem.ErrBootstrapRPCDependenciesRequired.Error())
+	}
+
+	if err := s.ensureInboundAccepted(
+		ctx,
+		buildExternalRefreshTokenRoutingInput(req),
+		buildTokenRefreshHeaders(req),
+	); err != nil {
+		return nil, err
+	}
+
+	result, err := s.orchestrator.HandleTokenRefresh(
+		ctx,
+		&commonif.TokenRefreshRequest{
+			RefreshToken: strings.TrimSpace(req.GetRefreshToken()),
+			ClientID:     strings.TrimSpace(req.GetClientId()),
+			GatewayID:    strings.TrimSpace(req.GetGatewayId()),
+			SourceIP:     strings.TrimSpace(req.GetSourceIp()),
+			UserAgent:    strings.TrimSpace(req.GetUserAgent()),
+			RequestID:    strings.TrimSpace(req.GetRequestId()),
+			TraceID:      strings.TrimSpace(req.GetTraceId()),
+		},
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.PermissionDenied, "token refresh failed: %v", err)
+	}
+	if result == nil {
+		return nil, status.Error(codes.Internal, "token refresh result is nil")
+	}
+
+	return buildTokenBundleProto(*result), nil
 }
 
 func (s *AuthAuthorityExternalAuthRPCService) ForwardBootstrapChallenge(
@@ -209,6 +251,69 @@ func buildUserPasswordHeaders(req *authv1.UserPasswordAuthRequest) map[string]st
 		headers["x-user-agent"] = userAgent
 	}
 	return headers
+}
+
+func buildExternalRefreshTokenRoutingInput(req *authv1.TokenRefreshRequest) *communicationif.RoutingInput {
+	metadata := map[string]string{
+		"grpc_service": externalAuthServiceName,
+		"grpc_method":  "ForwardRefreshTokenBundle",
+		"operation":    "ForwardRefreshTokenBundle",
+	}
+	if req != nil {
+		if requestID := strings.TrimSpace(req.GetRequestId()); requestID != "" {
+			metadata["request_id"] = requestID
+		}
+		if traceID := strings.TrimSpace(req.GetTraceId()); traceID != "" {
+			metadata["trace_id"] = traceID
+		}
+	}
+
+	return &communicationif.RoutingInput{
+		RouteKey:          externalRefreshTokenBundleRouteKey,
+		Transport:         "grpc",
+		Method:            "POST",
+		Path:              authv1.AuthAuthorityExternalAuthService_ForwardRefreshTokenBundle_FullMethodName,
+		SourceService:     resolveRefreshSourceService(req),
+		TargetService:     "certification_server",
+		TargetServiceHint: "certification_server",
+		Metadata:          metadata,
+	}
+}
+
+func buildTokenRefreshHeaders(req *authv1.TokenRefreshRequest) map[string]string {
+	headers := map[string]string{}
+	if requestID := strings.TrimSpace(req.GetRequestId()); requestID != "" {
+		headers["x-request-id"] = requestID
+	}
+	if traceID := strings.TrimSpace(req.GetTraceId()); traceID != "" {
+		headers["x-trace-id"] = traceID
+	}
+	if clientID := strings.TrimSpace(req.GetClientId()); clientID != "" {
+		headers["x-client-id"] = clientID
+	}
+	if gatewayID := strings.TrimSpace(req.GetGatewayId()); gatewayID != "" {
+		headers["x-gateway-id"] = gatewayID
+	}
+	if sourceIP := strings.TrimSpace(req.GetSourceIp()); sourceIP != "" {
+		headers["x-source-ip"] = sourceIP
+	}
+	if userAgent := strings.TrimSpace(req.GetUserAgent()); userAgent != "" {
+		headers["x-user-agent"] = userAgent
+	}
+	return headers
+}
+
+func resolveRefreshSourceService(req *authv1.TokenRefreshRequest) string {
+	if req == nil {
+		return "unknown_source"
+	}
+	if gatewayID := strings.TrimSpace(req.GetGatewayId()); gatewayID != "" {
+		return gatewayID
+	}
+	if clientID := strings.TrimSpace(req.GetClientId()); clientID != "" {
+		return clientID
+	}
+	return "unknown_source"
 }
 
 func buildExternalBootstrapChallengeRoutingInput(req *authv1.BootstrapChallengeRequest) *communicationif.RoutingInput {

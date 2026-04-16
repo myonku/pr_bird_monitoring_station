@@ -1,6 +1,6 @@
 # 系统认证链路与启动链路总说明（按模块）
 
-版本：1.2.0
+版本：1.3.0
 状态：Baseline
 
 ## 1. 文档目的
@@ -23,7 +23,7 @@
 - 网关与普通服务模块在认证主干上保持一致，网关仅额外承担外部请求转发职能。
 - 认证中心不执行“自我认证”，其职责是处理他方认证请求并签发认证结果。
 - 认证中心不执行自身 bootstrap 认证，但仍需加载本地单活密钥对，用于本模块自身认证与签名相关场景；该密钥对不由 bootstrap 产出。
-- 非认证中心模块（gateway、data_worker、edge_server）不管理“他方请求主体”的 challenge/session/token/grant 状态，认证权威与公钥目录权威统一归属认证中心。
+- 非认证中心模块（gateway、data_worker、edge_server）不管理“他方请求主体”的 challenge/session/token 状态，认证权威与公钥目录权威统一归属认证中心。
 - 非认证中心模块需负责本模块自身凭证生命周期（bootstrap 结果持有、refresh、revoke）。
 - 内部转发请求默认采用“网关回源认证中心校验 + 目标模块再次回源认证中心校验”的双端校验路径。
 - 后端模块间通信遵循各模块既定内部调用链路与认证约束，本文件不再定义握手式通道阶段。
@@ -52,7 +52,7 @@
 4. 对 challenge 载荷签名并提交 bootstrap 认证。
 5. 认证中心验签通过后返回会话与令牌。
 6. 网关进入 ready，维护本模块自身会话/令牌状态用于续期，不持久化他方请求主体凭证状态。
-7. 运行期 verify/refresh/revoke 与 grant 申请统一转发认证中心，网关仅消费结果执行转发与限流。
+7. 运行期 verify/refresh/revoke 统一转发认证中心，refresh 续期对应独立 token_refresh 通信链路；网关仅消费结果执行转发与限流。
 8. 运行期下游调用前完成目标地址、路由与认证上下文准备，按调用链路执行转发。
 9. 内部转发阶段由网关注入下游认证上下文（至少 `x-downstream-principal`、`x-downstream-session-id`、`x-downstream-token-id`），供目标模块向认证中心再次校验。
 
@@ -128,7 +128,7 @@
 3. 接收网关/普通服务/边缘端 challenge 初始化请求。
 4. 接收签名证明并执行公钥目录校验与验签。
 5. 创建会话并签发 access token + refresh token（长期令牌）。
-6. 提供 verify/refresh/revoke 等持续认证服务。
+6. 提供 verify/refresh/revoke 等持续认证服务，其中 refresh 已冻结为独立 token_refresh 通信链路，供 gateway 外部转发与模块侧自刷新复用。
 
 说明：
 
@@ -152,6 +152,11 @@
 3. 网关转发认证中心校验后返回会话与令牌。
 4. 客户端获取 access token + refresh token（长期令牌）。
 5. 运行期用 refresh token 续期；续期失败则回到登录流程。
+
+说明：
+
+- 上述 refresh 语义现已对应独立 token_refresh 通信链路：gateway 外部转发可走 `AuthAuthorityExternalAuthService.ForwardRefreshTokenBundle`，模块侧自刷新可走 `AuthAuthorityTokenRefreshService.RefreshTokenBundle`。
+- revoke 仍保留为能力层约定，尚未冻结独立 route/proto。
 
 ### 7.2 启动链路（初始化 -> 稳定运行）
 

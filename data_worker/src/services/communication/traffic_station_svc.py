@@ -87,4 +87,5 @@ def _requires_target_endpoint(category: FlowCategory) -> bool:
         "bootstrap_call",
         "remote_auth_verify",
         "external_auth_forward",
+        "module_token_refresh",
     }

@@ -3,6 +3,7 @@ syntax = "proto3";
 package bms.auth.v1;
 
 import "auth/v1/auth_authority_bootstrap.proto";
+import "auth/v1/auth_authority_token_refresh.proto";
 
 option go_package = "pr_bird_monitoring_station/schemas/proto/auth/v1;authv1";
 
@@ -10,6 +11,9 @@ option go_package = "pr_bird_monitoring_station/schemas/proto/auth/v1;authv1";
 service AuthAuthorityExternalAuthService {
   // auth.external.forward.user_password -> ForwardUserPassword.
   rpc ForwardUserPassword(UserPasswordAuthRequest) returns (UserPasswordAuthResult);
+
+  // auth.external.forward.token_refresh_bundle -> ForwardRefreshTokenBundle.
+  rpc ForwardRefreshTokenBundle(TokenRefreshRequest) returns (TokenBundle);
 
   // auth.external.forward.bootstrap.challenge -> ForwardBootstrapChallenge.
   rpc ForwardBootstrapChallenge(BootstrapChallengeRequest) returns (BootstrapChallengeResponse);

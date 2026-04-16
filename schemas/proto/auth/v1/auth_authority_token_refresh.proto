@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package bms.auth.v1;
+
+import "auth/v1/auth_authority_bootstrap.proto";
+
+option go_package = "pr_bird_monitoring_station/schemas/proto/auth/v1;authv1";
+
+// AuthAuthorityTokenRefreshService handles token refresh routes for backend modules.
+service AuthAuthorityTokenRefreshService {
+  // auth.module.refresh.token_bundle -> RefreshTokenBundle.
+  rpc RefreshTokenBundle(TokenRefreshRequest) returns (TokenBundle);
+}
+
+// TokenRefreshRequest defines the refresh-token based renewal request.
+message TokenRefreshRequest {
+  string refresh_token = 1;
+  string client_id = 2;
+  string gateway_id = 3;
+  string source_ip = 4;
+  string user_agent = 5;
+  string request_id = 6;
+  string trace_id = 7;
+}

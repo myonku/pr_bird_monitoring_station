@@ -1,6 +1,6 @@
 # 后端路由与 Proto 基准约定（合并版）
 
-版本：1.4.0
+版本：1.5.0
 状态：Baseline
 适用模块：gateway / certification_server / data_worker
 
@@ -67,12 +67,22 @@
    - `ForwardUserPassword`
    - `ForwardBootstrapChallenge`
    - `ForwardBootstrapAuthenticate`
+- `AuthAuthorityTokenRefreshService`
+   - `RefreshTokenBundle`
 
 说明：
 
 - 以上 RPC 已接入认证中心 gRPC 注册链，并在 gateway / data_worker 侧补齐最小 client 或调用适配。
 - 其中 remote_auth、external_auth 保持现行最小实现；target_reverify 与 downstream grant 相关设计已于 2026-04-16 裁撤，不再纳入当前基线。
-- 本轮 external_auth 的外部 bootstrap 转发修补只涉及 gateway 与 certification_server，不扩散到其他模块。
+- 其中 token_refresh 通路已冻结为独立 refresh 链路：gateway 外部转发使用 `auth.external.forward.token_refresh_bundle`，后端模块自刷新使用 `auth.module.refresh.token_bundle`。
+- 本轮 external_auth 的外部 bootstrap 转发修补只涉及 gateway 与 certification_server；token_refresh 路由与 client 适配已同步对齐 gateway / certification_server / data_worker。
+
+### 3.6 令牌生命周期通路（refresh 已冻结，revoke 待补）
+
+- `RefreshTokenBundle` / `RevokeToken` 已存在于模块接口与 TokenManager 能力层。
+- `AuthAuthorityExternalAuthService.ForwardRefreshTokenBundle` 与 `AuthAuthorityTokenRefreshService.RefreshTokenBundle` 已冻结为独立通信通路，分别承担 gateway 外部刷新转发与后端模块自刷新。
+- `FlowCategoryModuleTokenRefresh` 已加入路由基线，对应 `auth.external.forward.token_refresh_bundle` 与 `auth.module.refresh.token_bundle`。
+- `RevokeToken` 仍保留在能力层接口，独立 route_key / flow_category / proto service 尚未冻结。
 
 ## 4. 路由输入输出语义
 
@@ -116,6 +126,7 @@
 - bootstrap_call
 - remote_auth_verify
 - external_auth_forward
+- module_token_refresh
 - business_forward
 
 补充：
@@ -178,8 +189,18 @@
    - flow_category：external_auth_forward
    - target_service_type：auth_authority
    - target_service_name：certification_server
+6. `auth.external.forward.token_refresh_bundle`
 
-补充：以上 route_key 已完成最小 RPC 通路与静态路由对齐，仍保持业务逻辑最小实现。target_reverify 对应 route_key 已裁撤。
+   - flow_category：external_auth_forward
+   - target_service_type：auth_authority
+   - target_service_name：certification_server
+7. `auth.module.refresh.token_bundle`
+
+   - flow_category：module_token_refresh
+   - target_service_type：auth_authority
+   - target_service_name：certification_server
+
+补充：以上 route_key 已完成最小 RPC 通路与静态路由对齐，仍保持业务逻辑最小实现。`auth.external.forward.token_refresh_bundle` 与 `auth.module.refresh.token_bundle` 已同步落地；target_reverify 对应 route_key 已裁撤。
 
 ### 7.3 仍预留
 
@@ -199,24 +220,26 @@ bootstrap 固定映射：
 - `ForwardUserPassword` -> `auth.external.forward.user_password`
 - `ForwardBootstrapChallenge` -> `auth.external.forward.bootstrap.challenge`
 - `ForwardBootstrapAuthenticate` -> `auth.external.forward.bootstrap.authenticate`
+- `ForwardRefreshTokenBundle` -> `auth.external.forward.token_refresh_bundle`
+- `RefreshTokenBundle` -> `auth.module.refresh.token_bundle`
 
 ## 9. 模块职责基线
 
 ### 9.1 gateway
 
-- 实现完整匹配优先级，已接入 bootstrap / remote_auth / external_auth 的最小路由与 client 适配。
+- 实现完整匹配优先级，已接入 bootstrap / remote_auth / external_auth / token_refresh 的最小路由与 client 适配。
 - 外部输入内部目标字段必须忽略或拒绝。
 - 输出完整 RouteProfile 核心字段。
 
 ### 9.2 certification_server
 
-- 对认证相关 route_key 做权威处理，当前已覆盖 bootstrap + remote_auth + external_auth 的最小 RPC。
+- 对认证相关 route_key 做权威处理，当前已覆盖 bootstrap + remote_auth + external_auth + token_refresh 的最小 RPC。
 - 未识别 route_key 必须显式失败，不做宽松回退。
 - 可保留 operation-centric 扩展字段，但不得破坏统一输入输出语义。
 
 ### 9.3 data_worker
 
-- 至少支持 bootstrap_call、remote_auth_verify、external_auth_forward 出站映射到 certification_server。
+- 至少支持 bootstrap_call、remote_auth_verify、external_auth_forward、module_token_refresh 出站映射到 certification_server。
 - `business.forward.generic` 仍保留为后续阶段项。
 
 ## 10. 观测与审计最小字段

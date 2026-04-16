@@ -10,10 +10,11 @@ import (
 type FlowCategory string
 
 const (
-	FlowCategoryBootstrapCall     FlowCategory = "bootstrap_call"
-	FlowCategoryRemoteAuthVerify  FlowCategory = "remote_auth_verify"
-	FlowCategoryExternalAuthRelay FlowCategory = "external_auth_forward"
-	FlowCategoryBusinessForward   FlowCategory = "business_forward"
+	FlowCategoryBootstrapCall      FlowCategory = "bootstrap_call"
+	FlowCategoryRemoteAuthVerify   FlowCategory = "remote_auth_verify"
+	FlowCategoryExternalAuthRelay  FlowCategory = "external_auth_forward"
+	FlowCategoryModuleTokenRefresh FlowCategory = "module_token_refresh"
+	FlowCategoryBusinessForward    FlowCategory = "business_forward"
 )
 
 // SecurityPolicy 定义通信下层对安全通道的要求。

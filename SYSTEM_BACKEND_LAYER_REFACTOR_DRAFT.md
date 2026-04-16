@@ -1,6 +1,6 @@
 # 后端服务层级结构重构草案（V1 收敛）
 
-版本：0.8.0
+版本：0.8.1
 状态：Draft
 日期：2026-04-13
 
@@ -586,6 +586,11 @@ Gateway AuthControl：
 - VerifyToken(ctx, verifyInput) -> TokenState
 - RefreshTokenBundle(ctx, refreshInput) -> TokenBundle
 - RevokeToken(ctx, revokeInput)
+
+补充：
+
+- `RefreshTokenBundle` 已对应独立通信链路：gateway 外部转发使用 `AuthAuthorityExternalAuthService.ForwardRefreshTokenBundle`，模块自刷新使用 `AuthAuthorityTokenRefreshService.RefreshTokenBundle`。
+- `RevokeToken` 仍保留在能力层接口，未单独冻结 route/proto。
 
 归属：仅 certification_server
 

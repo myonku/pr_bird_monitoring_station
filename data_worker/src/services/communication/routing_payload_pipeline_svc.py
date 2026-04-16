@@ -24,6 +24,8 @@ BOOTSTRAP_AUTH_ROUTE_KEY = "auth.bootstrap.authenticate"
 REMOTE_AUTH_VERIFY_ROUTE_KEY = "auth.remote.verify.token"
 REMOTE_SESSION_VALIDATE_ROUTE_KEY = "auth.remote.validate.session"
 EXTERNAL_AUTH_FORWARD_ROUTE_KEY = "auth.external.forward.user_password"
+EXTERNAL_REFRESH_TOKEN_BUNDLE_ROUTE_KEY = "auth.external.forward.token_refresh_bundle"
+MODULE_TOKEN_REFRESH_ROUTE_KEY = "auth.module.refresh.token_bundle"
 BUSINESS_FORWARD_ROUTE_KEY = "business.forward.generic"
 TRUSTED_INTERNAL_CALL_METADATA_KEY = "trusted_internal_call"
 
@@ -33,6 +35,10 @@ BOOTSTRAP_AUTH_PATH = "/bms.auth.v1.AuthAuthorityBootstrapService/AuthenticateBo
 REMOTE_VERIFY_PATH = "/bms.auth.v1.AuthAuthorityRemoteAuthService/VerifyToken"
 REMOTE_SESSION_PATH = "/bms.auth.v1.AuthAuthorityRemoteAuthService/ValidateSession"
 EXTERNAL_AUTH_PATH = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
+EXTERNAL_REFRESH_TOKEN_BUNDLE_PATH = (
+    "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardRefreshTokenBundle"
+)
+TOKEN_REFRESH_PATH = "/bms.auth.v1.AuthAuthorityTokenRefreshService/RefreshTokenBundle"
 
 
 class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
@@ -153,6 +159,7 @@ class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
             "bootstrap_call",
             "remote_auth_verify",
             "external_auth_forward",
+            "module_token_refresh",
         }:
             return self._auth_authority_service
 
@@ -175,6 +182,7 @@ class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
             "remote_auth_verify",
             "external_auth_forward",
             "business_forward",
+            "module_token_refresh",
         }:
             return "required"
         return "optional"
@@ -202,6 +210,7 @@ class RoutingPayloadPipelineService(IRoutingPayloadPipeline):
             "bootstrap_call",
             "remote_auth_verify",
             "external_auth_forward",
+            "module_token_refresh",
         }
 
 
@@ -213,6 +222,10 @@ def _parse_route_key(raw: str) -> FlowCategory | None:
         return "remote_auth_verify"
     if resolved == EXTERNAL_AUTH_FORWARD_ROUTE_KEY:
         return "external_auth_forward"
+    if resolved == EXTERNAL_REFRESH_TOKEN_BUNDLE_ROUTE_KEY:
+        return "external_auth_forward"
+    if resolved == MODULE_TOKEN_REFRESH_ROUTE_KEY:
+        return "module_token_refresh"
     if resolved == BUSINESS_FORWARD_ROUTE_KEY:
         return "business_forward"
     return None
@@ -231,6 +244,10 @@ def _parse_static_flow_category(flow: FlowRouteInput) -> FlowCategory | None:
         return "remote_auth_verify"
     if path == EXTERNAL_AUTH_PATH.lower():
         return "external_auth_forward"
+    if path == EXTERNAL_REFRESH_TOKEN_BUNDLE_PATH.lower():
+        return "external_auth_forward"
+    if path == TOKEN_REFRESH_PATH.lower():
+        return "module_token_refresh"
     return None
 
 

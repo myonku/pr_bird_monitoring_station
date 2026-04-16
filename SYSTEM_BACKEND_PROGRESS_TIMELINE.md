@@ -1,6 +1,6 @@
 # 后端模块推进记录与时间线基准
 
-版本：1.2.0
+版本：1.3.0
 状态：Baseline-Timeline
 适用范围：gateway / certification_server / data_worker
 
@@ -38,12 +38,13 @@
 
 1. 三模块（gateway/certification_server/data_worker）已形成统一的启动主链结构，bootstrap 就绪、注册与最小运行态基线保持有效。
 2. gateway 与 data_worker 已具备 bootstrap 就绪链路，并已按路由 / Proto 基线补齐 remote_auth / external_auth 的最小内部通路；下游授权与目标侧复核已在本阶段裁撤。
-3. certification_server 已注册 bootstrap、remote_auth、external_auth 三类 gRPC 服务，认证编排层补入用户凭证返回契约。
+3. certification_server 已注册 bootstrap、remote_auth、external_auth、token_refresh 四类 gRPC 服务，认证编排层补入用户凭证返回契约。
 4. 用户凭证验证结果现可返回最小身份快照，支持会话与令牌组装，但仍保持业务逻辑最小实现。
 5. 服务发现注册路径、最小实例字段、失败回退与阶段日志保持可执行基线。
-6. bootstrap 及内部认证通路的 route_key 与方法映射已完成收敛。
+6. bootstrap 及内部认证通路的 route_key 与方法映射已完成收敛；token_refresh 的外部转发与模块自刷新 route 也已同步对齐。
 7. 路由匹配优先级与未知规则失败语义已完成本阶段收敛。
 8. 目前仍有两项推进差距需要后续补齐：gateway 的对外启动链路与运行态接线尚未闭环，data_worker 的顶层编排与实际调用接线也仍停留在骨架/预留层。
+9. runtime token refresh 已补齐独立 route/proto 通路；revoke 仍保留在能力层接口与启动链路语义中，尚未冻结独立 route/proto 约定。
 
 ## 4. 时间线（精简记录）
 
@@ -93,6 +94,7 @@
 
 - 本轮已将 target_reverify 与 downstream grant 相关设计从代码、proto、接口层和生成物中移除，并同步补齐文档收口。
 - 当前后端现行基线仅保留 bootstrap、remote_auth、external_auth 与 business_forward 主线；目标侧二次复核不再作为独立设计项。
+- runtime token refresh 已补齐独立 route/proto 通路：gateway 侧新增 `auth.external.forward.token_refresh_bundle` / `ForwardRefreshTokenBundle`，认证中心侧新增 `auth.module.refresh.token_bundle` / `AuthAuthorityTokenRefreshService.RefreshTokenBundle`；revoke 仍保留在能力层接口与启动链语义中，尚未冻结独立 route/proto 约定。
 - 阶段记录已更新为当前状态说明，旧的 2026-04-14~2026-04-15 记录仅作为历史快照保留。
 
 ## 5. 阶段问题精简结论（来自已归档问题单）

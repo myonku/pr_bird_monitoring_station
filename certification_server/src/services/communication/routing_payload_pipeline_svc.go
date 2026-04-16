@@ -14,8 +14,10 @@ const (
 	remoteAuthVerifyRouteKey              = "auth.remote.verify.token"
 	remoteSessionValidateRouteKey         = "auth.remote.validate.session"
 	externalAuthForwardRouteKey           = "auth.external.forward.user_password"
+	externalRefreshTokenBundleRouteKey    = "auth.external.forward.token_refresh_bundle"
 	externalBootstrapChallengeRouteKey    = "auth.external.forward.bootstrap.challenge"
 	externalBootstrapAuthenticateRouteKey = "auth.external.forward.bootstrap.authenticate"
+	moduleTokenRefreshRouteKey            = "auth.module.refresh.token_bundle"
 )
 
 const (
@@ -24,8 +26,10 @@ const (
 	routingRemoteVerifyMethodPath                  = "/bms.auth.v1.AuthAuthorityRemoteAuthService/VerifyToken"
 	routingSessionCheckMethodPath                  = "/bms.auth.v1.AuthAuthorityRemoteAuthService/ValidateSession"
 	routingExternalAuthMethodPath                  = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
+	routingExternalRefreshTokenBundleMethodPath    = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardRefreshTokenBundle"
 	routingExternalBootstrapChallengeMethodPath    = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapChallenge"
 	routingExternalBootstrapAuthenticateMethodPath = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapAuthenticate"
+	routingTokenRefreshMethodPath                  = "/bms.auth.v1.AuthAuthorityTokenRefreshService/RefreshTokenBundle"
 )
 
 // RoutingPayloadPipelineService 提供认证中心入站路由分类与策略构建能力。
@@ -136,9 +140,12 @@ func parseFlowCategory(raw string) (communicationif.FlowCategory, bool) {
 	case remoteAuthVerifyRouteKey, remoteSessionValidateRouteKey:
 		return communicationif.FlowCategoryRemoteAuthVerify, true
 	case externalAuthForwardRouteKey,
+		externalRefreshTokenBundleRouteKey,
 		externalBootstrapChallengeRouteKey,
 		externalBootstrapAuthenticateRouteKey:
 		return communicationif.FlowCategoryExternalAuth, true
+	case moduleTokenRefreshRouteKey:
+		return communicationif.FlowCategoryModuleTokenRefresh, true
 	default:
 		return "", false
 	}
@@ -160,9 +167,12 @@ func parseStaticFlowCategory(input *communicationif.RoutingInput) (communication
 	case strings.ToLower(routingRemoteVerifyMethodPath), strings.ToLower(routingSessionCheckMethodPath):
 		return communicationif.FlowCategoryRemoteAuthVerify, true
 	case strings.ToLower(routingExternalAuthMethodPath),
+		strings.ToLower(routingExternalRefreshTokenBundleMethodPath),
 		strings.ToLower(routingExternalBootstrapChallengeMethodPath),
 		strings.ToLower(routingExternalBootstrapAuthenticateMethodPath):
 		return communicationif.FlowCategoryExternalAuth, true
+	case strings.ToLower(routingTokenRefreshMethodPath):
+		return communicationif.FlowCategoryModuleTokenRefresh, true
 	default:
 		return "", false
 	}
@@ -205,7 +215,8 @@ func resolveInboundSecurityPolicy(category communicationif.FlowCategory) communi
 	case communicationif.FlowCategoryBootstrapCall:
 		return communicationif.SecurityPolicyOptional
 	case communicationif.FlowCategoryRemoteAuthVerify,
-		communicationif.FlowCategoryExternalAuth:
+		communicationif.FlowCategoryExternalAuth,
+		communicationif.FlowCategoryModuleTokenRefresh:
 		return communicationif.SecurityPolicyRequired
 	default:
 		return communicationif.SecurityPolicyOptional
@@ -216,7 +227,8 @@ func resolveTargetServiceType(category communicationif.FlowCategory) string {
 	switch category {
 	case communicationif.FlowCategoryBootstrapCall,
 		communicationif.FlowCategoryRemoteAuthVerify,
-		communicationif.FlowCategoryExternalAuth:
+		communicationif.FlowCategoryExternalAuth,
+		communicationif.FlowCategoryModuleTokenRefresh:
 		return "auth_authority"
 	default:
 		return "unknown"
@@ -227,7 +239,8 @@ func resolveTargetServiceName(category communicationif.FlowCategory) string {
 	switch category {
 	case communicationif.FlowCategoryBootstrapCall,
 		communicationif.FlowCategoryRemoteAuthVerify,
-		communicationif.FlowCategoryExternalAuth:
+		communicationif.FlowCategoryExternalAuth,
+		communicationif.FlowCategoryModuleTokenRefresh:
 		return "certification_server"
 	default:
 		return ""
@@ -242,6 +255,8 @@ func resolveRequiredScopes(category communicationif.FlowCategory) []string {
 		return []string{"token:verify"}
 	case communicationif.FlowCategoryExternalAuth:
 		return []string{"user:authenticate"}
+	case communicationif.FlowCategoryModuleTokenRefresh:
+		return []string{"token:refresh"}
 	default:
 		return []string{}
 	}

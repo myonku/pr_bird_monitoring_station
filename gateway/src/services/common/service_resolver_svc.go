@@ -17,8 +17,10 @@ const (
 	remoteAuthVerifyRouteKey              = "auth.remote.verify.token"
 	remoteSessionValidateRouteKey         = "auth.remote.validate.session"
 	externalAuthForwardRouteKey           = "auth.external.forward.user_password"
+	externalRefreshTokenBundleRouteKey    = "auth.external.forward.token_refresh_bundle"
 	externalBootstrapChallengeRouteKey    = "auth.external.forward.bootstrap.challenge"
 	externalBootstrapAuthenticateRouteKey = "auth.external.forward.bootstrap.authenticate"
+	moduleTokenRefreshRouteKey            = "auth.module.refresh.token_bundle"
 	businessForwardRouteKey               = "business.forward.generic"
 	trustedInternalCallMetadataKey        = "trusted_internal_call"
 )
@@ -29,8 +31,10 @@ const (
 	remoteVerifyMethodPath                  = "/bms.auth.v1.AuthAuthorityRemoteAuthService/VerifyToken"
 	remoteSessionMethodPath                 = "/bms.auth.v1.AuthAuthorityRemoteAuthService/ValidateSession"
 	externalAuthMethodPath                  = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardUserPassword"
+	externalRefreshTokenBundleMethodPath    = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardRefreshTokenBundle"
 	externalBootstrapChallengeMethodPath    = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapChallenge"
 	externalBootstrapAuthenticateMethodPath = "/bms.auth.v1.AuthAuthorityExternalAuthService/ForwardBootstrapAuthenticate"
+	moduleTokenRefreshMethodPath            = "/bms.auth.v1.AuthAuthorityTokenRefreshService/RefreshTokenBundle"
 )
 
 var _ commonif.IServiceResolver = (*ServiceResolverService)(nil)
@@ -196,7 +200,8 @@ func (s *ServiceResolverService) resolveTargetServiceName(
 	switch category {
 	case commonif.FlowCategoryBootstrapCall,
 		commonif.FlowCategoryExternalAuthRelay,
-		commonif.FlowCategoryRemoteAuthVerify:
+		commonif.FlowCategoryRemoteAuthVerify,
+		commonif.FlowCategoryModuleTokenRefresh:
 		return s.authAuthorityService
 	default:
 		return ""
@@ -226,9 +231,12 @@ func resolveRouteKeyCategory(routeKey string) (commonif.FlowCategory, bool) {
 	case remoteAuthVerifyRouteKey, remoteSessionValidateRouteKey:
 		return commonif.FlowCategoryRemoteAuthVerify, true
 	case externalAuthForwardRouteKey,
+		externalRefreshTokenBundleRouteKey,
 		externalBootstrapChallengeRouteKey,
 		externalBootstrapAuthenticateRouteKey:
 		return commonif.FlowCategoryExternalAuthRelay, true
+	case moduleTokenRefreshRouteKey:
+		return commonif.FlowCategoryModuleTokenRefresh, true
 	case businessForwardRouteKey:
 		return commonif.FlowCategoryBusinessForward, true
 	}
@@ -251,9 +259,12 @@ func resolveStaticFlowCategory(flow *commonif.FlowRouteInput) (commonif.FlowCate
 	case strings.ToLower(remoteVerifyMethodPath), strings.ToLower(remoteSessionMethodPath):
 		return commonif.FlowCategoryRemoteAuthVerify, true
 	case strings.ToLower(externalAuthMethodPath),
+		strings.ToLower(externalRefreshTokenBundleMethodPath),
 		strings.ToLower(externalBootstrapChallengeMethodPath),
 		strings.ToLower(externalBootstrapAuthenticateMethodPath):
 		return commonif.FlowCategoryExternalAuthRelay, true
+	case strings.ToLower(moduleTokenRefreshMethodPath):
+		return commonif.FlowCategoryModuleTokenRefresh, true
 	default:
 		return "", false
 	}
@@ -273,7 +284,8 @@ func resolveDefaultSecurityPolicy(category commonif.FlowCategory) commonif.Secur
 		return commonif.SecurityPolicyOptional
 	case commonif.FlowCategoryBusinessForward,
 		commonif.FlowCategoryExternalAuthRelay,
-		commonif.FlowCategoryRemoteAuthVerify:
+		commonif.FlowCategoryRemoteAuthVerify,
+		commonif.FlowCategoryModuleTokenRefresh:
 		return commonif.SecurityPolicyRequired
 	default:
 		return commonif.SecurityPolicyOptional
