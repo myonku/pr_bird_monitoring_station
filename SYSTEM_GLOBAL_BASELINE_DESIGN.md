@@ -78,7 +78,7 @@
 - 私钥格式固定为 PKCS#8 PEM。
 - 公钥格式固定为 SPKI PEM。
 - 密钥轮换时必须先切换新单活密钥，再安全退役旧密钥。
-- 本地密钥对文件名固定，路径由配置中的 `secret_key_dir` 指定；密钥管理类只负责加载本地密钥对和按 ID 查询公钥，不把文件名与 `key_id` 绑定。
+- 本地密钥对文件名固定为 `public.pem` / `private.pem`，路径由配置中的 `secret_key_dir` 指定；密钥管理类只负责加载本地密钥对和按 ID 查询公钥，不把文件名与 `key_id` 绑定，也不以 `active_key_id` 作为启动门槛。
 
 边界说明：
 
@@ -94,7 +94,7 @@
   - 按 `entity_id` 查询当前可用公钥（用于 `key_id` 缺失或不确定场景）。
   - 按 owner 维度查询（`entity_type + entity_id + instance_id`）。
 - 查询请求必须支持 `require_active` 等价语义，要求仅返回当前激活密钥。
-- 模块配置文件至少应包含一个可用的 bootstrap 引用ID：`active_key_id` 优先，缺失时由 `instance_id` 兜底（边缘端对应 `device_id`）。只要其中之一存在即可支持 bootstrap；认证中心仍可通过 `entity_id` 反查到对应公钥记录。
+- 模块配置文件至少应包含一个可用的 bootstrap 查钥提示：`active_key_id` 优先，缺失时允许直接使用 `entity_id`（后端 `instance_id`，边缘端 `device_id`）参与 bootstrap；只要 `key_id` 或 `entity_id` 中至少一个存在即可启动，认证中心必须同时支持二者查询公钥。
 
 ### 4.1 公钥目录语义收敛（强制）
 
@@ -137,30 +137,27 @@
 
 - 服务模块与边缘端配置文件仅在初始化阶段读取一次。
 - 主流程中通过参数对象/上下文对象传递，不重复从磁盘读取配置文件。
-- bootstrap 所需的有效引用ID必须在初始化阶段解析一次：`active_key_id` 优先，缺失时由 `instance_id`（边缘端对应 `device_id`）兜底，并随参数对象传递，运行期不得再次回读配置文件。
+- bootstrap 所需的查钥信息必须在初始化阶段解析一次：`active_key_id`、`entity_id`（后端 `instance_id`，边缘端 `device_id`）至少提供一个，并随参数对象传递；密钥管理类运行期不得再次回读配置文件，也不得把文件名与 `key_id` 绑定。
 
 当前状态：
 
 - 边缘端已实现该约定。
 - 后端模块尚未全面动工，后续开发必须遵循该基线。
 
----
-
-## 6. 内部转发双端认证校验机制（强制）
+### 5.4 Bootstrap 标识归属（强制）
 
 统一约定：
 
-- Gateway 在对内转发前必须向认证中心完成该跳认证准备（至少包含凭证校验），并注入下游认证上下文头。
-- 目标模块接收到内部请求后，必须再次向认证中心发起认证校验（至少会话有效性校验；按场景补充令牌校验），不得仅凭网关注入头放行。
-- 下游认证上下文头最小集为：`x-downstream-principal`、`x-downstream-session-id`、`x-downstream-token-id`。
-- 双端回源校验失败必须快速失败并返回显式错误，禁止静默降级。
+- `active_key_id` 与 `entity_id` 不是 bootstrap 运行期反复读取的配置值，而是初始化阶段一次性解析出来的本地标识快照。
+- 边缘端由 `SecretKeyUtils` 持有 `LocalTrustMaterial`，其中同时承载 `device_id` 与 `key_id`；边缘认证协调器只消费这份本地信任材料，不直接回读配置。
+- gateway 与 data_worker 由 `SecretKeyService` 负责把 `ProjectConfig` 解析成 `SecretKeyStartupParams`，再把该快照交给启动期 bootstrap 编排；编排层只消费这份快照，不应自行重新读配置或从文件名反推 key id。
+- gateway 与 data_worker 的 `LocalCredentialService` 只负责保存 bootstrap 成功后的本地凭证快照（`principal_id`、`active_comm_key_id`、session/token 状态），不负责本地 key 选择。
+- `active_key_id` 允许为空，只要 `entity_id`（后端通常体现为 `instance_id`，边缘端体现为 `device_id`）存在即可完成 bootstrap 查钥流程。
+- 认证中心不在本节约束范围内，不要求它持有或管理自身本地凭证。
 
-实现边界：
+---
 
-- 认证中心仍是签发权威与公钥目录权威。
-- 服务发现/注册信息仅用于存活与路由筛选，不作为身份可信证明。
-
-### 6.1 外部请求目标服务决策边界（强制）
+## 6. 外部请求目标服务决策边界（强制）
 
 统一约定：
 
@@ -239,6 +236,8 @@
 - 服务实例模型统一最小字段：`id`、`service_id`、`name`、`endpoint`、`heartbeat`、`weight`、`tags`、`active_comm_key_id`、`metadata`。
 - `heartbeat` 统一使用 Unix 毫秒时间戳；实例存活窗口默认 30 秒。
 - 注册时 `weight` 必须大于等于 1；发现阶段在标签过滤后优先走亲和选择，其次走权重随机，最后回退轮询。
+- `affinity_key` 必须通过稳定哈希算法映射到实例索引，Go 与 Python 的实现必须保持同一哈希口径，禁止使用不稳定或平台相关的散列策略。
+- 权重随机选择必须基于注册后的实例权重做同口径抽样；当总权重非正时回退首个实例，禁止在不同模块间混用不同的权重归一化规则。
 - `service_name` 为空时应直接返回参数错误，不进入发现选择。
 - 当使用租约注册时，续约周期内必须同步刷新 `heartbeat`，避免误判实例过期。
 - 服务发现/注册只提供“存活与路由筛选”能力，不作为运行期身份可信证明。

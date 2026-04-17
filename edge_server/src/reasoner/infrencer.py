@@ -9,9 +9,12 @@ from src.models.workflow.workflow import (
     DetectionBox,
     DetectionResult,
     ImagePayload,
+    EdgeModelContract,
     LoadedModelBundle,
+    ModelPackLocator,
     TwoStageInferenceResult,
 )
+from src.reasoner.model_loader import LocalModelBundleLoader
 from src.reasoner.runtime.classification_runtime import ClassificationRuntime
 from src.reasoner.runtime.detection_runtime import DetectionRuntime
 from src.reasoner.runtime.runtime_common import build_model_signature, load_rgb
@@ -22,11 +25,16 @@ class TwoStageInferenceModule(IInferenceModule):
 
     def __init__(
         self,
+        inference_bundle: LoadedModelBundle,
         detection_runtime: DetectionRuntime | None = None,
         classification_runtime: ClassificationRuntime | None = None,
     ) -> None:
+        self._bundle = inference_bundle
         self._detection_runtime = detection_runtime or DetectionRuntime()
         self._classification_runtime = classification_runtime or ClassificationRuntime()
+
+    def current_contract(self) -> EdgeModelContract:
+        return self._bundle.contract
 
     @staticmethod
     def _elapsed_ms(start_time: float) -> int:
@@ -48,9 +56,10 @@ class TwoStageInferenceModule(IInferenceModule):
         )
         return build_model_signature(handle, models.contract.classification)
 
-    def detect(self, image: ImagePayload, models: LoadedModelBundle) -> DetectionResult:
+    def detect(self, image: ImagePayload) -> DetectionResult:
         """运行检测模型，返回检测结果；不抛异常，内部捕获并通过结果字段反馈错误信息。"""
         start = time.time()
+        models = self._bundle
         model_signature = self._model_signature_for_detection(models)
 
         if not image.bytes_data:
@@ -99,11 +108,11 @@ class TwoStageInferenceModule(IInferenceModule):
         self,
         image: ImagePayload,
         detection: DetectionResult,
-        models: LoadedModelBundle,
     ) -> ClassificationResult:
         """运行分类模型，返回分类结果；不抛异常，内部捕获并通过结果字段反馈错误信息。"""
 
         start = time.time()
+        models = self._bundle
         model_signature = self._model_signature_for_classification(models)
 
         if not detection.success or not detection.boxes:
@@ -192,14 +201,14 @@ class TwoStageInferenceModule(IInferenceModule):
     def infer_two_stage(
         self,
         image: ImagePayload,
-        models: LoadedModelBundle,
     ) -> TwoStageInferenceResult:
         """先检测后分类，检测失败或无目标时提前返回；不抛异常，内部捕获并通过结果字段反馈错误信息。"""
 
+        models = self._bundle
         detector_signature = self._model_signature_for_detection(models)
         classifier_signature = self._model_signature_for_classification(models)
 
-        detection = self.detect(image=image, models=models)
+        detection = self.detect(image=image)
         if not detection.success:
             return TwoStageInferenceResult(
                 success=False,
@@ -254,7 +263,6 @@ class TwoStageInferenceModule(IInferenceModule):
         classification = self.classify(
             image=cropped_image,
             detection=detection,
-            models=models,
         )
         if not classification.success:
             return TwoStageInferenceResult(
@@ -286,3 +294,9 @@ class TwoStageInferenceModule(IInferenceModule):
             classifier_model_signature=classification.model_signature
             or classifier_signature,
         )
+
+
+def build_standard_inference_module(locator: ModelPackLocator) -> TwoStageInferenceModule:
+    loader = LocalModelBundleLoader()
+    bundle = loader.load(locator)
+    return TwoStageInferenceModule(inference_bundle=bundle)

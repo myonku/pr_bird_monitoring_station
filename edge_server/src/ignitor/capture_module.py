@@ -3,12 +3,17 @@ import time
 from collections import deque
 from typing import Any
 
-from src.iface.workflow_interface import ICaptureModule, IMotionSensor
+from src.iface.workflow_interface import (
+    ICaptureModule,
+    IMotionSensor,
+    ITemperatureHumiditySensor,
+)
 from src.ignitor.camera_module import (
     ICameraController,
     MockCameraController,
     PiCameraController,
 )
+from src.ignitor.environment_module import MockTemperatureHumiditySensor
 from src.ignitor.sensor_module import MockMotionSensor, PIRMotionSensor
 from src.models.workflow.workflow import CaptureContext, ImagePayload
 
@@ -63,6 +68,8 @@ class SensorCameraCaptureModule(ICaptureModule):
     def __init__(
         self,
         device_id: str,
+        device_name: str,
+        location_name: str,
         sensor: IMotionSensor,
         camera: ICameraController,
         image_format: str = "jpg",
@@ -70,10 +77,14 @@ class SensorCameraCaptureModule(ICaptureModule):
         sensor_wait_timeout_sec: float | None = None,
         capture_rate_window_sec: float = 0.0,
         capture_rate_max_images: int = 0,
+        environment_sensor: ITemperatureHumiditySensor | None = None,
     ) -> None:
         self.device_id = device_id
+        self.device_name = device_name or "unknown"
+        self.location_name = location_name or "unknown"
         self._sensor = sensor
         self._camera = camera
+        self._environment_sensor = environment_sensor or MockTemperatureHumiditySensor()
         self.image_format = image_format
         self.capture_cooldown_sec = capture_cooldown_sec
         self.sensor_wait_timeout_sec = sensor_wait_timeout_sec
@@ -83,7 +94,7 @@ class SensorCameraCaptureModule(ICaptureModule):
         )
 
     def close(self) -> None:
-        for component in (self._camera, self._sensor):
+        for component in (self._camera, self._sensor, self._environment_sensor):
             close_fn = getattr(component, "close", None)
             if callable(close_fn):
                 try:
@@ -108,6 +119,7 @@ class SensorCameraCaptureModule(ICaptureModule):
         self._rate_limiter.acquire()
 
         image_bytes, width, height = self._camera.capture(self.image_format)
+        environment_snapshot = self._environment_sensor.read_snapshot()
 
         if self.capture_cooldown_sec > 0:
             time.sleep(self.capture_cooldown_sec)
@@ -117,8 +129,11 @@ class SensorCameraCaptureModule(ICaptureModule):
 
         context = CaptureContext(
             device_id=self.device_id,
+            device_name=self.device_name,
+            location_name=self.location_name,
             trigger_type="motion",
             sensor_snapshot=sensor_snapshot,
+            environment_snapshot=environment_snapshot,
         )
         payload = ImagePayload(
             image_id=f"img-{int(time.time() * 1000)}",
@@ -137,6 +152,8 @@ class MockCaptureModule(SensorCameraCaptureModule):
     def __init__(
         self,
         device_id: str,
+        device_name: str = "unknown",
+        location_name: str = "unknown",
         image_format: str = "jpg",
         image_width: int = 1920,
         image_height: int = 1080,
@@ -145,6 +162,8 @@ class MockCaptureModule(SensorCameraCaptureModule):
     ) -> None:
         super().__init__(
             device_id=device_id,
+            device_name=device_name,
+            location_name=location_name,
             sensor=MockMotionSensor(),
             camera=MockCameraController(
                 image_width=image_width,
@@ -164,6 +183,8 @@ class PIRCameraCaptureModule(SensorCameraCaptureModule):
     def __init__(
         self,
         device_id: str,
+        device_name: str = "unknown",
+        location_name: str = "unknown",
         pir_gpio_pin: int = 17,
         image_format: str = "jpg",
         image_width: int = 1920,
@@ -175,6 +196,8 @@ class PIRCameraCaptureModule(SensorCameraCaptureModule):
     ) -> None:
         super().__init__(
             device_id=device_id,
+            device_name=device_name,
+            location_name=location_name,
             sensor=PIRMotionSensor(pir_gpio_pin=pir_gpio_pin),
             camera=PiCameraController(
                 image_width=image_width,

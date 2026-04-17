@@ -50,8 +50,18 @@ class MockAuthService implements AuthService {
                 'mock-access-${now.millisecondsSinceEpoch}-$passwordSeed',
             refreshToken:
                 'mock-refresh-${now.millisecondsSinceEpoch}-$passwordSeed',
+            downstreamToken:
+                'mock-downstream-${now.millisecondsSinceEpoch}-$passwordSeed',
+            tokenType: 'Bearer',
+            sessionId: 'mock-session-${now.millisecondsSinceEpoch}',
+            issuedAtMs: now.millisecondsSinceEpoch,
+            accessExpiresAtMs: now
+                .add(const Duration(hours: 2))
+                .millisecondsSinceEpoch,
+            refreshExpiresAtMs: now
+                .add(const Duration(days: 30))
+                .millisecondsSinceEpoch,
             persisted: true,
-            issuedAt: now,
           )
         : const AuthCredentials();
 

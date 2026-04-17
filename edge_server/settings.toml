@@ -1,5 +1,9 @@
 [runtime]
 device_id = "edge_device_001"
+# 可选：设备展示名；留空时默认 unknown
+device_name = ""
+# 可选：站点/位置展示名；留空时默认 unknown
+location_name = ""
 # development: 边缘端基础功能测试（禁用认证与外发）
 # no_auth: 无认证联调模式（允许正常上传与补传，但认证流程不执行，认证头字段为空）
 # full_development: 全面开发模式（启用认证与真实业务流程；此模式不要求配置 TLS）
@@ -75,11 +79,11 @@ topk = 1
 
 [[model_pack_lightweight_candidates]]
 candidate_id = "edge_yolo_n"
-file_name = "detection_lightweight_edge_yolo_n.onnx"
+file_name = "detection_lightweight_edge_yolo_n.pt"
 task = "detection"
 framework = "yolo"
 model_name = "yolo11n"
-format = "onnx"
+format = "custom"
 input_size = [640, 640]
 score_threshold = 0.25
 nms_iou_threshold = 0.45
@@ -99,11 +103,11 @@ topk = 5
 
 [[model_pack_lightweight_candidates]]
 candidate_id = "edge_yolo11n_cls"
-file_name = "classification_lightweight_edge_yolo11n_cls.onnx"
+file_name = "classification_lightweight_edge_yolo11n_cls.pt"
 task = "classification"
 framework = "yolo"
 model_name = "yolo11n-cls"
-format = "onnx"
+format = "custom"
 input_size = [224, 224]
 score_threshold = 0.0
 nms_iou_threshold = 0.0

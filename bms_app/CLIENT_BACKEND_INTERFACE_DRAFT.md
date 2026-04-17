@@ -20,7 +20,7 @@
 - 客户端不参与本地密钥 bootstrap。
 - 客户端页面中的配色、图标、展示文案和局部排序规则由本地决定，不要求后端返回。
 - `development` 与 `no-auth` 共享同一套业务接口语义；差异主要体现在是否携带认证信息、是否返回可持久化令牌。
-- 当前草案优先覆盖客户端已经实际使用的数据：登录、当前用户、首页概览、站点列表、记录列表、记录详情、最近一周趋势、时间段统计。
+- 当前草案优先覆盖客户端已经实际使用的数据：登录、当前用户、首页概览、设备列表、记录列表、记录详情、最近一周趋势、时间段统计。客户端 UI 可以把 `device_name` 继续显示成“站点”。
 
 ## 3. 通用约定
 
@@ -98,7 +98,7 @@
     "user_id": "7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19",
     "name": "测试用户",
     "role": "系统演示账号",
-    "station": "南湖湿地站",
+    "device_name": "南湖湿地站",
     "phone": "138-0000-0000",
     "avatar_seed": 7
   },
@@ -169,7 +169,7 @@
     "user_id": "7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19",
     "name": "测试用户",
     "role": "系统演示账号",
-    "station": "南湖湿地站",
+    "device_name": "南湖湿地站",
     "phone": "138-0000-0000",
     "avatar_seed": 7
   }
@@ -189,14 +189,13 @@
   "dashboard": {
     "today_recognition_count": 128,
     "today_new_record_count": 26,
-    "online_station_count": 9,
     "online_device_count": 18,
     "last_upload_at_ms": 1712793720000,
     "highlighted_bird": "白鹭群在湿地边缘活动"
   },
   "recent_records": [],
-  "peak_station": {
-    "station_name": "南湖湿地站",
+  "peak_device": {
+    "device_name": "南湖湿地站",
     "record_count": 52
   },
   "total_record_count": 1320,
@@ -206,26 +205,26 @@
 
 说明：
 
-- 首页当前只需要一组摘要卡片、最近上传提示、热点站点和最近记录。
+- 首页当前只需要一组摘要卡片、最近上传提示、热点设备和最近记录。
 - `recent_records` 可复用记录摘要结构，不需要返回完整详情。
-- `peak_station` 的 `record_count` 可表示今日或当前统计口径下的站点记录数，建议在接口说明里固定口径。
+- `peak_device` 的 `record_count` 可表示今日或当前统计口径下的设备记录数，建议在接口说明里固定口径。
 
 ## 6. 记录接口
 
-### 6.1 站点列表
+### 6.1 设备列表
 
-`GET /v1/client/records/stations`
+`GET /v1/client/records/devices`
 
 响应体建议：
 
 ```json
 {
-  "stations": [
+  "devices": [
     {
-      "station_id": "2f0b7b69-0b2d-4e3a-9f5f-5db7d0e98711",
-      "station_name": "南湖湿地站",
+      "device_id": "2f0b7b69-0b2d-4e3a-9f5f-5db7d0e98711",
+      "device_name": "南湖湿地站",
       "online": true,
-      "device_count": 4
+      "status": "online"
     }
   ]
 }
@@ -233,8 +232,8 @@
 
 说明：
 
-- 当前客户端只强依赖 `station_name`。
-- `station_id`、`online`、`device_count` 都属于建议扩展字段，可选返回。
+- 当前客户端只强依赖 `device_name`。
+- `device_id`、`online`、`status` 都属于建议扩展字段，可选返回。
 
 ### 6.2 记录列表
 
@@ -244,7 +243,7 @@
 
 - `start_at_ms`：开始时间，包含边界。
 - `end_at_ms`：结束时间，包含边界。
-- `station_name`：站点名，可选。
+- `device_name`：设备名，可选，客户端可把它呈现成站点名。
 - `keyword`：模糊搜索关键字，可选，建议匹配物种名、学名、站点名、摘要。
 - `confidence_min`：最低置信度，可选，取值范围 `0~1`。
 - `page`：页码，默认 `1`。
@@ -261,7 +260,7 @@
       "species": "白鹭",
       "scientific_name": "Egretta garzetta",
       "captured_at_ms": 1712798400000,
-      "station_name": "南湖湿地站",
+      "device_name": "南湖湿地站",
       "confidence": 0.97,
       "temperature_c": 18.4,
       "humidity_pct": 64,
@@ -293,7 +292,7 @@
   "species": "白鹭",
   "scientific_name": "Egretta garzetta",
   "captured_at_ms": 1712798400000,
-  "station_name": "南湖湿地站",
+  "device_name": "南湖湿地站",
   "confidence": 0.97,
   "temperature_c": 18.4,
   "humidity_pct": 64,
@@ -348,7 +347,7 @@
 
 - `start_at_ms`：开始时间，包含边界。
 - `end_at_ms`：结束时间，包含边界。
-- `station_name`：站点名，可选。
+- `device_name`：设备名，可选，客户端可把它呈现成站点名。
 
 建议校验：
 
@@ -388,8 +387,8 @@
     "label": "4/10",
     "value": 18
   },
-  "peak_station": {
-    "station_name": "南湖湿地站",
+  "peak_device": {
+    "device_name": "南湖湿地站",
     "record_count": 54
   }
 }
@@ -398,7 +397,7 @@
 说明：
 
 - 这一个接口就足够支持当前统计页下半部分的“日分布柱状图 + 物种占比图”。
-- `ratio`、`peak_day`、`peak_station` 都属于建议扩展字段，不影响最小可用版本。
+- `ratio`、`peak_day`、`peak_device` 都属于建议扩展字段，不影响最小可用版本。
 
 ## 8. 公共模型建议
 
@@ -409,7 +408,7 @@
 - `user_id`
 - `name`
 - `role`
-- `station`
+- `device_name`
 - `phone`
 - `avatar_seed`（可选）
 
@@ -419,7 +418,6 @@
 
 - `today_recognition_count`
 - `today_new_record_count`
-- `online_station_count`
 - `online_device_count`
 - `last_upload_at_ms`
 - `highlighted_bird`
@@ -432,7 +430,7 @@
 - `species`
 - `scientific_name`
 - `captured_at_ms`
-- `station_name`
+- `device_name`
 - `confidence`
 - `temperature_c`
 - `humidity_pct`
@@ -488,7 +486,7 @@
 
 1. 先打通 `auth/login` 与 `auth/me`。
 2. 再接 `home/summary`。
-3. 然后接 `records/stations` 与 `records`。
+3. 然后接 `records/devices` 与 `records`。
 4. 补齐 `records/{record_id}`。
 5. 最后接 `stats/weekly-trend` 与 `stats/range-summary`。
 

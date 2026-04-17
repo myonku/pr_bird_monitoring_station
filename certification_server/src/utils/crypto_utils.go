@@ -7,15 +7,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/subtle"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -476,40 +473,6 @@ func (c *CryptoUtils) VerifyByAlgorithm(algorithm string, message []byte, signat
 	default:
 		return fmt.Errorf("%w: %s", &modelsystem.ErrUnsupportedSignatureAlgorithm, algorithm)
 	}
-}
-
-// DeriveSessionKeyByHandshake 根据握手材料与协商参数派生会话密钥（Base64）。
-func (c *CryptoUtils) DeriveSessionKeyByHandshake(
-	keyExchange string,
-	cipherSuite string,
-	initiatorEphemeral string,
-	responderEphemeral string,
-	initiatorNonce string,
-	responderNonce string,
-) (string, error) {
-	keyLen := 32
-	if cipherSuite == "aes_128_gcm" {
-		keyLen = 16
-	}
-
-	material := []byte(keyExchange + "|" + initiatorEphemeral + "|" + responderEphemeral + "|" + initiatorNonce + "|" + responderNonce)
-	seed := sha512.Sum512(material)
-	buf := make([]byte, keyLen)
-	var counter uint32 = 1
-	offset := 0
-	for offset < keyLen {
-		mac := hmac.New(sha256.New, seed[:])
-		_ = binary.Write(mac, binary.BigEndian, counter)
-		block := mac.Sum(nil)
-		remain := keyLen - offset
-		if remain > len(block) {
-			remain = len(block)
-		}
-		copy(buf[offset:offset+remain], block[:remain])
-		offset += remain
-		counter++
-	}
-	return base64.StdEncoding.EncodeToString(buf), nil
 }
 
 func parsePrivateKey(privateKeyPEM []byte) (any, error) {

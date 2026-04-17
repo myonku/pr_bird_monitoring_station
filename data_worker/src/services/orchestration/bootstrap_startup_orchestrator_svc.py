@@ -62,7 +62,7 @@ class BootstrapStartupOrchestratorService:
         active_key_id = (startup_params.active_key_id or "").strip()
         instance_id = (runtime_cfg.instance_id or "").strip()
         if not active_key_id and not instance_id:
-            raise ValueError("bootstrap identity requires active_key_id or instance_id")
+            raise ValueError("bootstrap identity requires active_key_id or instance_id (entity_id)")
 
         authority_endpoint = await self._resolve_authority_endpoint(runtime_cfg)
 

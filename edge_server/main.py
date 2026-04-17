@@ -13,8 +13,7 @@ from src.models.workflow.runtime import RuntimeStatus
 from src.local_storage.sqlite_spool import SQLiteSpoolStorage
 from src.local_storage.sqlite_auth_store import SQLiteEdgeAuthStateStore
 from src.sync_worker.sync_worker import SyncWorker
-from src.reasoner.infrencer import TwoStageInferenceModule
-from src.reasoner.model_loader import LocalModelBundleLoader
+from src.reasoner.infrencer import build_standard_inference_module
 from src.orchestration.auth_coordinator import EdgeAuthCoordinator
 from src.orchestration.no_auth_coordinator import NoAuthEdgeAuthCoordinator
 from src.transport.event_uploader import EdgeEventHttpUploadCoordinator
@@ -81,18 +80,23 @@ def main() -> None:
         details={
             "run_mode": cfg.runtime.run_mode,
             "device_id": cfg.runtime.device_id,
+            "device_name": cfg.runtime.device_name,
+            "location_name": cfg.runtime.location_name,
         },
     )
 
-    capture = build_capture_module(cfg.capture, cfg.runtime.device_id)
+    capture = build_capture_module(
+        cfg.capture,
+        cfg.runtime.device_id,
+        device_name=cfg.runtime.device_name,
+        location_name=cfg.runtime.location_name,
+    )
     spool = SQLiteSpoolStorage(cfg.runtime.spool_db_path)
     is_basic_development_mode = cfg.runtime.run_mode == "development"
     is_no_auth_mode = cfg.runtime.run_mode == "no_auth"
     is_full_development_mode = cfg.runtime.run_mode == "full_development"
 
-    model_loader = LocalModelBundleLoader()
-    model_loader.load(cfg.model_pack)
-    infer = TwoStageInferenceModule()
+    infer = build_standard_inference_module(cfg.model_pack)
 
     auth_coordinator = None
     if is_basic_development_mode:
@@ -211,7 +215,6 @@ def main() -> None:
 
     pipeline = EdgePipeline(
         capture=capture,
-        model_loader=model_loader,
         infer=infer,
         upload_coordinator=pipeline_uploader,
         spool=spool,

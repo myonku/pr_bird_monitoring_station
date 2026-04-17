@@ -7,6 +7,12 @@ class MockClientRepository implements MonitoringRepository {
   const MockClientRepository();
 
   static final List<String> _stations = ['南湖湿地站', '东堤观察点', '北岸瞭望台', '西侧林缘点'];
+  static const Map<String, String> _stationDeviceIds = {
+    '南湖湿地站': '8c0a2c1d-0b1f-4e56-b3e2-11a5f0b6b001',
+    '东堤观察点': '8c0a2c1d-0b1f-4e56-b3e2-11a5f0b6b002',
+    '北岸瞭望台': '8c0a2c1d-0b1f-4e56-b3e2-11a5f0b6b003',
+    '西侧林缘点': '8c0a2c1d-0b1f-4e56-b3e2-11a5f0b6b004',
+  };
 
   @override
   DashboardSnapshot get dashboard => const DashboardSnapshot(
@@ -16,6 +22,8 @@ class MockClientRepository implements MonitoringRepository {
     onlineDevices: 18,
     lastUploadTime: '10:42',
     highlightedBird: '白鹭群在湿地边缘活动',
+    lastUploadAtMs: 1712793720000,
+    serverTimeMs: 1712893720000,
   );
 
   @override
@@ -25,6 +33,11 @@ class MockClientRepository implements MonitoringRepository {
     station: '南湖湿地站',
     phone: '138-0000-0000',
     avatarSeed: 7,
+    userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
+    username: 'demo_user',
+    displayName: '测试用户',
+    deviceName: '南湖湿地站',
+    email: 'demo_user@example.com',
   );
 
   @override
@@ -34,6 +47,11 @@ class MockClientRepository implements MonitoringRepository {
     station: '南湖湿地站',
     phone: '138-0000-0000',
     avatarSeed: name.hashCode & 0x7fffffff,
+    userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
+    username: name,
+    displayName: name,
+    deviceName: '南湖湿地站',
+    email: '',
   );
 
   @override
@@ -313,6 +331,9 @@ class MockClientRepository implements MonitoringRepository {
     required String uploadSummary,
     required Color accent,
   }) {
+    final deviceId =
+        _stationDeviceIds[stationName] ??
+        '8c0a2c1d-0b1f-4e56-b3e2-11a5f0b6b099';
     return BirdRecord(
       id: id,
       species: species,
@@ -326,6 +347,24 @@ class MockClientRepository implements MonitoringRepository {
       uploadSummary: uploadSummary,
       speciesIntro: _speciesIntro(species),
       accent: accent,
+      recordId: id,
+      deviceId: deviceId,
+      deviceName: stationName,
+      speciesEntityId: switch (species) {
+        '白鹭' => 'd5d1cb2d-55b3-4b1d-8b31-7ff8f8d7a001',
+        '灰鹭' => 'd5d1cb2d-55b3-4b1d-8b31-7ff8f8d7a002',
+        '夜鹭' => 'd5d1cb2d-55b3-4b1d-8b31-7ff8f8d7a003',
+        '苍鹭' => 'd5d1cb2d-55b3-4b1d-8b31-7ff8f8d7a004',
+        _ => null,
+      },
+      capturedAtMs: capturedAtTime.millisecondsSinceEpoch,
+      temperatureC: temperature,
+      humidityPct: humidity,
+      mediaRefs: const [],
+      processingSource: 'edge',
+      modelVersion: 'demo-v1',
+      recordStatus: 'published',
+      summaryText: uploadSummary,
     );
   }
 

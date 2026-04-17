@@ -7,17 +7,17 @@ UserRole = Literal["admin", "user"]
 DeviceStatus = Literal["online", "offline", "error", "unknown"]
 
 
-class StationEntity(Struct, frozen=True):
-    """站点/设备实体信息。"""
+class DeviceEntity(Struct, frozen=True):
+    """设备实体信息。"""
 
-    id: UUID
-    name: str = ""
+    device_entity_id: UUID
+    device_name: str = ""
     location_name: str = ""
     latitude: float | None = None
     longitude: float | None = None
-    active_comm_key_id: UUID | None = None
     last_heartbeat_ms: int = 0
     status: DeviceStatus = "offline"
+    active_comm_key_id: UUID | None = None
     created_at_ms: int = 0
     updated_at_ms: int = 0
     metadata: dict[str, str] = field(default_factory=dict)

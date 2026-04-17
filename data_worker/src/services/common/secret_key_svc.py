@@ -60,10 +60,17 @@ class SecretKeyService:
         catalog: list[ServicePublicKeyRecord] | None = None,
         mysql_client: MySQLClient | None = None,
     ) -> "SecretKeyService":
-        """基于启动参数快照构建密钥服务。"""
-        resolved_key_id = params.active_key_id.strip()
+        """基于启动参数快照构建密钥服务。
+
+        这里统一解析本地 key_id 的来源：active_key_id 优先，其次是 instance_id，再其次是 entity_id。
+        """
+        resolved_key_id = (
+            params.active_key_id.strip()
+            or params.instance_id.strip()
+            or params.entity_id.strip()
+        )
         if not resolved_key_id:
-            raise ValueError("active_key_id is required")
+            raise ValueError("bootstrap key id requires active_key_id, instance_id, or entity_id")
 
         owner = ServiceKeyOwner(
             entity_type=params.entity_type,
@@ -96,14 +103,14 @@ class SecretKeyService:
         """从本地密钥目录构建后端密钥服务。"""
         resolved_key_id = active_key_id.strip()
         if not resolved_key_id:
-            raise ValueError("active_key_id is required")
+            resolved_key_id = owner.effective_entity_id
 
         secret_root = Path(secret_dir).expanduser().resolve()
         if not secret_root.exists() or not secret_root.is_dir():
             raise ValueError(f"secret dir does not exist: {secret_root}")
 
-        resolved_public_ref = public_key_ref.strip() or f"{resolved_key_id}.public.pem"
-        resolved_private_ref = private_key_ref.strip() or f"{resolved_key_id}.private.pem"
+        resolved_public_ref = public_key_ref.strip() or "public.pem"
+        resolved_private_ref = private_key_ref.strip() or "private.pem"
 
         public_key_pem = cls.load_pem_bytes_from_ref(
             resolved_public_ref,

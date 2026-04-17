@@ -15,6 +15,7 @@ from src.models.workflow.workflow import (
     DetectionResult,
     EdgeEvent,
     ImagePayload,
+    TemperatureHumiditySnapshot,
     TwoStageInferenceResult,
 )
 
@@ -235,6 +236,43 @@ class SQLiteSpoolStorage(ISpoolStorage):
         return "motion"
 
     @staticmethod
+    def _to_environment_snapshot(
+        payload: dict[str, Any] | None,
+    ) -> TemperatureHumiditySnapshot | None:
+        if payload is None:
+            return None
+
+        sensor_snapshot = payload.get("sensor_snapshot")
+        return TemperatureHumiditySnapshot(
+            temperature_c=(
+                float(payload["temperature_c"])
+                if payload.get("temperature_c") is not None
+                else None
+            ),
+            humidity_pct=(
+                int(payload["humidity_pct"])
+                if payload.get("humidity_pct") is not None
+                else None
+            ),
+            source=(str(payload["source"]) if payload.get("source") else "pseudo_mock"),
+            sensor_snapshot=(
+                dict(sensor_snapshot)
+                if isinstance(sensor_snapshot, dict)
+                else {}
+            ),
+            captured_at_ms=(
+                int(payload["captured_at_ms"])
+                if payload.get("captured_at_ms") is not None
+                else int(time.time() * 1000)
+            ),
+        )
+
+    @staticmethod
+    def _normalize_display_name(value: Any) -> str:
+        raw = str(value).strip() if value is not None else ""
+        return raw or "unknown"
+
+    @staticmethod
     def _to_detection(payload: dict[str, Any] | None) -> DetectionResult:
         if not payload:
             return DetectionResult(success=False, reason="missing_detection")
@@ -364,12 +402,25 @@ class SQLiteSpoolStorage(ISpoolStorage):
         payload = json.loads(payload_json)
 
         context_payload = payload.get("context", {})
+        environment_payload = context_payload.get("environment_snapshot")
+        sensor_snapshot_payload = context_payload.get("sensor_snapshot")
         context = CaptureContext(
             device_id=str(context_payload.get("device_id", "unknown_device")),
+            device_name=cls._normalize_display_name(context_payload.get("device_name")),
+            location_name=cls._normalize_display_name(
+                context_payload.get("location_name")
+            ),
             trigger_type=cls._parse_trigger_type(
                 context_payload.get("trigger_type")
             ),
-            sensor_snapshot=dict(context_payload.get("sensor_snapshot", {})),
+            sensor_snapshot=(
+                dict(sensor_snapshot_payload)
+                if isinstance(sensor_snapshot_payload, dict)
+                else {}
+            ),
+            environment_snapshot=cls._to_environment_snapshot(
+                environment_payload if isinstance(environment_payload, dict) else None
+            ),
             captured_at_ms=int(context_payload.get("captured_at_ms", int(time.time() * 1000))),
         )
 

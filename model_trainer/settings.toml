@@ -50,7 +50,7 @@ max_box_area_ratio = 0.90
 # 候选框到图像边缘的最小留白比例（0 表示不启用该约束）
 min_box_edge_margin_ratio = 0.0
 # 每个类别最终最多保留多少张成品图（0 表示不限制）
-max_images_per_class = 50
+max_images_per_class = 100
 # 进度显示开关与输出间隔
 show_progress = true
 progress_interval = 100
@@ -61,6 +61,20 @@ progress_interval = 100
 # run 命令会根据 --task + --tier，在匹配的候选中选择配置顺序最靠前的一个执行
 
 ## tier = lightweight | task = detection 的候选项
+[[candidates]]
+candidate_id = "edge_yolo_n"
+framework = "yolo"
+model_name = "yolo11n"
+tier = "lightweight"
+task = "detection"
+export_formats = ["onnx"]
+
+[candidates.train_params]
+epochs = 2
+imgsz = 640
+pretrained = "weights/yolo11n.pt"
+
+
 [[candidates]]
 candidate_id = "edge_frcnn_mbv3_det"
 framework = "pytorch"
@@ -76,21 +90,21 @@ image_size = 640
 learning_rate = 0.001
 pretrained = true
 
-
+## tier = standard | task = detection 的候选项
 [[candidates]]
-candidate_id = "edge_yolo_n"
+candidate_id = "server_yolo_m"
 framework = "yolo"
-model_name = "yolo11n"
-tier = "lightweight"
+model_name = "yolo11m"
+tier = "standard"
 task = "detection"
 export_formats = ["onnx"]
 
 [candidates.train_params]
 epochs = 2
 imgsz = 640
-pretrained = "weights/yolo11n.pt"
+pretrained = "weights/yolo11m.pt"
 
-## tier = standard | task = detection 的候选项
+
 [[candidates]]
 candidate_id = "server_frcnn_r50_det"
 framework = "pytorch"
@@ -106,19 +120,6 @@ image_size = 640
 learning_rate = 0.001
 pretrained = true
 
-
-[[candidates]]
-candidate_id = "server_yolo_m"
-framework = "yolo"
-model_name = "yolo11m"
-tier = "standard"
-task = "detection"
-export_formats = ["onnx"]
-
-[candidates.train_params]
-epochs = 2
-imgsz = 640
-pretrained = "weights/yolo11m.pt"
 
 ## tier = lightweight | task = classification 的候选项
 [[candidates]]

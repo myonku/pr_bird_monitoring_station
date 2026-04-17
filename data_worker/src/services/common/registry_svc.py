@@ -143,6 +143,8 @@ class RegistryService(IRegistryManager):
             raise ValueError("service instance name is required")
         if instance.endpoint == "":
             raise ValueError("service instance endpoint is required")
+        if instance.id.int == 0:
+            raise ValueError("service instance id is required")
 
         normalized = ServiceInstance(
             id=instance.id,
@@ -171,27 +173,33 @@ class RegistryService(IRegistryManager):
         key = build_service_key(
             self._etcd_client.namespace, normalized.name, str(normalized.id)
         )
-        ttl = ttl_sec if ttl_sec > 0 else 30
-        await self._etcd_client.put_with_lease(
-            key, encode_instance(normalized), ttl=ttl
-        )
-
-        stop_event = asyncio.Event()
-        self._lease_stop_events[instance_ref] = stop_event
-        self._lease_tasks[instance_ref] = asyncio.create_task(
-            self._maintain_registration(
-                service_name=normalized.name,
-                instance_id=normalized.id,
-                instance_ref=instance_ref,
-                ttl=ttl,
-                key=key,
-                stop_event=stop_event,
+        ttl = ttl_sec if ttl_sec > 0 else 0
+        if ttl > 0:
+            await self._etcd_client.put_with_lease(
+                key, encode_instance(normalized), ttl=ttl
             )
-        )
+
+            stop_event = asyncio.Event()
+            self._lease_stop_events[instance_ref] = stop_event
+            self._lease_tasks[instance_ref] = asyncio.create_task(
+                self._maintain_registration(
+                    service_name=normalized.name,
+                    instance_id=normalized.id,
+                    instance_ref=instance_ref,
+                    ttl=ttl,
+                    key=key,
+                    stop_event=stop_event,
+                )
+            )
+            return
+
+        await self._etcd_client.put(key, encode_instance(normalized))
 
     async def unregister(self, instance: ServiceInstance) -> None:
         if instance.name == "":
             raise ValueError("service instance name is required")
+        if instance.id.int == 0:
+            raise ValueError("service instance id is required")
 
         instance_ref = self._instance_ref(instance.name, instance.id)
         await self._stop_registration_maintenance(instance_ref)

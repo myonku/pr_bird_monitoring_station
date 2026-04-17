@@ -63,6 +63,8 @@ class DecisionPolicyConfig:
 @dataclass(slots=True)
 class RuntimeConfig:
     device_id: str
+    device_name: str = "unknown"
+    location_name: str = "unknown"
     run_mode: RuntimeMode = "full_development"
     spool_db_path: str = "data/edge_spool.sqlite3"
     sync_interval_sec: float = 3.0

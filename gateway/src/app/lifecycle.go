@@ -185,6 +185,10 @@ func buildGatewayInstance(runtime modelsystem.RuntimeConfig, activeKeyID string)
 	if serviceID == "" {
 		serviceID = instanceID.String()
 	}
+	resolvedActiveKeyID := strings.TrimSpace(activeKeyID)
+	if resolvedActiveKeyID == "" {
+		resolvedActiveKeyID = serviceID
+	}
 
 	return &commonmodel.ServiceInstance{
 		ID:              instanceID,
@@ -194,7 +198,7 @@ func buildGatewayInstance(runtime modelsystem.RuntimeConfig, activeKeyID string)
 		HeartBeat:       time.Now().UnixMilli(),
 		Weight:          1,
 		Tags:            []string{"gateway", "http", "startup_phase"},
-		ActiveCommKeyID: strings.TrimSpace(activeKeyID),
+		ActiveCommKeyID: resolvedActiveKeyID,
 		MetaData: map[string]string{
 			"run_mode":      string(runtime.RunMode),
 			"startup_phase": "bootstrap_to_registry",

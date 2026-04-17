@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-import tomllib
 from typing import Literal
 from urllib.parse import quote_plus, urlencode
-import msgspec
 from msgspec import Struct
+
+from src.models.inference.config import InferenceConfig
 
 
 DEFAULT_DATA_WORKER_GRPC_LISTEN_PORT = 50052
@@ -23,6 +22,7 @@ class ProjectConfig(Struct):
     etcd: EtcdConfig | None = None
     runtime: RuntimeConfig | None = None
     auth: AuthConfig | None = None
+    inference: InferenceConfig | None = None
 
     def build_secret_key_startup_params(
         self,
@@ -33,7 +33,11 @@ class ProjectConfig(Struct):
             if self.runtime is not None
             else RuntimeConfig().normalized(default_entity_id)
         )
-        auth_cfg = self.auth.normalized() if self.auth is not None else AuthConfig().normalized()
+        auth_cfg = (
+            self.auth.normalized()
+            if self.auth is not None
+            else AuthConfig().normalized()
+        )
 
         return SecretKeyStartupParams(
             secret_key_dir=auth_cfg.secret_key_dir,
@@ -45,33 +49,6 @@ class ProjectConfig(Struct):
             instance_name=runtime_cfg.service_name,
         )
 
-
-def load_project_config(raw_settings: dict[str, object] | ProjectConfig | None) -> ProjectConfig:
-    """从已解析的配置映射构建 ProjectConfig。"""
-
-    if raw_settings is None:
-        return ProjectConfig()
-    if isinstance(raw_settings, ProjectConfig):
-        return raw_settings
-
-    cfg = msgspec.convert(raw_settings, type=ProjectConfig, strict=False)
-    if cfg.runtime is not None:
-        cfg.runtime = cfg.runtime.normalized()
-    if cfg.auth is not None:
-        cfg.auth = cfg.auth.normalized()
-    return cfg
-
-
-def load_project_config_from_toml(settings_path: str = "settings.toml") -> ProjectConfig:
-    """从 TOML 文件读取并构建 ProjectConfig。"""
-
-    path = Path(settings_path).expanduser()
-    if not path.exists():
-        return ProjectConfig()
-
-    with path.open("rb") as f:
-        raw = tomllib.load(f)
-    return load_project_config(raw)
 
 class RuntimeConfig(Struct, kw_only=True):
     """服务本体运行时标识配置。"""
@@ -95,7 +72,8 @@ class RuntimeConfig(Struct, kw_only=True):
             run_mode=normalize_runtime_run_mode(self.run_mode),
             grpc_listen_host=(
                 self.grpc_listen_host.strip()
-                if isinstance(self.grpc_listen_host, str) and self.grpc_listen_host.strip()
+                if isinstance(self.grpc_listen_host, str)
+                and self.grpc_listen_host.strip()
                 else DEFAULT_DATA_WORKER_GRPC_LISTEN_HOST
             ),
             grpc_listen_port=(

@@ -163,6 +163,10 @@ func buildCertificationInstance(runtime modelsystem.RuntimeConfig, activeKeyID s
 	if serviceID == "" {
 		serviceID = instanceID.String()
 	}
+	resolvedActiveKeyID := strings.TrimSpace(activeKeyID)
+	if resolvedActiveKeyID == "" {
+		resolvedActiveKeyID = serviceID
+	}
 
 	return &commonmodel.ServiceInstance{
 		ID:              instanceID,
@@ -172,7 +176,7 @@ func buildCertificationInstance(runtime modelsystem.RuntimeConfig, activeKeyID s
 		HeartBeat:       time.Now().UnixMilli(),
 		Weight:          1,
 		Tags:            []string{"certification_server", "grpc", "startup_phase"},
-		ActiveCommKeyID: strings.TrimSpace(activeKeyID),
+		ActiveCommKeyID: resolvedActiveKeyID,
 		MetaData: map[string]string{
 			"run_mode":      string(runtime.RunMode),
 			"startup_phase": "bootstrap_to_registry",

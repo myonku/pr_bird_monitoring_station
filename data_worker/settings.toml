@@ -9,3 +9,60 @@ grpc_listen_port = 50052
 [auth]
 secret_key_dir = "secret_keys"
 active_key_id = "cert-local-key"
+
+[inference]
+required = true
+root_dir = "model_pack"
+detection_dir = "model_pack/detection"
+classification_dir = "model_pack/classification"
+label_dir = "model_pack"
+detection_label_file_name = ""
+classification_label_file_name = "labels.txt"
+
+[[inference.standard_candidates]]
+candidate_id = "server_frcnn_r50_det"
+file_name = "detection_standard_server_frcnn_r50_det.pth"
+task = "detection"
+framework = "pytorch"
+model_name = "fasterrcnn_resnet50_fpn"
+format = "custom"
+input_size = [640, 640]
+score_threshold = 0.25
+nms_iou_threshold = 0.45
+topk = 1
+
+[[inference.standard_candidates]]
+candidate_id = "server_yolo_m"
+file_name = "detection_standard_server_yolo_m.pt"
+task = "detection"
+framework = "yolo"
+model_name = "yolo11m"
+format = "custom"
+input_size = [640, 640]
+score_threshold = 0.25
+nms_iou_threshold = 0.45
+topk = 1
+
+[[inference.standard_candidates]]
+candidate_id = "server_yolo11m_cls"
+file_name = "classification_standard_server_yolo11m_cls.pt"
+task = "classification"
+framework = "yolo"
+model_name = "yolo11m-cls"
+format = "custom"
+input_size = [224, 224]
+score_threshold = 0.0
+nms_iou_threshold = 0.0
+topk = 5
+
+[[inference.standard_candidates]]
+candidate_id = "server_convnext_cls"
+file_name = "classification_standard_server_convnext_cls.pth"
+task = "classification"
+framework = "pytorch"
+model_name = "convnext_base"
+format = "custom"
+input_size = [224, 224]
+score_threshold = 0.0
+nms_iou_threshold = 0.0
+topk = 5

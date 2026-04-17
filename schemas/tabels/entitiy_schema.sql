@@ -1,7 +1,6 @@
 -- 实体域表结构（MySQL 8.0+）
 
--- 实体域：站点/物种/后端服务扩展表
--- 说明：本文件只定义认证中心侧持有的实体态数据；业务展示态用户资料应放在 business_schema.sql 中单独维护。
+-- 实体域：设备/物种/后端服务扩展表
 
 CREATE TABLE IF NOT EXISTS entitiy_users (
   user_entity_id CHAR(36) NOT NULL,

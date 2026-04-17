@@ -41,9 +41,6 @@ func (s *AuthRequestOrchestratorService) resolveChallenge(
 	if strings.TrimSpace(challenge.EntityID) == "" {
 		return nil, &modelsystem.ErrEntityIDRequired
 	}
-	if strings.TrimSpace(challenge.KeyID) == "" {
-		return nil, &modelsystem.ErrEntityIDAndKeyIDRequired
-	}
 
 	out := challenge
 	return &out, nil

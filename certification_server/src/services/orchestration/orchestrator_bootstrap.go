@@ -31,9 +31,6 @@ func (s *AuthRequestOrchestratorService) HandleBootstrapChallenge(
 
 	entityType := normalizeEntityType(req.EntityType)
 	keyID := strings.TrimSpace(req.KeyID)
-	if keyID == "" {
-		keyID = entityID
-	}
 	audience := strings.TrimSpace(req.Audience)
 	if audience == "" {
 		audience = s.defaultAudience
@@ -89,11 +86,13 @@ func (s *AuthRequestOrchestratorService) HandleBootstrapAuthenticate(
 	if keyID == "" {
 		keyID = strings.TrimSpace(challenge.KeyID)
 	}
-	if keyID == "" {
-		return nil, &modelsystem.ErrEntityIDAndKeyIDRequired
+
+	lookupResult, err := s.lookupBootstrapPublicKey(ctx, challenge, keyID)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := s.verifyBootstrapChallengeSignature(ctx, challenge, req.Signed, keyID); err != nil {
+	if err := s.verifyBootstrapChallengeSignature(challenge, req.Signed, lookupResult); err != nil {
 		return nil, err
 	}
 
@@ -156,6 +155,14 @@ func (s *AuthRequestOrchestratorService) HandleBootstrapAuthenticate(
 		tokens.DownstreamToken = downstream
 	}
 
+	activeCommKeyID := strings.TrimSpace(keyID)
+	if activeCommKeyID == "" {
+		activeCommKeyID = strings.TrimSpace(lookupResult.Key.KeyID)
+	}
+	if activeCommKeyID == "" {
+		activeCommKeyID = strings.TrimSpace(lookupResult.Key.Owner.EffectiveEntityID())
+	}
+
 	issuedAt, expiresAt, tokenID, familyID := resolveBootstrapTokenContext(session, tokens)
 	result := &authmodel.BootstrapAuthResult{
 		Stage: authmodel.BootstrapStageReady,
@@ -176,7 +183,7 @@ func (s *AuthRequestOrchestratorService) HandleBootstrapAuthenticate(
 			ExpiresAt:     expiresAt,
 		},
 		Session:         session,
-		ActiveCommKeyID: keyID,
+		ActiveCommKeyID: activeCommKeyID,
 		IssuedAt:        issuedAt,
 		ExpiresAt:       expiresAt,
 	}
@@ -187,52 +194,59 @@ func (s *AuthRequestOrchestratorService) HandleBootstrapAuthenticate(
 	return result, nil
 }
 
-func (s *AuthRequestOrchestratorService) verifyBootstrapChallengeSignature(
+func (s *AuthRequestOrchestratorService) lookupBootstrapPublicKey(
 	ctx context.Context,
 	challenge *authmodel.ChallengePayload,
-	signed authmodel.SignedChallengeResponse,
 	keyID string,
+) (commsecmodel.PublicKeyLookupResult, error) {
+	if challenge == nil {
+		return commsecmodel.PublicKeyLookupResult{}, &modelsystem.ErrChallengeNotFound
+	}
+	if s.keyManager == nil {
+		return commsecmodel.PublicKeyLookupResult{}, &modelsystem.ErrBootstrapDepsNotReady
+	}
+
+	lookupResult, err := s.keyManager.LookupPublicKey(ctx, &commsecmodel.PublicKeyLookupRequest{
+		KeyID:         strings.TrimSpace(keyID),
+		EntityID:      strings.TrimSpace(challenge.EntityID),
+		RequireActive: true,
+	})
+	if err != nil {
+		return commsecmodel.PublicKeyLookupResult{}, err
+	}
+	if !lookupResult.Found || strings.TrimSpace(lookupResult.Key.PublicKeyPEM) == "" {
+		if strings.TrimSpace(challenge.EntityID) != "" {
+			return commsecmodel.PublicKeyLookupResult{}, &modelsystem.ErrPublicKeyNotFoundForEntityID
+		}
+		return commsecmodel.PublicKeyLookupResult{}, &modelsystem.ErrPublicKeyNotFoundForKeyID
+	}
+	if strings.TrimSpace(challenge.EntityID) != "" && strings.TrimSpace(lookupResult.Key.Owner.EffectiveEntityID()) != strings.TrimSpace(challenge.EntityID) {
+		return commsecmodel.PublicKeyLookupResult{}, &modelsystem.ErrChallengeResponseMismatch
+	}
+	if strings.TrimSpace(lookupResult.Key.Owner.EntityType) != strings.ToLower(strings.TrimSpace(string(challenge.EntityType))) {
+		return commsecmodel.PublicKeyLookupResult{}, &modelsystem.ErrChallengeResponseMismatch
+	}
+
+	return lookupResult, nil
+}
+
+func (s *AuthRequestOrchestratorService) verifyBootstrapChallengeSignature(
+	challenge *authmodel.ChallengePayload,
+	signed authmodel.SignedChallengeResponse,
+	lookupResult commsecmodel.PublicKeyLookupResult,
 ) error {
 	if challenge == nil {
 		return &modelsystem.ErrChallengeNotFound
 	}
-	if s.keyManager == nil {
-		return &modelsystem.ErrBootstrapDepsNotReady
-	}
-
-	resolvedKeyID := strings.TrimSpace(keyID)
-	if resolvedKeyID == "" {
-		resolvedKeyID = strings.TrimSpace(challenge.KeyID)
-	}
-	if resolvedKeyID == "" {
-		return &modelsystem.ErrEntityIDAndKeyIDRequired
-	}
 
 	providedKeyID := strings.TrimSpace(signed.KeyID)
-	if providedKeyID != "" && providedKeyID != strings.TrimSpace(challenge.KeyID) {
+	if providedKeyID != "" && strings.TrimSpace(challenge.KeyID) != "" && providedKeyID != strings.TrimSpace(challenge.KeyID) {
 		return &modelsystem.ErrChallengeResponseMismatch
 	}
 
 	algorithm := strings.TrimSpace(string(signed.SignatureAlgorithm))
 	if algorithm == "" {
 		return &modelsystem.ErrSignatureAlgorithmRequired
-	}
-
-	lookupResult, err := s.keyManager.LookupPublicKey(ctx, &commsecmodel.PublicKeyLookupRequest{
-		KeyID:         resolvedKeyID,
-		RequireActive: true,
-	})
-	if err != nil {
-		return err
-	}
-	if !lookupResult.Found || strings.TrimSpace(lookupResult.Key.PublicKeyPEM) == "" {
-		return &modelsystem.ErrPublicKeyNotFoundForKeyID
-	}
-	if strings.TrimSpace(lookupResult.Key.Owner.EffectiveEntityID()) != strings.TrimSpace(challenge.EntityID) {
-		return &modelsystem.ErrChallengeResponseMismatch
-	}
-	if strings.TrimSpace(lookupResult.Key.Owner.EntityType) != strings.ToLower(strings.TrimSpace(string(challenge.EntityType))) {
-		return &modelsystem.ErrChallengeResponseMismatch
 	}
 
 	payload, err := buildBootstrapSignaturePayload(challenge)

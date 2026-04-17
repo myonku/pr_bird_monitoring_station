@@ -6,12 +6,16 @@ from src.models.sys.config import CaptureConfig
 def build_capture_module(
     capture_cfg: CaptureConfig,
     device_id: str,
+    device_name: str = "unknown",
+    location_name: str = "unknown",
 ) -> ICaptureModule:
     """根据配置构建捕拍模块实例。"""
 
     if capture_cfg.mode == "pir":
         return PIRCameraCaptureModule(
             device_id=device_id,
+            device_name=device_name,
+            location_name=location_name,
             pir_gpio_pin=capture_cfg.pir_gpio_pin,
             image_format=capture_cfg.image_format,
             image_width=capture_cfg.image_width,
@@ -24,6 +28,8 @@ def build_capture_module(
 
     return MockCaptureModule(
         device_id=device_id,
+        device_name=device_name,
+        location_name=location_name,
         image_format=capture_cfg.image_format,
         image_width=capture_cfg.image_width,
         image_height=capture_cfg.image_height,

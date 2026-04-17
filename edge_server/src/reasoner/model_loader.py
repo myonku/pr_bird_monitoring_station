@@ -18,6 +18,7 @@ class LocalModelBundleLoader(IModelBundleLoader):
     """从 model_pack 目录一次加载检测和分类模型，向上层暴露统一模型句柄。"""
 
     _VALID_MODEL_EXTS = {".onnx", ".pt", ".pth", ".torchscript", ".jit"}
+    _VALID_LABEL_EXTS = {".txt", ".names", ".csv", ".labels"}
 
     def __init__(self) -> None:
         self._bundle: LoadedModelBundle | None = None
@@ -123,29 +124,65 @@ class LocalModelBundleLoader(IModelBundleLoader):
             labels.append(parts[0])
         return labels
 
+    @staticmethod
+    def _iter_label_file_candidates(label_dir: Path, configured_name: str) -> list[Path]:
+        candidates: list[Path] = []
+        seen: set[Path] = set()
+
+        def add_candidate(path: Path) -> None:
+            resolved = path.resolve()
+            if resolved in seen:
+                return
+            seen.add(resolved)
+            candidates.append(path)
+
+        configured_name = configured_name.strip()
+        if configured_name:
+            add_candidate(label_dir / configured_name)
+
+        for common_name in (
+            "labels.txt",
+            "class.txt",
+            "classes.txt",
+            "label.txt",
+            "labels.names",
+            "class.names",
+        ):
+            add_candidate(label_dir / common_name)
+
+        if label_dir.exists() and label_dir.is_dir():
+            for item in sorted(label_dir.rglob("*")):
+                if item.is_file() and item.suffix.lower() in LocalModelBundleLoader._VALID_LABEL_EXTS:
+                    add_candidate(item)
+
+        return candidates
+
     def _resolve_labels_for_task(
         self, locator: ModelPackLocator, task: str
     ) -> list[str]:
         if task == "detection":
             label_file_name = locator.detection_label_file_name.strip()
-            fallback = ["bird"]
         else:
             label_file_name = locator.classification_label_file_name.strip()
-            fallback = ["unknown_bird"]
 
-        if not label_file_name:
-            return fallback
+        label_dir = Path(locator.label_dir)
+        candidates = self._iter_label_file_candidates(label_dir, label_file_name)
+        for label_path in candidates:
+            if not label_path.exists() or not label_path.is_file():
+                continue
 
-        label_path = Path(locator.label_dir) / label_file_name
-        if not label_path.exists() or not label_path.is_file():
-            raise FileNotFoundError(
-                f"label file not found for task={task}: {label_path}"
-            )
+            try:
+                labels = self._parse_labels_file(label_path)
+            except (OSError, UnicodeError):
+                continue
 
-        labels = self._parse_labels_file(label_path)
-        if not labels:
-            raise ValueError(f"label file is empty for task={task}: {label_path}")
-        return labels
+            if labels:
+                return labels
+
+        searched = ", ".join(str(item) for item in candidates) or str(label_dir)
+        raise FileNotFoundError(
+            f"no usable label file found for task={task} under {label_dir}; searched: {searched}"
+        )
 
     @staticmethod
     def _find_candidate_spec(

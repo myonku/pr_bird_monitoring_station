@@ -143,6 +143,18 @@ class EtcdAsyncClient:
 
         await self._circuit.call(_do_put)
 
+    async def put(self, key: str, value_bytes: bytes) -> None:
+        """写入 key，不绑定租约。"""
+        assert self._kv_stub, "KV stub 未初始化"
+
+        async def _do_put() -> Any:
+            assert self._kv_stub
+            return await self._kv_stub.Put(
+                etcdrpc.PutRequest(key=key.encode(), value=value_bytes)
+            )
+
+        await self._circuit.call(_do_put)
+
     async def keepalive_forever(self, ttl: int, stop_event: asyncio.Event):
         """保持租约存活（流式 keepalive）。"""
         if self._lease_id is None:

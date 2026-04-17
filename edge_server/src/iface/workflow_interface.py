@@ -11,6 +11,7 @@ from src.models.workflow.workflow import (
     ImagePayload,
     LoadedModelBundle,
     ModelPackLocator,
+    TemperatureHumiditySnapshot,
     TwoStageInferenceResult,
 )
 
@@ -24,6 +25,17 @@ class IMotionSensor(ABC):
 
     @abstractmethod
     def snapshot(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        """可选关闭钩子。"""
+
+
+class ITemperatureHumiditySensor(ABC):
+    """温湿度传感器抽象；负责读取环境温湿度快照。"""
+
+    @abstractmethod
+    def read_snapshot(self) -> TemperatureHumiditySnapshot:
         raise NotImplementedError
 
     def close(self) -> None:
@@ -56,7 +68,11 @@ class IInferenceModule(ABC):
     """推理模块接口；仅负责推理逻辑，不负责模型加载。"""
 
     @abstractmethod
-    def detect(self, image: ImagePayload, models: LoadedModelBundle) -> DetectionResult:
+    def current_contract(self) -> EdgeModelContract:
+        raise NotImplementedError
+
+    @abstractmethod
+    def detect(self, image: ImagePayload) -> DetectionResult:
         raise NotImplementedError
 
     @abstractmethod
@@ -64,7 +80,6 @@ class IInferenceModule(ABC):
         self,
         image: ImagePayload,
         detection: DetectionResult,
-        models: LoadedModelBundle,
     ) -> ClassificationResult:
         raise NotImplementedError
 
@@ -72,7 +87,6 @@ class IInferenceModule(ABC):
     def infer_two_stage(
         self,
         image: ImagePayload,
-        models: LoadedModelBundle,
     ) -> TwoStageInferenceResult:
         """先检测后分类，检测失败时提前退出。"""
         raise NotImplementedError

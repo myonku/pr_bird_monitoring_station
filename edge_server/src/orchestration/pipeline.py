@@ -3,7 +3,6 @@ from collections.abc import Callable
 from src.iface.workflow_interface import (
     ICaptureModule,
     IInferenceModule,
-    IModelBundleLoader,
     ISpoolStorage,
 )
 from src.iface.upload_interface import IEdgeEventUploadCoordinator
@@ -22,7 +21,6 @@ class EdgePipeline:
     def __init__(
         self,
         capture: ICaptureModule,
-        model_loader: IModelBundleLoader,
         infer: IInferenceModule,
         upload_coordinator: IEdgeEventUploadCoordinator,
         spool: ISpoolStorage,
@@ -31,7 +29,6 @@ class EdgePipeline:
         event_logger: RuntimeEventLogger | None = None,
     ):
         self.capture = capture
-        self.model_loader = model_loader
         self.infer = infer
         self.upload_coordinator = upload_coordinator
         self.spool = spool
@@ -102,11 +99,11 @@ class EdgePipeline:
         )
 
         if decision.do_local_infer:
-            models = self.model_loader.current_bundle()
-            result = self.infer.infer_two_stage(image=image, models=models)
+            contract = self.infer.current_contract()
+            result = self.infer.infer_two_stage(image=image)
             event.local_inference = result
-            event.metadata["edge_model_contract_version"] = models.contract.contract_version
-            event.metadata["edge_model_package_version"] = models.contract.package_version
+            event.metadata["edge_model_contract_version"] = contract.contract_version
+            event.metadata["edge_model_package_version"] = contract.package_version
             decision = self.decision_engine.decide_after_infer(result, decision)
             event.metadata["decision_after_infer_reason"] = decision.reason
             self._log(

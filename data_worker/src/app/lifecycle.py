@@ -16,8 +16,8 @@ from src.models.sys.config import (
     EtcdConfig,
     ProjectConfig,
     RuntimeConfig,
-    load_project_config_from_toml,
 )
+from src.models.sys.func import load_project_config_from_toml
 from src.repo.etcd_client import EtcdAsyncClient
 from src.repo.redis_store import RedisManager
 from src.services.common.registry_svc import RegistryService
@@ -26,6 +26,7 @@ from src.services.common.secret_key_svc import SecretKeyService
 from src.services.communication.routing_payload_pipeline_svc import (
     RoutingPayloadPipelineService,
 )
+from src.services.inference.inference_module import build_standard_inference_module
 from src.services.communication.traffic_station_svc import TrafficStationService
 from src.services.orchestration.bootstrap_startup_orchestrator_svc import (
     BootstrapStartupOrchestratorService,
@@ -63,6 +64,16 @@ async def run_data_worker() -> None:
         "stage=config_loaded service=%s run_mode=%s",
         runtime_cfg.service_name,
         runtime_cfg.run_mode,
+    )
+    assert config.inference is not None, "inference config is required for data_worker startup"
+    inference_module = build_standard_inference_module(config.inference)
+    logger.info(
+        "stage=inference_initialized service=%s module=%s root_dir=%s detection_dir=%s classification_dir=%s",
+        runtime_cfg.service_name,
+        inference_module.__class__.__name__,
+        config.inference.root_dir,
+        config.inference.detection_dir,
+        config.inference.classification_dir,
     )
 
     etcd_client: EtcdAsyncClient | None = None
@@ -185,6 +196,7 @@ def build_worker_instance(
 ) -> ServiceInstance:
     instance_id = parse_or_create_uuid(runtime_cfg.instance_id)
     service_id = runtime_cfg.instance_id.strip() or str(instance_id)
+    resolved_active_key_id = active_key_id.strip() or service_id
     return ServiceInstance(
         id=instance_id,
         service_id=service_id,
@@ -193,7 +205,7 @@ def build_worker_instance(
         heartbeat=0,
         weight=1,
         tags=["data_worker", "grpc", "startup_phase"],
-        active_comm_key_id=active_key_id.strip(),
+        active_comm_key_id=resolved_active_key_id,
         metadata={
             "run_mode": runtime_cfg.run_mode,
             "startup_phase": "bootstrap_to_registry",

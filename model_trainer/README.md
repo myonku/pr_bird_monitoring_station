@@ -52,7 +52,7 @@ src/
 	logger.py              # 结构化运行日志落盘
 	datasets/
 		datasets.py              # 数据集服务路由（unified / bird-classification / auto）
-		detection_dataset.py     # CUB det_bird 检测数据适配
+		detection_dataset.py     # CUB bird_detection_dataset 检测数据适配
 		classification_dataset.py# 分类数据适配（真实目录解析）
 	factory/
 		model_factory.py           # 训练后端注册（YOLO/PyTorch）

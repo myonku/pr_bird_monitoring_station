@@ -66,22 +66,21 @@ func NewSecretKeyServiceFromStartupParams(
 	catalog []commsecmodel.ServicePublicKeyRecord,
 	mysql *repo.MySQLClient,
 ) (*SecretKeyService, error) {
-	activeKeyID := strings.TrimSpace(params.ActiveKeyID)
-	if activeKeyID == "" {
-		return NewSecretKeyServiceWithMySQL(
-			commsecmodel.ServicePublicKeyRecord{},
-			commsecmodel.LocalPrivateKeyRef{},
-			catalog,
-			mysql,
-		), nil
-	}
 	secretDir := strings.TrimSpace(params.SecretKeyDir)
 	if secretDir == "" {
 		secretDir = "secret_keys"
 	}
 
-	publicRef := activeKeyID + ".public.pem"
-	privateRef := activeKeyID + ".private.pem"
+	resolvedKeyID := strings.TrimSpace(params.ActiveKeyID)
+	if resolvedKeyID == "" {
+		resolvedKeyID = strings.TrimSpace(params.InstanceID)
+	}
+	if resolvedKeyID == "" {
+		resolvedKeyID = strings.TrimSpace(params.EntityID)
+	}
+
+	publicRef := "public.pem"
+	privateRef := "private.pem"
 
 	publicPEM, err := loadPEMBytesFromRef(publicRef, secretDir)
 	if err != nil {
@@ -116,7 +115,7 @@ func NewSecretKeyServiceFromStartupParams(
 
 	now := time.Now()
 	localPublic := commsecmodel.ServicePublicKeyRecord{
-		KeyID:        activeKeyID,
+		KeyID:        resolvedKeyID,
 		Owner:        owner,
 		PublicKeyPEM: string(publicPEM),
 		Fingerprint:  sha256Hex(publicPEM),
@@ -127,7 +126,7 @@ func NewSecretKeyServiceFromStartupParams(
 		RevokedAt:    time.Time{},
 	}
 	localPrivate := commsecmodel.LocalPrivateKeyRef{
-		KeyID:         activeKeyID,
+		KeyID:         resolvedKeyID,
 		Owner:         owner,
 		PrivateKeyRef: string(privatePEM),
 		LoadedAt:      now,
@@ -158,9 +157,7 @@ func NewSecretKeyServiceWithMySQL(
 		}
 	}
 	localPublic.Owner = localPublic.Owner.Normalized()
-	if localPublic.KeyID != "" {
-		m[localPublic.KeyID] = localPublic
-	}
+	m[localPublic.KeyID] = localPublic
 
 	return &SecretKeyService{
 		localPublic:  localPublic,
@@ -175,7 +172,7 @@ func (s *SecretKeyService) GetPublicKey(ctx context.Context) (commsecmodel.Servi
 	_ = ctx
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.localPublic.KeyID == "" {
+	if strings.TrimSpace(s.localPublic.PublicKeyPEM) == "" {
 		return commsecmodel.ServicePublicKeyRecord{}, &modelsystem.ErrLocalPublicKeyNotConfigured
 	}
 	return s.localPublic, nil
@@ -186,7 +183,7 @@ func (s *SecretKeyService) GetPrivateKeyRef(ctx context.Context) (commsecmodel.L
 	_ = ctx
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.localPrivate.KeyID == "" {
+	if strings.TrimSpace(s.localPrivate.PrivateKeyRef) == "" {
 		return commsecmodel.LocalPrivateKeyRef{}, &modelsystem.ErrLocalPrivateKeyRefNotConfigured
 	}
 	return s.localPrivate, nil

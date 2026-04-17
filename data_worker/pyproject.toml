@@ -11,13 +11,19 @@ dependencies = [
     "etcd3>=0.12.0",
     "grpcio>=1.80.0",
     "grpcio-tools>=1.80.0",
+    "numpy>=1.26.0",
     "msgspec>=0.20.0",
+    "onnxruntime>=1.24.4",
+    "pillow>=10.0.0",
     "protobuf>=6.33.6",
     "pydantic>=2.12.5",
     "redis>=7.3.0",
+    "torch>=2.6.0",
+    "torchvision>=0.21.0",
+    "ultralytics>=8.3.0",
 ]
 
-[tool.uv.workspace]
-members = [
-    "data_server",
-]
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true

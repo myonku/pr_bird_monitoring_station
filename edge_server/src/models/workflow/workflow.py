@@ -11,16 +11,29 @@ def now_ms() -> int:
 @dataclass(slots=True)
 class DeviceInfo:
     device_id: str
-    model: str
-    firmware_version: str
-    location: str | None = None
+    device_name: str = "unknown"
+    location_name: str = "unknown"
+    model: str = ""
+    firmware_version: str = ""
+
+
+@dataclass(slots=True)
+class TemperatureHumiditySnapshot:
+    temperature_c: float | None = None
+    humidity_pct: int | None = None
+    source: str = "pseudo_mock"
+    sensor_snapshot: dict[str, Any] = field(default_factory=dict)
+    captured_at_ms: int = field(default_factory=now_ms)
 
 
 @dataclass(slots=True)
 class CaptureContext:
     device_id: str
+    device_name: str = "unknown"
+    location_name: str = "unknown"
     trigger_type: Literal["motion", "scheduled", "manual"] = "motion"
     sensor_snapshot: dict[str, Any] = field(default_factory=dict)
+    environment_snapshot: TemperatureHumiditySnapshot | None = None
     captured_at_ms: int = field(default_factory=now_ms)
 
 

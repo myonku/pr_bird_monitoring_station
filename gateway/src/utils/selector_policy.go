@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	commommodel "gateway/src/models/common"
 	"math/rand"
 )
@@ -42,11 +44,9 @@ func PickHashAffinity(instances []*commommodel.ServiceInstance, affinityKey stri
 	if len(instances) == 0 {
 		return nil
 	}
-	hash := 0
-	for i := 0; i < len(affinityKey); i++ {
-		hash = int(affinityKey[i]) + (hash << 6) + (hash << 16) - hash
-	}
-	index := hash % len(instances)
+	sum := sha256.Sum256([]byte(affinityKey))
+	hash := binary.BigEndian.Uint64(sum[:8])
+	index := int(hash % uint64(len(instances)))
 	return instances[index]
 }
 

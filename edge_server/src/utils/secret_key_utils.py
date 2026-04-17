@@ -14,8 +14,8 @@ class SecretKeyUtils(ISecretKeyManager):
     """本地密钥管理工具。
 
     默认约定密钥放在模块根目录的 secret_keys 下：
-    - {key_id}.private.pem: 私钥（PKCS#8 PEM）
-    - {key_id}.public.pem: 公钥（SPKI PEM）
+    - private.pem: 私钥（PKCS#8 PEM）
+    - public.pem: 公钥（SPKI PEM）
     """
 
     def __init__(
@@ -46,10 +46,16 @@ class SecretKeyUtils(ISecretKeyManager):
         if not secret_root.exists() or not secret_root.is_dir():
             raise ValueError(f"secret dir does not exist: {secret_root}")
 
-        selected_key_id, private_path, public_path = cls._select_key_pair_paths(
-            secret_root=secret_root,
-            active_key_id=active_key_id,
-        )
+        selected_key_id = active_key_id.strip() or device_id.strip()
+        if not selected_key_id:
+            raise ValueError("device_id or active_key_id is required")
+
+        private_path = secret_root / "private.pem"
+        public_path = secret_root / "public.pem"
+        if not public_path.exists():
+            raise ValueError(f"public key does not exist: {public_path}")
+        if not private_path.exists():
+            raise ValueError(f"private key does not exist: {private_path}")
 
         public_pem = public_path.read_bytes()
         cls._ensure_spki_public_key_pem(public_pem)
@@ -68,42 +74,6 @@ class SecretKeyUtils(ISecretKeyManager):
         )
 
     @staticmethod
-    def _select_key_pair_paths(
-        *,
-        secret_root: Path,
-        active_key_id: str,
-    ) -> tuple[str, Path, Path]:
-        key_id = active_key_id.strip()
-        if key_id:
-            public_path = secret_root / f"{key_id}.public.pem"
-            private_path = secret_root / f"{key_id}.private.pem"
-            if not public_path.exists():
-                raise ValueError(f"public key does not exist: {public_path}")
-            if not private_path.exists():
-                raise ValueError(f"private key does not exist: {private_path}")
-            return key_id, private_path, public_path
-
-        default_public = secret_root / "public.pem"
-        default_private = secret_root / "private.pem"
-        if default_public.exists() and default_private.exists():
-            return "", default_private, default_public
-
-        private_candidates = sorted(secret_root.glob("*.private.pem"))
-        public_candidates = sorted(secret_root.glob("*.public.pem"))
-        if len(private_candidates) == 1 and len(public_candidates) == 1:
-            private_path = private_candidates[0]
-            public_path = public_candidates[0]
-            inferred_key_id = private_path.name.removesuffix(".private.pem")
-            if inferred_key_id and public_path.name != f"{inferred_key_id}.public.pem":
-                raise ValueError(
-                    "secret dir contains unmatched single key pair files"
-                )
-            return inferred_key_id, private_path, public_path
-
-        raise ValueError(
-            "active_key_id is empty and key pair cannot be uniquely resolved in secret dir"
-        )
-
     @staticmethod
     def resolve_module_root() -> Path:
         return Path(__file__).resolve().parents[2]

@@ -41,6 +41,20 @@ class EdgeEventHttpUploadCoordinator(IEdgeEventUploadCoordinator):
         return value
 
     @staticmethod
+    def _build_environment_snapshot(
+        environment_snapshot,
+    ) -> dict | None:
+        if environment_snapshot is None:
+            return None
+        return {
+            "temperature_c": environment_snapshot.temperature_c,
+            "humidity_pct": environment_snapshot.humidity_pct,
+            "source": environment_snapshot.source,
+            "sensor_snapshot": environment_snapshot.sensor_snapshot,
+            "captured_at_ms": environment_snapshot.captured_at_ms,
+        }
+
+    @staticmethod
     def _build_payload(event: EdgeEvent) -> dict:
         local_inference = None
         if event.local_inference is not None:
@@ -95,8 +109,13 @@ class EdgeEventHttpUploadCoordinator(IEdgeEventUploadCoordinator):
             "requires_server_assist": event.requires_server_assist,
             "context": {
                 "device_id": event.context.device_id,
+                "device_name": event.context.device_name,
+                "location_name": event.context.location_name,
                 "trigger_type": event.context.trigger_type,
                 "sensor_snapshot": event.context.sensor_snapshot,
+                "environment_snapshot": EdgeEventHttpUploadCoordinator._build_environment_snapshot(
+                    event.context.environment_snapshot
+                ),
                 "captured_at_ms": event.context.captured_at_ms,
             },
             "image": {

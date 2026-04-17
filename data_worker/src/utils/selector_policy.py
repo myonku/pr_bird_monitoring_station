@@ -31,7 +31,7 @@ def pick_hash_affinity(
     if not instances:
         return None
     h = hashlib.sha256(affinity_key.encode()).digest()
-    idx = int.from_bytes(h[:4], "big") % len(instances)
+    idx = int.from_bytes(h[:8], "big") % len(instances)
     return instances[idx]
 
 
@@ -49,12 +49,14 @@ def random_weighted(instances: list[ServiceInstance]) -> ServiceInstance | None:
     """基于权重随机选择实例"""
     if not instances:
         return None
-    total = sum(max(i.weight, 1) for i in instances)
-    r = random.uniform(0, total)
+    total = sum(i.weight for i in instances)
+    if total <= 0:
+        return instances[0]
+    r = random.randrange(total)
     upto = 0
     for i in instances:
-        w = max(i.weight, 1)
-        if upto + w >= r:
+        w = i.weight
+        if upto + w > r:
             return i
         upto += w
     return instances[-1]

@@ -70,7 +70,7 @@ func (s *BootstrapStartupOrchestratorService) EnsureReady(
 	startupParams := req.StartupParams
 
 	if strings.TrimSpace(startupParams.ActiveKeyID) == "" && strings.TrimSpace(runtime.InstanceID) == "" {
-		return nil, fmt.Errorf("bootstrap identity requires active_key_id or instance_id")
+		return nil, fmt.Errorf("bootstrap identity requires active_key_id or instance_id (entity_id)")
 	}
 
 	authorityService := strings.TrimSpace(req.AuthAuthorityService)

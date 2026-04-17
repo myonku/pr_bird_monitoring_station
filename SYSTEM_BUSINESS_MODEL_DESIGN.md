@@ -21,7 +21,8 @@
 - `data_worker` 负责接收边缘端上传的事件，执行可选的服务端处理或补充识别，再把标准化结果写入数据库。
 - `data_server` 负责面向客户端的业务请求接口，除登录等认证相关接口外，对外提供业务查询、列表、详情和统计能力。
 - 当前阶段不把边缘端上传数据严格映射成业务模型；上传数据先作为“事件”接收，再由接收端解析、归一化和落库。
-- `Station` 和 `Device` 在当前业务里不应拆成两个独立核心实体。一个野外部署点就是一套树莓派设备 + 边缘端服务，业务上以 `Station` 为主，`Device` 只保留为技术别名或运行时标识。
+- `Device` 是后端正式实体名称，`Station` 只保留给客户端展示层。一个野外部署点就是一套树莓派设备 + 边缘端服务，业务上以 `Device` 为主。
+- `UserProfile`、边缘事件原始 payload 和 binary part 内容优先采用 Mongo 文档存储，MySQL 只保留稳定引用与聚合记录。
 - `user` 指的是面向数据展示的普通使用者，不是设备管理员。管理员角色可以后续再引入，但不进入当前模型范围。
 - 业务存储可以使用 Mongo 或 MySQL；模型层只保证字段语义稳定，不固定持久化实现。
 
@@ -38,18 +39,19 @@
 
 ## 4. 业务域划分
 
-### 4.1 站点域
+### 4.1 设备域
 
-当前业务只保留 `Station` 作为主实体。
+当前业务只保留 `Device` 作为主实体。
 
-- 一个 `Station` 代表一个野外部署点。
+- 一个 `Device` 代表一个野外部署点。
 - 这个部署点对应一套硬件平台和边缘端运行环境。
+- `Station` 只保留给客户端展示层命名，不进入后端正式模型。
 - 如果后续出现多机位或多设备复用，再考虑拆分更细的硬件层模型；当前阶段不拆。
 
 建议字段：
 
-- `station_id`
-- `station_name`
+- `device_entity_id`
+- `device_name`
 - `status`
 - `last_heartbeat_ms`
 - `metadata`
@@ -61,12 +63,13 @@
 建议使用一个宽松的接入模型，例如 `EdgeEventEnvelope`：
 
 - `event_id`
-- `station_id`
+- `device_entity_id`
 - `occurred_at_ms`
 - `received_at_ms`
 - `payload_version`
 - `payload_type`
 - `payload_body`
+- `payload_mongo_document_id`
 - `transport_meta`
 
 这个模型的关键点是“可变”和“可扩展”。它不要求一开始就和业务记录字段一一对应，接收端可以在解析时决定如何归一化。
@@ -86,7 +89,7 @@
 
 - `job_id`
 - `source_event_id`
-- `station_id`
+- `device_entity_id`
 - `status`
 - `processor`
 - `retry_count`
@@ -117,7 +120,7 @@
 建议字段：
 
 - `record_id`
-- `station_id`
+- `device_entity_id`
 - `source_event_id`
 - `captured_at_ms`
 - `species_name`
@@ -198,7 +201,7 @@
 
 推荐关系如下：
 
-- 一个 `Station` 对应一个业务部署单元。
+- 一个 `Device` 对应一个业务部署单元。
 - 一个 `EdgeEventEnvelope` 可能生成一次或多次 `ProcessingJob`，视重试或补处理策略而定。
 - 一个 `ProcessingJob` 最终应产出 0 或 1 条 `MonitoringRecord`。
 - 一个 `MonitoringRecord` 是多个统计读模型的原始来源。
@@ -208,11 +211,11 @@
 
 如果用更简化的表达，可以把主链路理解为：
 
-`Station -> EdgeEventEnvelope -> ProcessingJob / RecognitionResult -> MonitoringRecord -> Read Models -> Client`
+`Device -> EdgeEventEnvelope -> ProcessingJob / RecognitionResult -> MonitoringRecord -> Read Models -> Client`
 
 ## 6. 状态建议
 
-### 6.1 Station 状态
+### 6.1 Device 状态
 
 - `online`
 - `offline`
@@ -267,10 +270,10 @@
 
 这意味着未来的业务接口，不需要把 raw event 直接暴露给客户端；客户端只需要稳定的读模型。
 
-## 9. 设计约束
+### 9. 设计约束
 
 - 不要把边缘上传包和业务记录强行 1:1 对齐。
-- 不要把 `Device` 和 `Station` 拆成两个同级业务主实体，当前阶段以 `Station` 统一承载。
+- 不要把 `Device` 和 `Station` 拆成两个同级业务主实体，当前阶段以 `Device` 统一承载，`Station` 只作为客户端展示标签。
 - 不要把用户模型设计成设备管理模型，当前阶段只设计展示用户。
 - 不要把展示字段当成持久化主字段，像颜色、头像种子、摘要文案都应该视为展示元数据。
 - 不要让未来客户端接口依赖原始边缘 payload 形状，接收端应先完成解析和归一化。
@@ -279,7 +282,7 @@
 
 当前系统最合理的业务模型可以压缩为四层：
 
-1. `Station`：业务部署单元。
+1. `Device`：业务部署单元。
 2. `EdgeEventEnvelope` / `ProcessingJob`：接入和处理过程的中间态。
 3. `MonitoringRecord`：可持久化的标准业务记录。
 4. `data_server` + `DashboardSnapshot` / `RecordDetailView` / `TrendPoint` / `SpeciesShare`：面向客户端的业务接口与读模型出口。

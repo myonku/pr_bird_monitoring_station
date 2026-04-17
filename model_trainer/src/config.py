@@ -510,10 +510,10 @@ def build_default_pipeline_config() -> PipelineConfig:
         ),
         detection_dataset=DatasetContract(
             dataset_id="detection_source",
-            root=Path("CUB_200_2011/det_bird"),
+            root=Path("CUB_200_2011/bird_detection_dataset"),
             task=TaskType.DETECTION,
             label_policy=LabelPolicy.SINGLE_CLASS_BIRD,
-            notes="Use converted CUB unified detection layout (det_bird), collapse classes to 'bird'",
+            notes="Use converted CUB unified detection layout (bird_detection_dataset), collapse classes to 'bird'",
         ),
         classification_dataset=DatasetContract(
             dataset_id="classification_cropped",

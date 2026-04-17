@@ -124,6 +124,11 @@ def _normalize_http_path(value: str | None, *, default: str) -> str:
     return raw
 
 
+def _normalize_display_name(value: Any, *, default: str = "unknown") -> str:
+    raw = str(value).strip() if value is not None else ""
+    return raw or default
+
+
 def _parse_runtime_log_stages(payload: Any) -> list[RuntimeLogStage]:
     default_stages: list[RuntimeLogStage] = [
         "startup",
@@ -221,6 +226,8 @@ def load_edge_config(
 
     runtime = RuntimeConfig(
         device_id=str(runtime_tbl.get("device_id", "edge_device_001")),
+        device_name=_normalize_display_name(runtime_tbl.get("device_name")),
+        location_name=_normalize_display_name(runtime_tbl.get("location_name")),
         run_mode=cast(RuntimeMode, run_mode_raw),
         spool_db_path=_resolve_path(
             base_dir,
