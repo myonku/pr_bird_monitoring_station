@@ -18,16 +18,18 @@ class AuthController extends ChangeNotifier implements AuthTokenSource {
       _sessionStore = const DisabledAuthSessionStore();
     }
     _session = _sessionStore.read();
+    _activeUser = _service.defaultUser;
   }
 
   final AuthService _service;
   AuthSessionStore _sessionStore;
   AppMode _mode;
   AuthSession? _session;
+  late AppUser _activeUser;
 
   AppMode get mode => _mode;
   bool get isAuthenticated => _session != null;
-  AppUser get activeUser => _session?.user ?? _service.defaultUser;
+  AppUser get activeUser => _activeUser;
   AuthCredentials? get credentials => _session?.credentials;
   DateTime? get signedInAt => _session?.signedInAt;
 
@@ -64,6 +66,7 @@ class AuthController extends ChangeNotifier implements AuthTokenSource {
 
     _mode = nextMode;
     _session = null;
+    _activeUser = _service.defaultUser;
     _sessionStore = nextMode == AppMode.noAuth
         ? const DisabledAuthSessionStore()
         : MemoryAuthSessionStore();
@@ -71,23 +74,41 @@ class AuthController extends ChangeNotifier implements AuthTokenSource {
   }
 
   Future<void> signIn({
-    required String username,
+    required String identifier,
     required String password,
   }) async {
     final session = await _service.signIn(
-      username: username,
+      identifier: identifier,
       password: password,
       mode: _mode,
     );
 
+    final user = await _service.fetchUserProfile(identifier);
+
     _session = session;
+    _activeUser = user ?? _service.defaultUser;
     await _sessionStore.write(session);
     notifyListeners();
+  }
+
+  Future<RegistrationResult> register({
+    required String username,
+    String email = '',
+    String phone = '',
+    required String password,
+  }) {
+    return _service.registerUser(
+      username: username,
+      email: email,
+      phone: phone,
+      password: password,
+    );
   }
 
   Future<void> signOut() async {
     final session = _session;
     _session = null;
+    _activeUser = _service.defaultUser;
     await _service.signOut(session: session);
     await _sessionStore.clear();
     notifyListeners();

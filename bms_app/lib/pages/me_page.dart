@@ -1,7 +1,7 @@
+import 'package:bms_app/app/app_models.dart';
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/auth/auth_controller.dart';
-import 'package:bms_app/models/monitoring_models.dart';
 
 class MePage extends StatelessWidget {
   const MePage({super.key, required this.authController});
@@ -11,6 +11,13 @@ class MePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = authController.activeUser;
+    final username = user.username?.trim().isNotEmpty == true
+      ? user.username!.trim()
+      : user.name;
+    final email = user.email?.trim().isNotEmpty == true
+      ? user.email!.trim()
+      : '';
+    final headerIdentity = email.isNotEmpty ? email : username;
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -59,7 +66,7 @@ class MePage extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '${user.station} · ${authController.mode.displayName}',
+                      '$headerIdentity · ${authController.mode.displayName}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Colors.white.withValues(alpha: 0.85),
                       ),
@@ -96,8 +103,9 @@ class MePage extends StatelessWidget {
         _InfoCard(
           title: '用户信息',
           children: [
+            _InfoRow(label: '用户名', value: username),
+            _InfoRow(label: '邮箱', value: email.isEmpty ? '-' : email),
             _InfoRow(label: '手机号', value: user.phone),
-            _InfoRow(label: '站点', value: user.station),
           ],
         ),
         const SizedBox(height: 18),

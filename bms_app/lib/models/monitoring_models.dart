@@ -26,37 +26,87 @@ extension AppModeLabel on AppMode {
   };
 }
 
-class DashboardSnapshot {
-  const DashboardSnapshot({
-    required this.todayRecognition,
-    required this.todayNewRecords,
-    required this.onlineStations,
-    required this.onlineDevices,
-    required this.lastUploadTime,
-    required this.highlightedBird,
-    this.lastUploadAtMs,
-    this.serverTimeMs,
+class UploadStationSummary {
+  const UploadStationSummary({
+    required this.deviceId,
+    required this.deviceName,
+    required this.uploadCount,
   });
 
-  final int todayRecognition;
-  final int todayNewRecords;
-  final int onlineStations;
-  final int onlineDevices;
-  final String lastUploadTime;
-  final String highlightedBird;
-  final int? lastUploadAtMs;
-  final int? serverTimeMs;
+  final String deviceId;
+  final String deviceName;
+  final int uploadCount;
+}
 
-  int get todayRecognitionCount => todayRecognition;
-  int get todayNewRecordCount => todayNewRecords;
-  int get onlineStationCount => onlineStations;
-  int get onlineDeviceCount => onlineDevices;
+class LatestUploadSummary {
+  const LatestUploadSummary({
+    required this.deviceId,
+    required this.deviceName,
+    required this.uploadedAtLabel,
+    this.uploadedAtMs,
+  });
 
-  String get lastUploadAtLabel => lastUploadTime.isNotEmpty
-      ? lastUploadTime
-      : lastUploadAtMs == null
+  final String deviceId;
+  final String deviceName;
+  final String uploadedAtLabel;
+  final int? uploadedAtMs;
+
+  String get uploadedAtValue => uploadedAtLabel.isNotEmpty
+      ? uploadedAtLabel
+      : uploadedAtMs == null
       ? ''
-      : _formatDateTimeMs(lastUploadAtMs!);
+      : _formatDateTimeMs(uploadedAtMs!);
+}
+
+class RecordStationOption {
+  const RecordStationOption({
+    required this.deviceId,
+    required this.deviceName,
+  });
+
+  final String deviceId;
+  final String deviceName;
+
+  bool get isAll => deviceId.isEmpty;
+}
+
+class RecordCursorPage {
+  const RecordCursorPage({
+    required this.items,
+    required this.nextCursor,
+    required this.hasMore,
+  });
+
+  final List<BirdRecord> items;
+  final String? nextCursor;
+  final bool hasMore;
+}
+
+class DashboardSnapshot {
+  const DashboardSnapshot({
+    required this.todayRecognitionCount,
+    required this.todayUploadCount,
+    required this.onlineStationCount,
+    required this.activeStationCount,
+    required this.topUploadStation,
+    required this.latestUpload,
+    required this.recentRecords,
+  });
+
+  final int todayRecognitionCount;
+  final int todayUploadCount;
+  final int onlineStationCount;
+  final int activeStationCount;
+  final UploadStationSummary topUploadStation;
+  final LatestUploadSummary latestUpload;
+  final List<BirdRecord> recentRecords;
+
+  int get todayRecognition => todayRecognitionCount;
+  int get todayNewRecords => todayUploadCount;
+  int get onlineStations => onlineStationCount;
+  int get onlineDevices => activeStationCount;
+  String get lastUploadTime => latestUpload.uploadedAtValue;
+  String get highlightedBird => topUploadStation.deviceName;
 }
 
 class BirdRecord {
@@ -149,27 +199,43 @@ class AppUser {
   const AppUser({
     required this.name,
     required this.role,
-    required this.station,
     required this.phone,
     required this.avatarSeed,
     this.userId,
     this.username,
     this.displayName,
-    this.deviceName,
     this.email,
   });
 
   final String name;
   final String role;
-  final String station;
   final String phone;
   final int avatarSeed;
   final String? userId;
   final String? username;
   final String? displayName;
-  final String? deviceName;
   final String? email;
 
   String get displayNameValue => displayName ?? name;
-  String get deviceNameValue => deviceName ?? station;
+}
+
+class RegistrationErrorCode {
+  static const String usernameExists = 'username_exists';
+  static const String emailExists = 'email_exists';
+  static const String phoneExists = 'phone_exists';
+  static const String invalidData = 'invalid_data';
+  static const String dataError = 'data_error';
+  static const String unknownError = 'unknown_error';
+}
+
+class RegistrationResult {
+  const RegistrationResult({
+    required this.ok,
+    this.errorCode = '',
+    this.message = '',
+  });
+
+  final bool ok;
+  final String errorCode;
+  final String message;
 }

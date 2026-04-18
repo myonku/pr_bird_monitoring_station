@@ -7,6 +7,18 @@ UserRole = Literal["admin", "user"]
 DeviceStatus = Literal["online", "offline", "error", "unknown"]
 
 
+class UserEntity(Struct, frozen=True):
+    """用于注册落库的用户实体信息。"""
+
+    user_entity_id: UUID
+    username: str
+    email: str = ""
+    phone: str = ""
+    role: UserRole = "user"
+    password_hash: str = ""
+    metadata: dict[str, str] = field(default_factory=dict)
+
+
 class DeviceEntity(Struct, frozen=True):
     """设备实体信息。"""
 

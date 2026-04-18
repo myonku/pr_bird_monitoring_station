@@ -14,45 +14,235 @@ class MockClientRepository implements MonitoringRepository {
     '西侧林缘点': '8c0a2c1d-0b1f-4e56-b3e2-11a5f0b6b004',
   };
 
+  static final List<AppUser> _users = [
+    const AppUser(
+      name: '测试用户',
+      role: '系统演示账号',
+      phone: '138-0000-0000',
+      avatarSeed: 7,
+      userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
+      username: 'demo_user',
+      displayName: '测试用户',
+      email: 'demo_user@example.com',
+    ),
+    const AppUser(
+      name: '巡护员张三',
+      role: '现场巡护账号',
+      phone: '139-1111-2222',
+      avatarSeed: 19,
+      userId: '9c6a7e2c-2c4d-4d5c-96b2-53f7b5b2d921',
+      username: 'zhangsan',
+      displayName: '巡护员张三',
+      email: 'zhangsan@example.com',
+    ),
+  ];
+
+  AppUser? _lookupUser(bool Function(AppUser user) predicate) {
+    for (final user in _users) {
+      if (predicate(user)) {
+        return user;
+      }
+    }
+    return null;
+  }
+
+  static String _normalizeText(String value) => value.trim().toLowerCase();
+
+  static String _normalizePhone(String value) =>
+      value.replaceAll(RegExp(r'\D'), '');
+
+  DateTime _latestRecordDay() {
+    return records
+        .map((record) => DateUtils.dateOnly(record.capturedAtTime))
+        .reduce((current, next) => current.isAfter(next) ? current : next);
+  }
+
+  List<BirdRecord> _recordsOnDay(DateTime day) {
+    final dayOnly = DateUtils.dateOnly(day);
+    final nextDay = dayOnly.add(const Duration(days: 1));
+    return records.where((record) {
+      return !record.capturedAtTime.isBefore(dayOnly) &&
+          record.capturedAtTime.isBefore(nextDay);
+    }).toList();
+  }
+
   @override
-  DashboardSnapshot get dashboard => const DashboardSnapshot(
-    todayRecognition: 128,
-    todayNewRecords: 26,
-    onlineStations: 9,
-    onlineDevices: 18,
-    lastUploadTime: '10:42',
-    highlightedBird: '白鹭群在湿地边缘活动',
-    lastUploadAtMs: 1712793720000,
-    serverTimeMs: 1712893720000,
-  );
+  int countTodayMonitoringRecords() => _recordsOnDay(_latestRecordDay()).length;
+
+  @override
+  int countTodayUploadRecords() => _recordsOnDay(_latestRecordDay()).length;
+
+  @override
+  int countOnlineStations() => _stations.length;
+
+  @override
+  UploadStationSummary getTodayTopUploadStation() {
+    final todayRecords = _recordsOnDay(_latestRecordDay());
+    final counts = <String, int>{};
+    for (final record in todayRecords) {
+      counts[record.stationName] = (counts[record.stationName] ?? 0) + 1;
+    }
+
+    if (counts.isEmpty) {
+      return const UploadStationSummary(
+        deviceId: '',
+        deviceName: '暂无数据',
+        uploadCount: 0,
+      );
+    }
+
+    final entry = counts.entries.reduce(
+      (current, next) => current.value >= next.value ? current : next,
+    );
+    final deviceId = _stationDeviceIds[entry.key] ?? '';
+    return UploadStationSummary(
+      deviceId: deviceId,
+      deviceName: entry.key,
+      uploadCount: entry.value,
+    );
+  }
+
+  @override
+  LatestUploadSummary getLatestUploadSummary() {
+    final latest = records.reduce(
+      (current, next) => current.capturedAtTime.isAfter(next.capturedAtTime)
+          ? current
+          : next,
+    );
+    return LatestUploadSummary(
+      deviceId: latest.deviceIdValue,
+      deviceName: latest.deviceNameValue,
+      uploadedAtLabel: latest.capturedAt,
+      uploadedAtMs: latest.capturedAtMs,
+    );
+  }
+
+  @override
+  Future<DashboardSnapshot> fetchDashboardSnapshot() async {
+    final activeStationCount = records
+        .map((record) => record.stationName)
+        .toSet()
+        .length;
+
+    return DashboardSnapshot(
+      todayRecognitionCount: countTodayMonitoringRecords(),
+      todayUploadCount: countTodayUploadRecords(),
+      onlineStationCount: countOnlineStations(),
+      activeStationCount: activeStationCount,
+      topUploadStation: getTodayTopUploadStation(),
+      latestUpload: getLatestUploadSummary(),
+      recentRecords: getRecentRecords(limit: 3),
+    );
+  }
+
+  List<BirdRecord> getRecentRecords({int limit = 3}) {
+    final sortedRecords = [...records]
+      ..sort((left, right) => right.capturedAtTime.compareTo(left.capturedAtTime));
+    return sortedRecords.take(limit).toList();
+  }
 
   @override
   AppUser get defaultUser => const AppUser(
     name: '测试用户',
     role: '系统演示账号',
-    station: '南湖湿地站',
     phone: '138-0000-0000',
     avatarSeed: 7,
     userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
     username: 'demo_user',
     displayName: '测试用户',
-    deviceName: '南湖湿地站',
     email: 'demo_user@example.com',
   );
 
   @override
-  AppUser userForName(String name) => AppUser(
-    name: name,
-    role: '系统演示账号',
-    station: '南湖湿地站',
-    phone: '138-0000-0000',
-    avatarSeed: name.hashCode & 0x7fffffff,
-    userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
-    username: name,
-    displayName: name,
-    deviceName: '南湖湿地站',
-    email: '',
-  );
+  Future<AppUser?> fetchUserProfile(String identifier) async {
+    final normalized = _normalizeText(identifier);
+    if (normalized.isEmpty) {
+      return defaultUser;
+    }
+
+    return _lookupUser(
+      (user) =>
+          _normalizeText(user.username ?? '') == normalized ||
+          _normalizeText(user.email ?? '') == normalized ||
+          _normalizePhone(user.phone) == _normalizePhone(identifier),
+    );
+  }
+
+  @override
+  Future<RegistrationResult> registerUser({
+    required String username,
+    String email = '',
+    String phone = '',
+    required String password,
+  }) async {
+    final normalizedUsername = _normalizeText(username);
+    final normalizedEmail = _normalizeText(email);
+    final normalizedPhone = _normalizePhone(phone);
+    final trimmedPassword = password.trim();
+
+    if (normalizedUsername.isEmpty || trimmedPassword.length < 6) {
+      return const RegistrationResult(
+        ok: false,
+        errorCode: RegistrationErrorCode.invalidData,
+        message: '注册信息不完整',
+      );
+    }
+
+    final usernameExists = _lookupUser(
+      (user) => _normalizeText(user.username ?? '') == normalizedUsername,
+    );
+    if (usernameExists != null) {
+      return const RegistrationResult(
+        ok: false,
+        errorCode: RegistrationErrorCode.usernameExists,
+        message: '用户名已存在',
+      );
+    }
+
+    if (normalizedEmail.isNotEmpty) {
+      final emailExists = _lookupUser(
+        (user) => _normalizeText(user.email ?? '') == normalizedEmail,
+      );
+      if (emailExists != null) {
+        return const RegistrationResult(
+          ok: false,
+          errorCode: RegistrationErrorCode.emailExists,
+          message: '邮箱已存在',
+        );
+      }
+    }
+
+    if (normalizedPhone.isNotEmpty) {
+      final phoneExists = _lookupUser(
+        (user) => _normalizePhone(user.phone) == normalizedPhone,
+      );
+      if (phoneExists != null) {
+        return const RegistrationResult(
+          ok: false,
+          errorCode: RegistrationErrorCode.phoneExists,
+          message: '手机号已存在',
+        );
+      }
+    }
+
+    final displayName = username.trim();
+    final newUser = AppUser(
+      name: displayName,
+      role: '注册用户',
+      phone: phone.trim(),
+      avatarSeed: normalizedUsername.hashCode.abs() % 100,
+      userId: 'mock-${normalizedUsername.hashCode.abs().toString()}',
+      username: normalizedUsername,
+      displayName: displayName,
+      email: email.trim(),
+    );
+    _users.add(newUser);
+
+    return const RegistrationResult(
+      ok: true,
+      message: '注册成功',
+    );
+  }
 
   @override
   List<BirdRecord> get records => [
@@ -383,19 +573,28 @@ class MockClientRepository implements MonitoringRepository {
   }
 
   @override
-  Future<List<String>> fetchStationOptions() async {
-    return List<String>.unmodifiable(_stations);
+  Future<List<RecordStationOption>> fetchStationOptions() async {
+    return List<RecordStationOption>.unmodifiable(
+      _stations
+          .map(
+            (stationName) => RecordStationOption(
+              deviceId: _stationDeviceIds[stationName] ?? '',
+              deviceName: stationName,
+            ),
+          )
+          .toList(),
+    );
   }
 
   @override
   Future<List<BirdRecord>> fetchRecords({
     DateTimeRange? dateRange,
-    String? stationName,
+    String? stationId,
   }) async {
-    return records.where((record) {
-      final stationMatch = stationName == null || stationName.isEmpty
+    final filtered = records.where((record) {
+      final stationMatch = stationId == null || stationId.isEmpty
           ? true
-          : record.stationName == stationName;
+          : record.deviceIdValue == stationId;
 
       final dateMatch = dateRange == null
           ? true
@@ -409,7 +608,42 @@ class MockClientRepository implements MonitoringRepository {
             })();
 
       return stationMatch && dateMatch;
-    }).toList();
+    }).toList()
+      ..sort((left, right) => right.capturedAtTime.compareTo(left.capturedAtTime));
+
+    return filtered;
+  }
+
+  int _decodeCursor(String? cursor) {
+    if (cursor == null || cursor.trim().isEmpty) {
+      return 0;
+    }
+    final parsed = int.tryParse(cursor.trim());
+    if (parsed == null || parsed < 0) {
+      return 0;
+    }
+    return parsed;
+  }
+
+  @override
+  Future<RecordCursorPage> fetchRecordsByCursor({
+    DateTimeRange? dateRange,
+    String? stationId,
+    String? cursor,
+    int limit = 20,
+  }) async {
+    final filtered = await fetchRecords(dateRange: dateRange, stationId: stationId);
+    final pageLimit = limit <= 0 ? 20 : limit;
+    final start = _decodeCursor(cursor).clamp(0, filtered.length);
+    final end = (start + pageLimit).clamp(0, filtered.length);
+    final items = filtered.sublist(start, end);
+    final hasMore = end < filtered.length;
+
+    return RecordCursorPage(
+      items: items,
+      nextCursor: hasMore ? '$end' : null,
+      hasMore: hasMore,
+    );
   }
 
   @override

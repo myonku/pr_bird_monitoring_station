@@ -4,13 +4,18 @@ import 'package:bms_app/data_source/monitoring_repository.dart';
 import 'package:bms_app/models/monitoring_models.dart';
 
 abstract class RecordsDataSource {
-  int get totalRecordCount;
+  Future<List<RecordStationOption>> fetchStationOptions();
 
-  Future<List<String>> fetchStationOptions();
+  Future<RecordCursorPage> fetchRecordsByCursor({
+    DateTimeRange? dateRange,
+    String? stationId,
+    String? cursor,
+    int limit = 20,
+  });
 
   Future<List<BirdRecord>> fetchRecords({
     DateTimeRange? dateRange,
-    String? stationName,
+    String? stationId,
   });
 }
 
@@ -20,20 +25,47 @@ class RepositoryRecordsDataSource implements RecordsDataSource {
   final MonitoringRepository repository;
 
   @override
-  int get totalRecordCount => repository.records.length;
+  Future<List<RecordStationOption>> fetchStationOptions() =>
+      repository.fetchStationOptions();
 
   @override
-  Future<List<String>> fetchStationOptions() =>
-      repository.fetchStationOptions();
+  Future<RecordCursorPage> fetchRecordsByCursor({
+    DateTimeRange? dateRange,
+    String? stationId,
+    String? cursor,
+    int limit = 20,
+  }) {
+    return repository.fetchRecordsByCursor(
+      dateRange: dateRange,
+      stationId: stationId,
+      cursor: cursor,
+      limit: limit,
+    );
+  }
 
   @override
   Future<List<BirdRecord>> fetchRecords({
     DateTimeRange? dateRange,
-    String? stationName,
-  }) {
-    return repository.fetchRecords(
-      dateRange: dateRange,
-      stationName: stationName,
-    );
+    String? stationId,
+  }) async {
+    final allRecords = <BirdRecord>[];
+    String? cursor;
+
+    while (true) {
+      final page = await fetchRecordsByCursor(
+        dateRange: dateRange,
+        stationId: stationId,
+        cursor: cursor,
+        limit: 50,
+      );
+      allRecords.addAll(page.items);
+
+      if (!page.hasMore || page.nextCursor == null || page.nextCursor!.isEmpty) {
+        break;
+      }
+      cursor = page.nextCursor;
+    }
+
+    return allRecords;
   }
 }

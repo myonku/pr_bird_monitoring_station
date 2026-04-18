@@ -5,7 +5,7 @@ import 'package:bms_app/data_source/home_data_source.dart';
 import 'package:bms_app/models/monitoring_models.dart';
 import 'package:bms_app/pages/record_detail_page.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
     required this.controller,
@@ -18,101 +18,198 @@ class HomePage extends StatelessWidget {
   final HomeDataSource dataSource;
 
   @override
-  Widget build(BuildContext context) {
-    final dashboard = dataSource.dashboard;
-    final recentRecords = dataSource.recentRecords;
-    final peakStationEntry = dataSource.peakStationEntry;
+  State<HomePage> createState() => _HomePageState();
+}
 
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        _OverviewBanner(snapshot: dashboard, mode: mode),
-        const SizedBox(height: 18),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 380;
-            return GridView.count(
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: compact ? 1.18 : 1.36,
+class _HomePageState extends State<HomePage> {
+  Future<DashboardSnapshot>? _dashboardFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _dashboardFuture = _loadDashboard();
+  }
+
+  Future<DashboardSnapshot> _loadDashboard() {
+    return widget.dataSource.fetchDashboardSnapshot();
+  }
+
+  Future<void> _reloadDashboard() async {
+    final future = _loadDashboard();
+    setState(() {
+      _dashboardFuture = future;
+    });
+    await future;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<DashboardSnapshot>(
+      future: _dashboardFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return RefreshIndicator(
+            onRefresh: _reloadDashboard,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
               children: [
-                _MetricCard(
-                  value: '${dashboard.todayRecognition}',
-                  label: '今日识别',
-                  icon: Icons.visibility_outlined,
-                  color: const Color(0xFF0B7A75),
-                ),
-                _MetricCard(
-                  value: '${dashboard.todayNewRecords}',
-                  label: '今日新增',
-                  icon: Icons.note_add_outlined,
-                  color: const Color(0xFFE76F51),
-                ),
-                _MetricCard(
-                  value: '${dashboard.onlineStations}',
-                  label: '在线站点',
-                  icon: Icons.place_outlined,
-                  color: const Color(0xFF3D5A80),
-                ),
-                _MetricCard(
-                  value: '${dashboard.onlineDevices}',
-                  label: '在线设备',
-                  icon: Icons.sensors_outlined,
-                  color: const Color(0xFF8D99AE),
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.6,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircleAvatar(
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primaryContainer,
+                            child: Icon(
+                              Icons.refresh_outlined,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            '首页数据加载失败',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${snapshot.error}',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(
+                                  color: Colors.black54,
+                                ),
+                          ),
+                          const SizedBox(height: 14),
+                          FilledButton.icon(
+                            onPressed: () {
+                              _reloadDashboard();
+                            },
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('重试'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
-            );
-          },
-        ),
-        const SizedBox(height: 18),
-        _HotspotCard(
-          stationName: peakStationEntry.key,
-          recordCount: peakStationEntry.value,
-        ),
-        const SizedBox(height: 18),
-        Text('最近上传', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 10),
-        _InfoTile(
-          title: '最近上传时间',
-          value: dashboard.lastUploadTime,
-          icon: Icons.schedule_outlined,
-        ),
-        _InfoTile(
-          title: '最近上传站点',
-          value: recentRecords.isEmpty
-              ? '暂无记录'
-              : recentRecords.first.stationName,
-          icon: Icons.spatial_audio_off_outlined,
-        ),
-        const SizedBox(height: 18),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('最近记录', style: Theme.of(context).textTheme.titleLarge),
-            TextButton(
-              onPressed: () => controller.setIndex(1),
-              child: const Text('查看全部'),
             ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ...recentRecords.map(
-          (record) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _RecentRecordCard(
-              record: record,
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => RecordDetailPage(record: record),
+          );
+        }
+
+        final dashboard = snapshot.data;
+        if (dashboard == null) {
+          return const SizedBox.shrink();
+        }
+
+        return RefreshIndicator(
+          onRefresh: _reloadDashboard,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(20),
+            children: [
+              _OverviewBanner(snapshot: dashboard, mode: widget.mode),
+              const SizedBox(height: 18),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 380;
+                  return GridView.count(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    childAspectRatio: compact ? 1.18 : 1.36,
+                    children: [
+                      _MetricCard(
+                        value: '${dashboard.todayRecognitionCount}',
+                        label: '今日识别',
+                        icon: Icons.visibility_outlined,
+                        color: const Color(0xFF0B7A75),
+                      ),
+                      _MetricCard(
+                        value: '${dashboard.todayUploadCount}',
+                        label: '今日新增',
+                        icon: Icons.note_add_outlined,
+                        color: const Color(0xFFE76F51),
+                      ),
+                      _MetricCard(
+                        value: '${dashboard.onlineStationCount}',
+                        label: '在线站点',
+                        icon: Icons.place_outlined,
+                        color: const Color(0xFF3D5A80),
+                      ),
+                      _MetricCard(
+                        value: '${dashboard.activeStationCount}',
+                        label: '活跃站点',
+                        icon: Icons.sensors_outlined,
+                        color: const Color(0xFF8D99AE),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 18),
+              _HotspotCard(
+                stationName: dashboard.topUploadStation.deviceName,
+                recordCount: dashboard.topUploadStation.uploadCount,
+              ),
+              const SizedBox(height: 18),
+              Text('最近上传', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 10),
+              _InfoTile(
+                title: '最近上传时间',
+                value: dashboard.latestUpload.uploadedAtValue,
+                icon: Icons.schedule_outlined,
+              ),
+              _InfoTile(
+                title: '最近上传站点',
+                value: dashboard.latestUpload.deviceName,
+                icon: Icons.spatial_audio_off_outlined,
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('最近记录', style: Theme.of(context).textTheme.titleLarge),
+                  TextButton(
+                    onPressed: () => widget.controller.setIndex(1),
+                    child: const Text('查看全部'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ...dashboard.recentRecords.map(
+                (record) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _RecentRecordCard(
+                    record: record,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => RecordDetailPage(record: record),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -153,7 +250,7 @@ class _OverviewBanner extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '边缘设备负责拍摄、推理和上传，当前覆盖 ${snapshot.onlineStations} 个站点，今日识别 ${snapshot.todayRecognition} 次。',
+            '边缘设备负责拍摄、推理和上传，当前覆盖 ${snapshot.onlineStationCount} 个站点，活跃站点 ${snapshot.activeStationCount} 个，今日识别 ${snapshot.todayRecognitionCount} 次。',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Colors.white.withValues(alpha: 0.9),
             ),

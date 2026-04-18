@@ -1,6 +1,6 @@
 # 客户端后端接口草案
 
-版本：0.1.0
+版本：0.2.1
 状态：草案
 适用范围：`bms_app` Flutter 客户端与网关/后端联调
 
@@ -8,9 +8,9 @@
 
 本文件用于给客户端和后端提供一份统一的接口草案，目标是：
 
-- 让客户端当前已经拆出来的 `home / records / stats / auth` 数据层可以直接映射到后端接口。
+- 让客户端当前已经拆出来的 `home / records / stats` 数据层可以直接映射到后端接口。
 - 让后端可以先按稳定字段语义实现第一版，再逐步细化分页、筛选和扩展字段。
-- 保证 `development` 与 `no-auth` 两种模式下的接口语义尽量一致，减少前端分支。
+- 保证客户端业务页拿到的响应结构稳定、可序列化、可直接映射到本地展示模型。
 
 本文件是草案，不是最终冻结协议。路径可以在网关层微调，但字段语义、资源边界和错误语义应尽量保持稳定。
 
@@ -19,15 +19,15 @@
 - 客户端只通过网关访问后端。
 - 客户端不参与本地密钥 bootstrap。
 - 客户端页面中的配色、图标、展示文案和局部排序规则由本地决定，不要求后端返回。
-- `development` 与 `no-auth` 共享同一套业务接口语义；差异主要体现在是否携带认证信息、是否返回可持久化令牌。
-- 当前草案优先覆盖客户端已经实际使用的数据：登录、当前用户、首页概览、设备列表、记录列表、记录详情、最近一周趋势、时间段统计。客户端 UI 可以把 `device_name` 继续显示成“站点”。
+- 客户端运行模式不改变本稿定义的业务响应结构，只影响本地调试、联调和日志标记。
+- 当前草案优先覆盖客户端已经实际使用的数据：首页概览、设备列表、记录列表、最近一周趋势、时间段统计。客户端 UI 可以把 `device_name` 继续显示成“站点”。
+- 登录、刷新令牌、当前用户等认证相关接口不在本稿范围内；注册作为业务接口纳入本稿。
 
 ## 3. 通用约定
 
 ### 3.1 建议基础路径
 
 - 建议统一前缀：`/v1/client`
-- 认证接口：`/v1/client/auth/*`
 - 首页接口：`/v1/client/home/*`
 - 记录接口：`/v1/client/records/*`
 - 统计接口：`/v1/client/stats/*`
@@ -36,10 +36,9 @@
 
 建议所有请求携带以下头部：
 
-- `Authorization: Bearer <access_token>`：`development` 或正式认证模式下使用。
 - `X-Client-Id`：客户端实例标识。
 - `X-Device-Id`：设备标识。
-- `X-Client-Mode`：`development` 或 `no-auth`。
+- `X-Client-Mode`：客户端运行模式，仅用于日志和灰度观测。
 - `X-App-Version`：应用版本号。
 - `X-Request-Id`：请求追踪标识。
 
@@ -48,7 +47,7 @@
 - JSON 字段统一使用 `snake_case`。
 - 唯一标识统一使用 UUID v4 字符串。
 - 时间字段统一使用 epoch milliseconds，并以 `_ms` 结尾。
-- 列表接口统一返回 `items`、`total`、`page`、`page_size`、`has_more`。
+- 记录列表接口统一返回 `items`、`next_cursor`、`has_more`。
 - 新增字段必须可选，不能破坏已有字段语义。
 
 ### 3.4 响应封装
@@ -72,170 +71,144 @@
 - `data` 承载业务载荷。
 - 失败时可继续使用统一封装，并配合 HTTP 4xx / 5xx 状态码。
 
-## 4. 认证接口
+## 4. 业务响应模型
 
-### 4.1 登录
+`data_server/src/models/business/client_resp_dto.py` 是本次联调的响应结构来源，后端服务接口直接返回这些 Response 模型，客户端再映射为本地展示模型。
 
-`POST /v1/client/auth/login`
+### 4.1 模型对照
 
-请求体：
-
-```json
-{
-  "username": "demo_user",
-  "password": "******",
-  "device_id": "b0e1d8f7-55b6-4c6d-8d5c-b6e1d7c3a0d4",
-  "client_mode": "development",
-  "app_version": "0.1.0"
-}
-```
-
-响应体建议包含：
-
-```json
-{
-  "user": {
-    "user_id": "7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19",
-    "name": "测试用户",
-    "role": "系统演示账号",
-    "device_name": "南湖湿地站",
-    "phone": "138-0000-0000",
-    "avatar_seed": 7
-  },
-  "access_token": "eyJhbGciOi...",
-  "refresh_token": "eyJhbGciOi...",
-  "token_type": "Bearer",
-  "access_expires_in_ms": 7200000,
-  "refresh_expires_in_ms": 2592000000
-}
-```
+- `ClientDashboardSnapshotResponse` 对应客户端首页的 `DashboardSnapshot`
+- `ClientBirdRecordResponse` 对应客户端记录页 / 详情页的 `BirdRecord`
+- `ClientRecordStationOptionResponse` 对应客户端记录页 / 统计页的 `RecordStationOption`
+- `ClientRegisterRequest` 对应客户端注册页提交的注册表单请求
+- `ClientRegisterResponse` 对应客户端注册页返回的注册结果
+- `ClientTrendPointResponse` 对应客户端的趋势点数据
+- `ClientSpeciesShareResponse` 对应客户端统计页的物种占比数据
+- `ClientUploadStationSummaryResponse` 对应首页的热点设备摘要
+- `ClientPeakDeviceSummaryResponse` 对应统计页的峰值设备摘要
+- `ClientLatestUploadSummaryResponse` 对应首页的最近上传摘要
+- `ClientRangeSummaryResponse` 对应统计页的时间段汇总结果
 
 说明：
 
-- `no-auth` 部署下可以不强制下发可持久化令牌，但建议尽量保持相同响应结构。
-- 如果后端未来需要返回额外会话字段，可追加 `session_id`、`scope`、`issued_at_ms` 等可选字段。
+- 响应字段统一使用 `snake_case`。
+- 时间字段统一使用 epoch milliseconds，并以 `_ms` 结尾。
+- 站点选择统一使用 `device_id` 做筛选，`device_name` 仅用于展示。
+- `species_shares` 中的 `color_hex` 为可选展示字段，客户端可忽略并自行映射调色板。
 
-### 4.2 刷新
+## 5. 业务接口
 
-`POST /v1/client/auth/refresh`
+### 5.0 注册
 
-请求体：
+`POST /v1/client/users/register`
 
-```json
-{
-  "refresh_token": "eyJhbGciOi...",
-  "device_id": "b0e1d8f7-55b6-4c6d-8d5c-b6e1d7c3a0d4"
-}
-```
+请求结构：`ClientRegisterRequest`
 
-响应体建议与登录接口保持一致，至少返回：
+响应结构：`ClientRegisterResponse`
 
-- `access_token`
-- `refresh_token`
-- `token_type`
-- `access_expires_in_ms`
-- `refresh_expires_in_ms`
+说明：
 
-### 4.3 登出
+- 用于注册页提交新账号，用户名必填，邮箱和手机号可选。
+- 客户端需要根据 `error_code` 显示对应提示，不直接依赖后端返回文案。
+- 建议错误码包括：`username_exists`、`email_exists`、`phone_exists`、`invalid_data`、`data_error`、`unknown_error`。
+- `ok=true` 表示注册成功；成功后客户端应返回登录页，不自动登录。
 
-`POST /v1/client/auth/logout`
-
-请求体建议：
+示例：
 
 ```json
 {
-  "refresh_token": "eyJhbGciOi...",
-  "session_id": "1d8f2b1a-4c7c-4f3d-a3a4-3f73fdc3b1ad"
+  "ok": false,
+  "error_code": "username_exists",
+  "message": "用户名已存在"
 }
 ```
 
-响应体建议：
+### 5.1 用户资料
+
+`GET /v1/client/users/profile?identifier=...`
+
+响应结构：`ClientUserProfileResponse`
+
+说明：
+
+- 用于登录成功后，客户端按登录输入（用户名/邮箱/手机号）单独拉取用户资料。
+- 不在登录响应里耦合用户资料，避免认证响应膨胀。
+
+示例：
 
 ```json
 {
-  "revoked": true
+  "user_id": "7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19",
+  "username": "demo_user",
+  "display_name": "测试用户",
+  "name": "测试用户",
+  "role": "系统演示账号",
+  "email": "demo_user@example.com",
+  "phone": "138-0000-0000",
+  "avatar_seed": 7
 }
 ```
 
-### 4.4 当前用户
-
-`GET /v1/client/auth/me`
-
-响应体建议返回登录后的可展示用户信息：
-
-```json
-{
-  "user": {
-    "user_id": "7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19",
-    "name": "测试用户",
-    "role": "系统演示账号",
-    "device_name": "南湖湿地站",
-    "phone": "138-0000-0000",
-    "avatar_seed": 7
-  }
-}
-```
-
-## 5. 首页接口
-
-### 5.1 首页汇总
+### 5.2 首页概览（聚合接口）
 
 `GET /v1/client/home/summary`
 
-这个接口建议一次性返回首页当前需要的全部汇总信息：
+响应结构：`ClientDashboardSnapshotResponse`
+
+示例：
 
 ```json
 {
-  "dashboard": {
-    "today_recognition_count": 128,
-    "today_new_record_count": 26,
-    "online_device_count": 18,
-    "last_upload_at_ms": 1712793720000,
-    "highlighted_bird": "白鹭群在湿地边缘活动"
-  },
-  "recent_records": [],
-  "peak_device": {
+  "today_recognition_count": 128,
+  "today_upload_count": 26,
+  "online_station_count": 9,
+  "active_station_count": 6,
+  "top_upload_station": {
+    "device_id": "2f0b7b69-0b2d-4e3a-9f5f-5db7d0e98711",
     "device_name": "南湖湿地站",
-    "record_count": 52
+    "upload_count": 52
   },
-  "total_record_count": 1320,
-  "server_time_ms": 1712893720000
+  "latest_upload": {
+    "device_id": "6a2edb8c-9f18-4d9c-bb87-7405a1d5f4d3",
+    "device_name": "东堤观察点",
+    "uploaded_at_ms": 1712793720000,
+    "uploaded_at_label": "2026-04-11 10:42"
+  },
+  "recent_records": []
 }
 ```
 
 说明：
 
-- 首页当前只需要一组摘要卡片、最近上传提示、热点设备和最近记录。
-- `recent_records` 可复用记录摘要结构，不需要返回完整详情。
-- `peak_device` 的 `record_count` 可表示今日或当前统计口径下的设备记录数，建议在接口说明里固定口径。
+- 客户端首页只使用这一条聚合接口。
+- 后端可在服务内部继续拆分实现，但不再作为客户端依赖面暴露。
+- 该接口返回首页所需全部数据，客户端下滑刷新时应直接重新请求它。
 
-## 6. 记录接口
+### 5.4 站点选项
 
-### 6.1 设备列表
+`GET /v1/client/records/stations`
 
-`GET /v1/client/records/devices`
+响应结构：`list[ClientRecordStationOptionResponse]`
 
-响应体建议：
+示例：
 
 ```json
-{
-  "devices": [
-    {
-      "device_id": "2f0b7b69-0b2d-4e3a-9f5f-5db7d0e98711",
-      "device_name": "南湖湿地站",
-      "online": true,
-      "status": "online"
-    }
-  ]
-}
+[
+  {
+    "device_id": "2f0b7b69-0b2d-4e3a-9f5f-5db7d0e98711",
+    "device_name": "南湖湿地站",
+    "online": true,
+    "status": "online"
+  }
+]
 ```
 
 说明：
 
-- 当前客户端只强依赖 `device_name`。
-- `device_id`、`online`、`status` 都属于建议扩展字段，可选返回。
+- 该接口服务于记录页和统计页的站点筛选。
+- 客户端可将第一项固定渲染为“全部站点”。
 
-### 6.2 记录列表
+### 5.5 记录列表（游标）
 
 `GET /v1/client/records`
 
@@ -243,14 +216,16 @@
 
 - `start_at_ms`：开始时间，包含边界。
 - `end_at_ms`：结束时间，包含边界。
-- `device_name`：设备名，可选，客户端可把它呈现成站点名。
-- `keyword`：模糊搜索关键字，可选，建议匹配物种名、学名、站点名、摘要。
+- `device_id`：设备 ID，可选。
+- `keyword`：关键字，可选，建议匹配物种名、学名、摘要。
 - `confidence_min`：最低置信度，可选，取值范围 `0~1`。
-- `page`：页码，默认 `1`。
-- `page_size`：每页条数，默认 `20`，建议上限 `100`。
+- `cursor`：游标字符串，首次请求为空。
+- `limit`：每次拉取条数，默认 `20`，建议上限 `100`。
 - `sort`：默认 `captured_at_ms_desc`。
 
-响应体建议：
+响应结构：`ClientRecordsCursorResponse`
+
+示例：
 
 ```json
 {
@@ -260,61 +235,41 @@
       "species": "白鹭",
       "scientific_name": "Egretta garzetta",
       "captured_at_ms": 1712798400000,
+      "captured_at_label": "2026-04-11 09:20",
+      "device_id": "2f0b7b69-0b2d-4e3a-9f5f-5db7d0e98711",
       "device_name": "南湖湿地站",
       "confidence": 0.97,
       "temperature_c": 18.4,
       "humidity_pct": 64,
       "upload_summary": "设备自动上传 · 识别结果已同步至业务库",
-      "species_intro": "..."
+      "species_intro": "白鹭（Egretta garzetta）...",
+      "media_refs": [],
+      "processing_source": "edge",
+      "model_version": "",
+      "record_status": "received",
+      "summary_text": "设备自动上传 · 识别结果已同步至业务库",
+      "species_entity_id": "",
+      "metadata": {}
     }
   ],
-  "page": 1,
-  "page_size": 20,
-  "total": 128,
+  "next_cursor": "20",
   "has_more": true
 }
 ```
 
 说明：
 
-- 当前客户端的置信度筛选和本地模糊搜索已经先在页面层实现，因此 `confidence_min` 和 `keyword` 可作为后端优化时的扩展能力。
-- 若后端暂时不支持这些参数，客户端仍可先在本地过滤，不影响主流程。
+- 记录页使用无限滚动 + 游标续拉，不再使用页码分页。
+- 列表项即详情展示数据来源，不再定义单独记录详情接口。
+- `image_url` 等详情字段应在记录列表项中直接返回。
 
-### 6.3 记录详情
+### 5.6 最近七日趋势
 
-`GET /v1/client/records/{record_id}`
+`GET /v1/client/stats/weekly-trend?days=7&device_id=...`
 
-响应体建议在列表字段基础上补充更详细的信息：
+响应结构：`ClientWeeklyTrendResponse`
 
-```json
-{
-  "id": "R-2401",
-  "species": "白鹭",
-  "scientific_name": "Egretta garzetta",
-  "captured_at_ms": 1712798400000,
-  "device_name": "南湖湿地站",
-  "confidence": 0.97,
-  "temperature_c": 18.4,
-  "humidity_pct": 64,
-  "upload_summary": "设备自动上传 · 识别结果已同步至业务库",
-  "species_intro": "白鹭（Egretta garzetta）...",
-  "device_id": "6a2edb8c-9f18-4d9c-bb87-7405a1d5f4d3",
-  "image_url": "https://example.com/records/R-2401.jpg"
-}
-```
-
-说明：
-
-- `species_intro` 建议返回，但不是强制项；客户端可保留本地物种简介兜底。
-- `image_url`、`device_id`、`latitude`、`longitude` 等字段都可以作为后续扩展，不影响当前页面。
-
-## 7. 统计接口
-
-### 7.1 最近七日趋势
-
-`GET /v1/client/stats/weekly-trend?days=7`
-
-响应体建议：
+示例：
 
 ```json
 {
@@ -334,12 +289,7 @@
 }
 ```
 
-说明：
-
-- 当前客户端只需要最近 7 天的趋势线。
-- `label` 可以由后端直接给出，也可以只返回 `date_ms` 后由客户端本地格式化。
-
-### 7.2 时间段统计
+### 5.7 时间段统计
 
 `GET /v1/client/stats/range-summary`
 
@@ -347,14 +297,16 @@
 
 - `start_at_ms`：开始时间，包含边界。
 - `end_at_ms`：结束时间，包含边界。
-- `device_name`：设备名，可选，客户端可把它呈现成站点名。
+- `device_id`：设备 ID，可选。
 
 建议校验：
 
 - 查询区间最长 30 天。
 - 若超过 30 天，建议返回 400 或 422，并给出可读提示。
 
-响应体建议：
+响应结构：`ClientRangeSummaryResponse`
+
+示例：
 
 ```json
 {
@@ -375,19 +327,25 @@
     {
       "label": "白鹭",
       "value": 36,
-      "ratio": 0.42
+      "ratio": 0.42,
+      "species_entity_id": "",
+      "color_hex": "#2A9D8F"
     },
     {
       "label": "灰鹭",
       "value": 24,
-      "ratio": 0.28
+      "ratio": 0.28,
+      "species_entity_id": "",
+      "color_hex": "#E76F51"
     }
   ],
   "peak_day": {
     "label": "4/10",
-    "value": 18
+    "value": 18,
+    "date_ms": 1712716800000
   },
   "peak_device": {
+    "device_id": "2f0b7b69-0b2d-4e3a-9f5f-5db7d0e98711",
     "device_name": "南湖湿地站",
     "record_count": 54
   }
@@ -396,69 +354,16 @@
 
 说明：
 
-- 这一个接口就足够支持当前统计页下半部分的“日分布柱状图 + 物种占比图”。
-- `ratio`、`peak_day`、`peak_device` 都属于建议扩展字段，不影响最小可用版本。
+- 这个接口可以支撑统计页的“日分布 + 物种占比 + 峰值信息”。
+- `species_shares` 的 `color_hex` 可以由后端返回，也可以留空由客户端映射本地色板。
 
-## 8. 公共模型建议
+## 6. 客户端对齐要点
 
-### 8.1 User
+- 记录页改为游标流加载，页面滚动到底部触发下一批拉取。
+- 详情页继续直接复用记录列表项数据，不单独发详情请求。
+- 统计页仍可通过“游标循环拉全量”或直接调用 `range-summary` 完成聚合展示。
 
-建议字段：
-
-- `user_id`
-- `name`
-- `role`
-- `device_name`
-- `phone`
-- `avatar_seed`（可选）
-
-### 8.2 DashboardSnapshot
-
-建议字段：
-
-- `today_recognition_count`
-- `today_new_record_count`
-- `online_device_count`
-- `last_upload_at_ms`
-- `highlighted_bird`
-
-### 8.3 BirdRecord
-
-建议字段：
-
-- `id`
-- `species`
-- `scientific_name`
-- `captured_at_ms`
-- `device_name`
-- `confidence`
-- `temperature_c`
-- `humidity_pct`
-- `upload_summary`
-- `species_intro`（可选）
-- `image_url`（可选）
-
-### 8.4 TrendPoint
-
-建议字段：
-
-- `label`
-- `date_ms`
-- `value`
-
-### 8.5 SpeciesShare
-
-建议字段：
-
-- `label`
-- `value`
-- `ratio`（可选）
-
-说明：
-
-- `color` 属于纯展示信息，客户端可以本地映射，不建议强制由后端返回。
-
-## 9. 错误与兼容
+## 7. 错误与兼容
 
 建议客户端重点处理以下 HTTP 场景：
 
@@ -475,19 +380,18 @@
 - 已有字段的语义不能改变。
 - 若接口路径需要调整，建议通过网关路由映射兼容，而不是让客户端同时适配多个语义版本。
 
-## 10. no-auth 与 development 差异
+## 8. no-auth 与 development 差异
 
 - `development`：正常登录、刷新和登出，客户端保存 access token / refresh token。
 - `no-auth`：客户端保留登录入口，但不保存 token；请求可以不携带 `Authorization`。
 - 两种模式下，页面层收到的数据结构应尽量一致，避免前端出现双套逻辑。
 - 如果后端在 `no-auth` 模式下只提供最小业务数据，也建议保持响应封装一致，方便客户端继续复用同一套数据源抽象。
 
-## 11. 建议联调顺序
+## 9. 建议联调顺序
 
-1. 先打通 `auth/login` 与 `auth/me`。
-2. 再接 `home/summary`。
-3. 然后接 `records/devices` 与 `records`。
-4. 补齐 `records/{record_id}`。
-5. 最后接 `stats/weekly-trend` 与 `stats/range-summary`。
+1. 先打通 `users/profile`（按 identifier 拉用户资料）。
+2. 再对齐首页拆分接口（必要时再启用 `home/summary` 聚合）。
+3. 接入 `records/stations` 与 `records`（游标流）。
+4. 最后接 `stats/weekly-trend` 与 `stats/range-summary`。
 
-这样可以先让客户端从登录到首页跑通，再逐步替换记录页和统计页的数据源。
+这样可以先让“登录后资料加载 + 首页 + 记录流式列表”跑通，再收尾统计页面。

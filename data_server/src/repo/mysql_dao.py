@@ -123,3 +123,21 @@ class EntityDevicesDAO(MySQLBaseDAO):
                 "metadata",
             },
         )
+
+
+class EntityUsersDAO(MySQLBaseDAO):
+    def __init__(self, mysql_db: MySQLClient):
+        super().__init__(
+            mysql_db=mysql_db,
+            table_name="entitiy_users",
+            primary_key="user_entity_id",
+            allowed_columns={
+                "user_entity_id",
+                "username",
+                "email",
+                "phone",
+                "role",
+                "password_hash",
+                "metadata",
+            },
+        )

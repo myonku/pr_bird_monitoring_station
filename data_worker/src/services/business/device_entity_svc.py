@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from src.iface.business.device_entity_svc import IDeviceEntityManager
-from src.models.common.entities import DeviceEntity
+from src.models.common.entities import DeviceEntity, DeviceStatus
 from src.repo.mysql_client import MySQLClient
 from src.repo.mysql_dao import EntityDevicesDAO
 
@@ -18,15 +18,10 @@ class DeviceEntityManager(IDeviceEntityManager):
         self,
         *,
         mysql_client: MySQLClient | None = None,
-        device_dao: EntityDevicesDAO | None = None,
     ) -> None:
-        if device_dao is None and mysql_client is None:
+        if mysql_client is None:
             raise ValueError("device entity manager dependencies are required")
-        if device_dao is not None:
-            self._device_dao = device_dao
-        else:
-            assert mysql_client is not None
-            self._device_dao = EntityDevicesDAO(mysql_client)
+        self._device_dao = EntityDevicesDAO(mysql_client)
 
     async def get_by_id(self, device_entity_id: UUID) -> DeviceEntity | None:
         if device_entity_id.int == 0:
@@ -82,6 +77,8 @@ class DeviceEntityManager(IDeviceEntityManager):
             active_comm_key_id = UUID(active_comm_key_id_raw) if active_comm_key_id_raw else None
         except ValueError:
             active_comm_key_id = None
+        
+        to_device_status = lambda value: value if value in DeviceStatus.__args__ else "unknown"
 
         return DeviceEntity(
             device_entity_id=device_entity_id,
@@ -90,7 +87,7 @@ class DeviceEntityManager(IDeviceEntityManager):
             latitude=DeviceEntityManager._to_float(row.get("latitude")),
             longitude=DeviceEntityManager._to_float(row.get("longitude")),
             last_heartbeat_ms=DeviceEntityManager._datetime_to_ms(row.get("last_heartbeat_at")),
-            status=str(row.get("status") or "unknown"),
+            status=to_device_status(row.get("status")),
             active_comm_key_id=active_comm_key_id,
             created_at_ms=DeviceEntityManager._datetime_to_ms(row.get("created_at")),
             updated_at_ms=DeviceEntityManager._datetime_to_ms(row.get("updated_at")),

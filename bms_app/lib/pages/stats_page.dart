@@ -23,11 +23,13 @@ class StatsPage extends StatefulWidget {
 class _StatsPageState extends State<StatsPage> {
   static const int _maxSelectableRangeDays = 30;
 
-  String _selectedStation = '全部站点';
+  String _selectedStationId = '';
   DateTimeRange? _selectedRange;
   bool _isLoading = true;
   String? _errorMessage;
-  List<String> _stations = const ['全部站点'];
+  List<RecordStationOption> _stations = const [
+    RecordStationOption(deviceId: '', deviceName: '全部站点'),
+  ];
   List<BirdRecord> _rangeRecords = const [];
 
   @override
@@ -48,7 +50,10 @@ class _StatsPageState extends State<StatsPage> {
         return;
       }
       setState(() {
-        _stations = ['全部站点', ...stations];
+        _stations = [
+          const RecordStationOption(deviceId: '', deviceName: '全部站点'),
+          ...stations,
+        ];
       });
       await _reloadRangeRecords();
     } catch (error) {
@@ -71,7 +76,7 @@ class _StatsPageState extends State<StatsPage> {
     try {
       final records = await widget.recordsDataSource.fetchRecords(
         dateRange: _selectedRange,
-        stationName: _selectedStation == '全部站点' ? null : _selectedStation,
+        stationId: _selectedStationId.isEmpty ? null : _selectedStationId,
       );
       if (!mounted) {
         return;
@@ -124,12 +129,12 @@ class _StatsPageState extends State<StatsPage> {
   }
 
   void _changeStation(String? value) {
-    if (value == null || value == _selectedStation) {
+    if (value == null || value == _selectedStationId) {
       return;
     }
 
     setState(() {
-      _selectedStation = value;
+      _selectedStationId = value;
     });
     _reloadRangeRecords();
   }
@@ -226,7 +231,7 @@ class _StatsPageState extends State<StatsPage> {
         const SizedBox(height: 12),
         _StatsQueryPanel(
           stations: _stations,
-          selectedStation: _selectedStation,
+          selectedStationId: _selectedStationId,
           selectedRangeLabel: _selectedRangeLabel,
           selectedRangeDays: _selectedRangeDays,
           onSelectRange: _isLoading ? null : _pickDateRange,
@@ -264,7 +269,7 @@ class _StatsPageState extends State<StatsPage> {
           const _LoadingPanel()
         else if (speciesShares.isEmpty)
           const _MessagePanel(
-            icon: Icons.pets_outlined,
+            icon: Icons.flutter_dash,
             title: '暂无物种分布',
             description: '所选时间段和站点下没有可统计的物种数据。',
           )
@@ -280,15 +285,15 @@ class _StatsPageState extends State<StatsPage> {
 class _StatsQueryPanel extends StatelessWidget {
   const _StatsQueryPanel({
     required this.stations,
-    required this.selectedStation,
+    required this.selectedStationId,
     required this.selectedRangeLabel,
     required this.selectedRangeDays,
     required this.onSelectRange,
     required this.onStationChanged,
   });
 
-  final List<String> stations;
-  final String selectedStation;
+  final List<RecordStationOption> stations;
+  final String selectedStationId;
   final String selectedRangeLabel;
   final int selectedRangeDays;
   final VoidCallback? onSelectRange;
@@ -322,15 +327,17 @@ class _StatsQueryPanel extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            initialValue: selectedStation,
+            initialValue: selectedStationId,
             decoration: const InputDecoration(
               labelText: '站点',
               prefixIcon: Icon(Icons.place_outlined),
             ),
             items: stations
                 .map(
-                  (station) =>
-                      DropdownMenuItem(value: station, child: Text(station)),
+                  (station) => DropdownMenuItem(
+                    value: station.deviceId,
+                    child: Text(station.deviceName),
+                  ),
                 )
                 .toList(),
             onChanged: onStationChanged,

@@ -1,7 +1,8 @@
+import 'package:bms_app/models/monitoring_models.dart';
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/auth/auth_controller.dart';
-import 'package:bms_app/models/monitoring_models.dart';
+import 'package:bms_app/pages/register_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.authController});
@@ -13,7 +14,7 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final TextEditingController _usernameController = TextEditingController(
+  final TextEditingController _identifierController = TextEditingController(
     text: 'demo_user',
   );
   final TextEditingController _passwordController = TextEditingController(
@@ -22,15 +23,35 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    _usernameController.dispose();
+    _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     await widget.authController.signIn(
-      username: _usernameController.text,
+      identifier: _identifierController.text,
       password: _passwordController.text,
+    );
+  }
+
+  Future<void> _openRegisterPage() async {
+    final registeredUsername = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => RegisterPage(authController: widget.authController),
+      ),
+    );
+
+    if (!mounted || registeredUsername == null || registeredUsername.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _identifierController.text = registeredUsername;
+      _passwordController.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('注册成功，请使用新账号登录')),
     );
   }
 
@@ -78,10 +99,10 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                             const SizedBox(height: 20),
                             TextField(
-                              controller: _usernameController,
+                              controller: _identifierController,
                               decoration: const InputDecoration(
-                                labelText: '用户名',
-                                hintText: '请输入用户名',
+                                labelText: '用户名 / 邮箱 / 手机号',
+                                hintText: '请输入任一登录标识',
                                 prefixIcon: Icon(Icons.person_outline),
                               ),
                             ),
@@ -105,15 +126,23 @@ class _LoginPageState extends State<LoginPage> {
                                 label: Text(
                                   widget.authController.mode ==
                                           AppMode.development
-                                      ? '登录并保存会话'
+                                      ? '登录并保存凭证'
                                       : '登录进入演示模式',
                                 ),
                               ),
                             ),
                             const SizedBox(height: 12),
+                            Center(
+                              child: TextButton.icon(
+                                onPressed: _openRegisterPage,
+                                icon: const Icon(Icons.person_add_alt_1),
+                                label: const Text('没有账号，去注册'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
                             Text(
                               widget.authController.mode == AppMode.development
-                                  ? 'development 模式下会生成 mock access / refresh token。'
+                                  ? 'development 模式下会生成 mock access / refresh token，并单独拉取用户资料。'
                                   : 'no-auth 模式下仅进入业务页面，不保存任何凭证。',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: Colors.black54,

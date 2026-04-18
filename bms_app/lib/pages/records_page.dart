@@ -14,19 +14,35 @@ class RecordsPage extends StatefulWidget {
 }
 
 class _RecordsPageState extends State<RecordsPage> {
+  final ScrollController _scrollController = ScrollController();
+
   String _query = '';
   double _minConfidence = 0.0;
-  String _selectedStation = '全部站点';
+  String _selectedStationId = '';
   DateTimeRange? _selectedRange;
-  bool _isLoading = true;
+  bool _isInitialLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  String? _nextCursor;
   String? _errorMessage;
-  List<String> _stations = const ['全部站点'];
-  List<BirdRecord> _backendRecords = const [];
+  List<RecordStationOption> _stations = const [
+    RecordStationOption(deviceId: '', deviceName: '全部站点'),
+  ];
+  List<BirdRecord> _backendRecords = [];
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _bootstrap();
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
   }
 
   Future<void> _bootstrap() async {
@@ -36,37 +52,75 @@ class _RecordsPageState extends State<RecordsPage> {
         return;
       }
       setState(() {
-        _stations = ['全部站点', ...stations];
+        _stations = [
+          const RecordStationOption(deviceId: '', deviceName: '全部站点'),
+          ...stations,
+        ];
       });
-      await _reloadRecords();
+      await _resetAndLoadRecords();
     } catch (error) {
       if (!mounted) {
         return;
       }
       setState(() {
         _errorMessage = '站点列表加载失败：$error';
-        _isLoading = false;
+        _isInitialLoading = false;
       });
     }
   }
 
-  Future<void> _reloadRecords() async {
+  void _onScroll() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 240) {
+      _loadMoreRecords();
+    }
+  }
+
+  Future<void> _resetAndLoadRecords() async {
     setState(() {
-      _isLoading = true;
+      _isInitialLoading = true;
+      _isLoadingMore = false;
+      _hasMore = true;
+      _nextCursor = null;
+      _backendRecords = [];
+      _errorMessage = null;
+    });
+
+    await _loadMoreRecords(initial: true);
+  }
+
+  Future<void> _loadMoreRecords({bool initial = false}) async {
+    if (_isLoadingMore) {
+      return;
+    }
+    if (!initial && !_hasMore) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingMore = true;
       _errorMessage = null;
     });
 
     try {
-      final records = await widget.dataSource.fetchRecords(
+      final page = await widget.dataSource.fetchRecordsByCursor(
         dateRange: _selectedRange,
-        stationName: _selectedStation == '全部站点' ? null : _selectedStation,
+        stationId: _selectedStationId.isEmpty ? null : _selectedStationId,
+        cursor: _nextCursor,
+        limit: 20,
       );
       if (!mounted) {
         return;
       }
       setState(() {
-        _backendRecords = records;
-        _isLoading = false;
+        _backendRecords.addAll(page.items);
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        _isInitialLoading = false;
+        _isLoadingMore = false;
       });
     } catch (error) {
       if (!mounted) {
@@ -74,7 +128,8 @@ class _RecordsPageState extends State<RecordsPage> {
       }
       setState(() {
         _errorMessage = '记录查询失败：$error';
-        _isLoading = false;
+        _isInitialLoading = false;
+        _isLoadingMore = false;
       });
     }
   }
@@ -122,7 +177,7 @@ class _RecordsPageState extends State<RecordsPage> {
     setState(() {
       _selectedRange = result;
     });
-    await _reloadRecords();
+    await _resetAndLoadRecords();
   }
 
   @override
@@ -130,9 +185,10 @@ class _RecordsPageState extends State<RecordsPage> {
     final records = _filteredRecords;
 
     return ListView(
+      controller: _scrollController,
       padding: const EdgeInsets.all(20),
       children: [
-        _RecordsHeader(totalCount: widget.dataSource.totalRecordCount),
+        _RecordsHeader(totalCount: _backendRecords.length),
         const SizedBox(height: 16),
         TextField(
           decoration: const InputDecoration(
@@ -160,7 +216,7 @@ class _RecordsPageState extends State<RecordsPage> {
                     ),
                   ),
                   TextButton.icon(
-                    onPressed: _isLoading ? null : _pickDateRange,
+                    onPressed: _isInitialLoading ? null : _pickDateRange,
                     icon: const Icon(Icons.date_range_outlined),
                     label: const Text('选择日期'),
                   ),
@@ -168,7 +224,7 @@ class _RecordsPageState extends State<RecordsPage> {
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
-                initialValue: _selectedStation,
+                initialValue: _selectedStationId,
                 decoration: const InputDecoration(
                   labelText: '站点',
                   prefixIcon: Icon(Icons.place_outlined),
@@ -176,19 +232,19 @@ class _RecordsPageState extends State<RecordsPage> {
                 items: _stations
                     .map(
                       (station) => DropdownMenuItem(
-                        value: station,
-                        child: Text(station),
+                        value: station.deviceId,
+                        child: Text(station.deviceName),
                       ),
                     )
                     .toList(),
-                onChanged: _isLoading
+                onChanged: _isInitialLoading
                     ? null
                     : (value) async {
                         if (value == null) {
                           return;
                         }
-                        setState(() => _selectedStation = value);
-                        await _reloadRecords();
+                        setState(() => _selectedStationId = value);
+                        await _resetAndLoadRecords();
                       },
               ),
               const SizedBox(height: 12),
@@ -240,7 +296,7 @@ class _RecordsPageState extends State<RecordsPage> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('识别记录', style: Theme.of(context).textTheme.titleLarge),
-            if (!_isLoading)
+            if (!_isInitialLoading)
               Text(
                 '${records.length} 条',
                 style: Theme.of(
@@ -250,9 +306,9 @@ class _RecordsPageState extends State<RecordsPage> {
           ],
         ),
         const SizedBox(height: 12),
-        if (_errorMessage != null)
-          _ErrorState(message: _errorMessage!, onRetry: _reloadRecords)
-        else if (_isLoading)
+        if (_errorMessage != null && _backendRecords.isEmpty)
+          _ErrorState(message: _errorMessage!, onRetry: _resetAndLoadRecords)
+        else if (_isInitialLoading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 48),
             child: Center(child: CircularProgressIndicator()),
@@ -270,6 +326,23 @@ class _RecordsPageState extends State<RecordsPage> {
                     builder: (_) => RecordDetailPage(record: record),
                   ),
                 ),
+              ),
+            ),
+          ),
+        if (_isLoadingMore)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (!_hasMore && records.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: Text(
+                '没有更多记录了',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.black54),
               ),
             ),
           ),

@@ -5,10 +5,17 @@ import 'package:bms_app/models/monitoring_models.dart';
 abstract class AuthService {
   AppUser get defaultUser;
 
-  AppUser resolveUser(String username);
+  Future<AppUser?> fetchUserProfile(String identifier);
+
+  Future<RegistrationResult> registerUser({
+    required String username,
+    String email = '',
+    String phone = '',
+    required String password,
+  });
 
   Future<AuthSession> signIn({
-    required String username,
+    required String identifier,
     required String password,
     required AppMode mode,
   });
@@ -25,20 +32,36 @@ class MockAuthService implements AuthService {
   AppUser get defaultUser => repository.defaultUser;
 
   @override
-  AppUser resolveUser(String username) {
-    final normalizedName = username.trim().isEmpty
-        ? repository.defaultUser.name
-        : username.trim();
-    return repository.userForName(normalizedName);
+  Future<AppUser?> fetchUserProfile(String identifier) async {
+    final normalized = identifier.trim();
+    if (normalized.isEmpty) {
+      return repository.defaultUser;
+    }
+
+    return repository.fetchUserProfile(normalized);
+  }
+
+  @override
+  Future<RegistrationResult> registerUser({
+    required String username,
+    String email = '',
+    String phone = '',
+    required String password,
+  }) {
+    return repository.registerUser(
+      username: username,
+      email: email,
+      phone: phone,
+      password: password,
+    );
   }
 
   @override
   Future<AuthSession> signIn({
-    required String username,
+    required String identifier,
     required String password,
     required AppMode mode,
   }) async {
-    final user = resolveUser(username);
     final now = DateTime.now();
     final passwordSeed = password.trim().isEmpty
         ? 'blank'
@@ -66,7 +89,7 @@ class MockAuthService implements AuthService {
         : const AuthCredentials();
 
     return AuthSession(
-      user: user,
+      loginIdentifier: identifier.trim(),
       credentials: credentials,
       mode: mode,
       signedInAt: now,

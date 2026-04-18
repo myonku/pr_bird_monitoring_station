@@ -58,13 +58,13 @@ class AuthCredentials {
 
 class AuthSession {
   const AuthSession({
-    required this.user,
+    required this.loginIdentifier,
     required this.credentials,
     required this.mode,
     required this.signedInAt,
   });
 
-  final AppUser user;
+  final String loginIdentifier;
   final AuthCredentials credentials;
   final AppMode mode;
   final DateTime signedInAt;

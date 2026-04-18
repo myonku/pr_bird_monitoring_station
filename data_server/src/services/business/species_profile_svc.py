@@ -18,15 +18,10 @@ class SpeciesProfileManager(ISpeciesProfileManager):
         self,
         *,
         mysql_client: MySQLClient | None = None,
-        species_dao: EntitySpeciesProfilesDAO | None = None,
     ) -> None:
-        if species_dao is None and mysql_client is None:
+        if mysql_client is None:
             raise ValueError("species profile manager dependencies are required")
-        if species_dao is not None:
-            self._species_dao = species_dao
-        else:
-            assert mysql_client is not None
-            self._species_dao = EntitySpeciesProfilesDAO(mysql_client)
+        self._species_dao = EntitySpeciesProfilesDAO(mysql_client)
 
     async def get_by_id(self, species_entity_id: UUID) -> SpeciesProfile | None:
         if species_entity_id.int == 0:

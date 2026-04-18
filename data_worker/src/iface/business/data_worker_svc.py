@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from src.models.business.edge_event_request import EdgeEventUploadRequest
+from src.models.business.event_req_dto import EdgeEventUploadRequest
 from src.models.business.data import MonitoringRecord
 
 
