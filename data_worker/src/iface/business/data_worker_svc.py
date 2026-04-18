@@ -1,7 +1,24 @@
-from abc import ABC
+from abc import ABC, abstractmethod
+
+from src.models.business.edge_event_request import EdgeEventUploadRequest
+from src.models.business.data import MonitoringRecord
 
 
 class IDataWorkerService(ABC):
-    """数据处理模块的唯一业务流水线接口。负责处理边缘端上传事件数据，
-    完成从原始数据到最终结果的全流程处理。"""
-    
+    """数据处理模块的统一业务流水线接口。
+
+    该接口只负责把外部请求交给业务层统一流程处理，不承担通信层职责。
+    """
+
+    @abstractmethod
+    async def handle_edge_upload(
+        self,
+        request: EdgeEventUploadRequest,
+    ) -> MonitoringRecord | None:
+        """处理边缘端上传请求并执行 A/B 阶段流水线。
+
+        返回值：
+        - MonitoringRecord：请求进入阶段 B 并成功沉淀。
+        - None：请求在阶段 A 被判定丢弃。
+        """
+        raise NotImplementedError

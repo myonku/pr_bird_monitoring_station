@@ -58,6 +58,7 @@ class EdgeEventEnvelope(UUIDDocument):
     """边缘事件的入站封装对象，包含事件主体和相关的二进制数据片段。"""
 
     device_entity_id: UUID
+    device_name: str = "unknown"
     occurred_at_ms: int
     received_at_ms: int
     payload_version: str
@@ -80,6 +81,7 @@ class MonitoringRecord(UUIDDocument):
     """一次监测记录的业务模型，包含监测到的物种信息、环境信息、媒体信息、处理来源等。"""
 
     device_entity_id: UUID
+    device_name: str = "unknown"
     source_event_id: UUID
     species_entity_id: UUID | None = None
     captured_at_ms: int

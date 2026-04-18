@@ -83,3 +83,43 @@ class ServicePublicKeysDAO(MySQLBaseDAO):
                 "revoked_at",
             },
         )
+
+
+class EntitySpeciesProfilesDAO(MySQLBaseDAO):
+    def __init__(self, mysql_db: MySQLClient):
+        super().__init__(
+            mysql_db=mysql_db,
+            table_name="entitiy_species_profiles",
+            primary_key="species_entity_id",
+            allowed_columns={
+                "species_entity_id",
+                "species_name",
+                "scientific_name",
+                "alias_names",
+                "metadata",
+                "created_at",
+                "updated_at",
+            },
+        )
+
+
+class EntityDevicesDAO(MySQLBaseDAO):
+    def __init__(self, mysql_db: MySQLClient):
+        super().__init__(
+            mysql_db=mysql_db,
+            table_name="entitiy_devices",
+            primary_key="device_entity_id",
+            allowed_columns={
+                "device_entity_id",
+                "device_name",
+                "location_name",
+                "latitude",
+                "longitude",
+                "last_heartbeat_at",
+                "status",
+                "active_comm_key_id",
+                "created_at",
+                "updated_at",
+                "metadata",
+            },
+        )
