@@ -21,8 +21,18 @@ extension AppModeLabel on AppMode {
   };
 
   String get displayName => switch (this) {
-    AppMode.development => 'Development',
-    AppMode.noAuth => 'No-Auth',
+    AppMode.development => '测试模式',
+    AppMode.noAuth => '无认证模式',
+  };
+
+  Color get seedColor => switch (this) {
+    AppMode.development => const Color(0xFF0B7A75),
+    AppMode.noAuth => const Color(0xFFC97C1D),
+  };
+
+  List<Color> get bannerColors => switch (this) {
+    AppMode.development => const [Color(0xFF0B7A75), Color(0xFF125D98)],
+    AppMode.noAuth => const [Color(0xFFC97C1D), Color(0xFFE09F3E)],
   };
 }
 

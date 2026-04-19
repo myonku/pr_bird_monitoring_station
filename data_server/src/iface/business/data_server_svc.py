@@ -28,6 +28,7 @@ class IDataServerService(ABC):
 
     这一层承接 users profile / register / home / records / stats 等业务查询，
     不包含登录、刷新令牌等认证接口。
+    调用方只传业务载荷，认证头由网关或客户端传输层统一附带，不进入这些 DTO。
     """
 
     @abstractmethod
@@ -50,6 +51,7 @@ class IDataServerService(ABC):
         """注册新用户。
 
         用于注册页提交用户名、可选邮箱、可选手机号和密码。
+        该接口不携带认证头。
         返回 `ok=True` 表示注册成功；否则返回错误码和提示文本供客户端展示。
         """
         raise NotImplementedError

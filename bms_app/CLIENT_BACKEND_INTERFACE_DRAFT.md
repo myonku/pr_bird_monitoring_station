@@ -1,27 +1,28 @@
-# 客户端后端接口草案
+# 客户端后端接口约定案
 
-版本：0.2.1
-状态：草案
+版本：1.0.0
+状态：约定案
 适用范围：`bms_app` Flutter 客户端与网关/后端联调
 
 ## 1. 目的
 
-本文件用于给客户端和后端提供一份统一的接口草案，目标是：
+本文件用于给客户端和后端提供一份统一的接口约定，目标是：
 
 - 让客户端当前已经拆出来的 `home / records / stats` 数据层可以直接映射到后端接口。
 - 让后端可以先按稳定字段语义实现第一版，再逐步细化分页、筛选和扩展字段。
 - 保证客户端业务页拿到的响应结构稳定、可序列化、可直接映射到本地展示模型。
 
-本文件是草案，不是最终冻结协议。路径可以在网关层微调，但字段语义、资源边界和错误语义应尽量保持稳定。
+本文件是当前联调的正式约定。路径可以在网关层微调，但字段语义、资源边界和错误语义应保持稳定；如需变更，必须同步客户端与 data_server。
 
 ## 2. 对接边界
 
 - 客户端只通过网关访问后端。
 - 客户端不参与本地密钥 bootstrap。
 - 客户端页面中的配色、图标、展示文案和局部排序规则由本地决定，不要求后端返回。
-- 客户端运行模式不改变本稿定义的业务响应结构，只影响本地调试、联调和日志标记。
-- 当前草案优先覆盖客户端已经实际使用的数据：首页概览、设备列表、记录列表、最近一周趋势、时间段统计。客户端 UI 可以把 `device_name` 继续显示成“站点”。
-- 登录、刷新令牌、当前用户等认证相关接口不在本稿范围内；注册作为业务接口纳入本稿。
+- 客户端运行模式不改变本约定定义的业务响应结构，只影响本地调试、联调和日志标记。
+- 当前约定优先覆盖客户端已经实际使用的数据：首页概览、设备列表、记录列表、最近一周趋势、时间段统计。客户端 UI 可以把 `device_name` 继续显示成“站点”。
+- 登录、刷新令牌、当前用户等认证相关接口不在本约定范围内；注册作为业务接口纳入本约定。
+- 除注册接口外，所有业务请求都必须在发送前附带认证头；认证头由客户端传输层或网关层统一注入，不写入业务请求 DTO。
 
 ## 3. 通用约定
 
@@ -42,7 +43,24 @@
 - `X-App-Version`：应用版本号。
 - `X-Request-Id`：请求追踪标识。
 
-### 3.3 数据格式
+### 3.3 认证头
+
+除注册接口外，客户端调用业务接口前必须携带以下认证头，字段名和边缘端保持一致：
+
+- `Authorization`
+- `x-downstream-session-id`
+- `x-downstream-token-id`
+- `x-token-type`
+- `x-downstream-principal`
+- `x-scopes`
+
+说明：
+
+- 这些头由客户端传输层统一拼装，不进入 `client_req_dto.py` 中的业务请求模型。
+- 注册接口不携带认证头。
+- data_server 只消费业务载荷，不处理认证头。
+
+### 3.4 数据格式
 
 - JSON 字段统一使用 `snake_case`。
 - 唯一标识统一使用 UUID v4 字符串。
@@ -50,28 +68,21 @@
 - 记录列表接口统一返回 `items`、`next_cursor`、`has_more`。
 - 新增字段必须可选，不能破坏已有字段语义。
 
-### 3.4 响应封装
+## 4. 业务请求与响应模型
 
-建议所有 HTTP 接口都使用统一封装：
+`data_server/src/models/business/client_req_dto.py` 定义本次联调的请求结构，`data_server/src/models/business/client_resp_dto.py` 保持既有响应结构不变。
 
-```json
-{
-  "code": 0,
-  "message": "ok",
-  "request_id": "d2a9d8ef-1d3b-4e14-8b4f-9d99af6f2f4d",
-  "trace_id": "trace-20260412-0001",
-  "data": {}
-}
-```
+### 4.1 请求模型对照
 
-建议约定：
+- `ClientUserProfileRequest`：登录后拉取用户资料，按登录标识查询。
+- `ClientRegisterRequest`：注册页提交的用户名、邮箱、手机号、密码。
+- `ClientHomeSnapshotRequest`：首页概览请求，当前仅保留可选的 `device_id`。
+- `ClientRecordStationOptionsRequest`：记录页/统计页站点选项请求，当前仅保留可选的 `include_offline`。
+- `ClientRecordsCursorRequest`：记录页游标分页请求，承载时间范围、站点、关键字、置信度、游标、每页数量和排序方式。
+- `ClientWeeklyTrendRequest`：最近七日趋势请求，承载天数和可选站点筛选。
+- `ClientRangeSummaryRequest`：时间段统计请求，承载开始时间、结束时间和可选站点筛选。
 
-- `code = 0` 表示成功。
-- `message` 用于人类可读提示和日志记录。
-- `data` 承载业务载荷。
-- 失败时可继续使用统一封装，并配合 HTTP 4xx / 5xx 状态码。
-
-## 4. 业务响应模型
+### 4.2 响应模型对照
 
 `data_server/src/models/business/client_resp_dto.py` 是本次联调的响应结构来源，后端服务接口直接返回这些 Response 模型，客户端再映射为本地展示模型。
 
@@ -80,7 +91,6 @@
 - `ClientDashboardSnapshotResponse` 对应客户端首页的 `DashboardSnapshot`
 - `ClientBirdRecordResponse` 对应客户端记录页 / 详情页的 `BirdRecord`
 - `ClientRecordStationOptionResponse` 对应客户端记录页 / 统计页的 `RecordStationOption`
-- `ClientRegisterRequest` 对应客户端注册页提交的注册表单请求
 - `ClientRegisterResponse` 对应客户端注册页返回的注册结果
 - `ClientTrendPointResponse` 对应客户端的趋势点数据
 - `ClientSpeciesShareResponse` 对应客户端统计页的物种占比数据
@@ -112,6 +122,7 @@
 - 客户端需要根据 `error_code` 显示对应提示，不直接依赖后端返回文案。
 - 建议错误码包括：`username_exists`、`email_exists`、`phone_exists`、`invalid_data`、`data_error`、`unknown_error`。
 - `ok=true` 表示注册成功；成功后客户端应返回登录页，不自动登录。
+- 该接口不携带认证头。
 
 示例：
 
@@ -133,6 +144,7 @@
 
 - 用于登录成功后，客户端按登录输入（用户名/邮箱/手机号）单独拉取用户资料。
 - 不在登录响应里耦合用户资料，避免认证响应膨胀。
+- 请求头必须包含全局认证头。
 
 示例：
 
@@ -183,6 +195,7 @@
 - 客户端首页只使用这一条聚合接口。
 - 后端可在服务内部继续拆分实现，但不再作为客户端依赖面暴露。
 - 该接口返回首页所需全部数据，客户端下滑刷新时应直接重新请求它。
+- 请求头必须包含全局认证头。
 
 ### 5.4 站点选项
 
@@ -207,6 +220,7 @@
 
 - 该接口服务于记录页和统计页的站点筛选。
 - 客户端可将第一项固定渲染为“全部站点”。
+- 请求头必须包含全局认证头。
 
 ### 5.5 记录列表（游标）
 
@@ -221,7 +235,7 @@
 - `confidence_min`：最低置信度，可选，取值范围 `0~1`。
 - `cursor`：游标字符串，首次请求为空。
 - `limit`：每次拉取条数，默认 `20`，建议上限 `100`。
-- `sort`：默认 `captured_at_ms_desc`。
+- `sort`：当前约定固定为 `captured_at_ms_desc`。
 
 响应结构：`ClientRecordsCursorResponse`
 
@@ -262,6 +276,7 @@
 - 记录页使用无限滚动 + 游标续拉，不再使用页码分页。
 - 列表项即详情展示数据来源，不再定义单独记录详情接口。
 - `image_url` 等详情字段应在记录列表项中直接返回。
+- 请求头必须包含全局认证头。
 
 ### 5.6 最近七日趋势
 
@@ -303,6 +318,7 @@
 
 - 查询区间最长 30 天。
 - 若超过 30 天，建议返回 400 或 422，并给出可读提示。
+- 请求头必须包含全局认证头。
 
 响应结构：`ClientRangeSummaryResponse`
 

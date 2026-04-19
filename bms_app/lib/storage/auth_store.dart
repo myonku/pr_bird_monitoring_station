@@ -1,4 +1,4 @@
-import 'package:bms_app/auth/auth_models.dart';
+import 'package:bms_app/models/auth_models.dart';
 
 abstract class AuthSessionStore {
   AuthSession? read();

@@ -1,7 +1,8 @@
-import 'package:bms_app/app/app_models.dart';
 import 'package:flutter/material.dart';
+import 'package:bms_app/models/common.dart';
 
 import 'package:bms_app/auth/auth_controller.dart';
+import 'package:bms_app/pages/widgets/info_card.dart';
 
 class MePage extends StatelessWidget {
   const MePage({super.key, required this.authController});
@@ -18,6 +19,7 @@ class MePage extends StatelessWidget {
       ? user.email!.trim()
       : '';
     final headerIdentity = email.isNotEmpty ? email : username;
+    final mode = authController.mode;
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -26,8 +28,8 @@ class MePage extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF0B7A75), Color(0xFF125D98)],
+            gradient: LinearGradient(
+              colors: mode.bannerColors,
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -66,7 +68,7 @@ class MePage extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '$headerIdentity · ${authController.mode.displayName}',
+                      '$headerIdentity · ${mode.displayName}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Colors.white.withValues(alpha: 0.85),
                       ),
@@ -78,20 +80,20 @@ class MePage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-        _InfoCard(
+        InfoCard(
           title: '认证信息',
           children: [
-            _InfoRow(label: '登录状态', value: authController.statusLabel),
-            _InfoRow(label: '当前模式', value: authController.mode.displayName),
-            _InfoRow(
+            InfoRow(label: '登录状态', value: authController.statusLabel),
+            InfoRow(label: '当前模式', value: mode.displayName),
+            InfoRow(
               label: '凭证策略',
               value: authController.credentialPolicyLabel,
             ),
-            _InfoRow(
+            InfoRow(
               label: '凭证存储',
               value: authController.credentialStorageLabel,
             ),
-            _InfoRow(
+            InfoRow(
               label: '登录时间',
               value: authController.signedInAt == null
                   ? '-'
@@ -100,12 +102,12 @@ class MePage extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        _InfoCard(
+        InfoCard(
           title: '用户信息',
           children: [
-            _InfoRow(label: '用户名', value: username),
-            _InfoRow(label: '邮箱', value: email.isEmpty ? '-' : email),
-            _InfoRow(label: '手机号', value: user.phone),
+            InfoRow(label: '用户名', value: username),
+            InfoRow(label: '邮箱', value: email.isEmpty ? '-' : email),
+            InfoRow(label: '手机号', value: user.phone),
           ],
         ),
         const SizedBox(height: 18),
@@ -118,63 +120,6 @@ class MePage extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.title, required this.children});
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          ...children,
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 88,
-            child: Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.black54),
-            ),
-          ),
-          Expanded(
-            child: Text(value, style: Theme.of(context).textTheme.bodyMedium),
-          ),
-        ],
-      ),
     );
   }
 }

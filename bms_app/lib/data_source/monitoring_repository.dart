@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'package:bms_app/models/monitoring_models.dart';
+import 'package:bms_app/models/common.dart';
 
+/// Client business repository contract.
+///
+/// Implementations should receive auth headers from the transport layer in
+/// authenticated mode; registration and no-auth mode may omit them.
 abstract class MonitoringRepository {
   int countTodayMonitoringRecords();
 
@@ -35,6 +39,11 @@ abstract class MonitoringRepository {
     String? stationId,
     String? cursor,
     int limit = 20,
+  });
+
+  Future<List<TrendPoint>> fetchWeeklyTrend({
+    int days = 7,
+    String? stationId,
   });
 
   Future<List<BirdRecord>> fetchRecords({

@@ -1,21 +1,37 @@
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/app/app_controller.dart';
+import 'package:bms_app/auth/client_auth_service.dart';
 import 'package:bms_app/auth/auth_controller.dart';
-import 'package:bms_app/auth/auth_service.dart';
-import 'package:bms_app/data_source/home_data_source.dart';
+import 'package:bms_app/credential_manager/credential_manager.dart';
+import 'package:bms_app/data_source/repository.dart';
 import 'package:bms_app/data_source/monitoring_repository.dart';
-import 'package:bms_app/data_source/records_data_source.dart';
-import 'package:bms_app/data_source/stats_data_source.dart';
-import 'package:bms_app/models/monitoring_models.dart';
-import 'package:bms_app/mock_data/mock_client_repository.dart';
-import 'package:bms_app/pages/login_page.dart';
-import 'package:bms_app/pages/shell_page.dart';
+import 'package:bms_app/transport/transport_client.dart';
+import 'package:bms_app/transport/mock_client.dart';
+import 'package:bms_app/models/common.dart';
+import 'package:bms_app/pages/login/login_page.dart';
+import 'package:bms_app/pages/shell/shell_page.dart';
 
 class BirdMonitoringApp extends StatefulWidget {
-  const BirdMonitoringApp({super.key, this.repository});
+  const BirdMonitoringApp({
+    super.key,
+    this.client,
+    this.initialMode = AppMode.development,
+    this.defaultUser = const AppUser(
+      name: '测试用户',
+      role: '系统演示账号',
+      phone: '138-0000-0000',
+      avatarSeed: 7,
+      userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
+      username: 'demo_user',
+      displayName: '测试用户',
+      email: 'demo_user@example.com',
+    ),
+  });
 
-  final MonitoringRepository? repository;
+  final MonitoringClient? client;
+  final AppMode initialMode;
+  final AppUser defaultUser;
 
   @override
   State<BirdMonitoringApp> createState() => _BirdMonitoringAppState();
@@ -24,32 +40,39 @@ class BirdMonitoringApp extends StatefulWidget {
 class _BirdMonitoringAppState extends State<BirdMonitoringApp> {
   late final AppController controller;
   late final AuthController authController;
-  late final HomeDataSource homeDataSource;
-  late final RecordsDataSource recordsDataSource;
-  late final StatsDataSource statsDataSource;
+  late final MonitoringRepository repository;
   late final Listenable rebuildListenable;
   late final VoidCallback resetIndexOnAuthChange;
 
   @override
   void initState() {
     super.initState();
-    final repository = widget.repository ?? const MockClientRepository();
+    final client = widget.client ?? MockMonitoringClient();
+    final credentials = MonitoringCredentialManager(
+      initialMode: widget.initialMode,
+    );
+    repository = ClientBackedMonitoringRepository(
+      client: client,
+      credentials: credentials,
+      defaultUser: widget.defaultUser,
+    );
     controller = AppController();
-    authController = AuthController(service: MockAuthService(repository));
-    homeDataSource = RepositoryHomeDataSource(repository);
-    recordsDataSource = RepositoryRecordsDataSource(repository);
-    statsDataSource = RepositoryStatsDataSource(repository);
+    authController = AuthController(
+      service: ClientAuthService(
+        client: client,
+        credentials: credentials,
+        defaultUser: widget.defaultUser,
+      ),
+      credentials: credentials,
+    );
     resetIndexOnAuthChange = controller.resetIndex;
     authController.addListener(resetIndexOnAuthChange);
     rebuildListenable = Listenable.merge([controller, authController]);
   }
 
   ThemeData _buildTheme(AppMode mode) {
-    final seedColor = mode == AppMode.development
-        ? const Color(0xFF0B7A75)
-        : const Color(0xFFC97C1D);
     final scheme = ColorScheme.fromSeed(
-      seedColor: seedColor,
+      seedColor: mode.seedColor,
       brightness: Brightness.light,
     );
 
@@ -114,9 +137,7 @@ class _BirdMonitoringAppState extends State<BirdMonitoringApp> {
               ? ShellPage(
                   controller: controller,
                   authController: authController,
-                  homeDataSource: homeDataSource,
-                  recordsDataSource: recordsDataSource,
-                  statsDataSource: statsDataSource,
+                  repository: repository,
                 )
               : LoginPage(authController: authController),
         );

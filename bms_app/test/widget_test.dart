@@ -9,10 +9,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bms_app/app/bms_app.dart';
-import 'package:bms_app/data_source/records_data_source.dart';
-import 'package:bms_app/data_source/stats_data_source.dart';
-import 'package:bms_app/mock_data/mock_client_repository.dart';
-import 'package:bms_app/pages/stats_page.dart';
+import 'package:bms_app/credential_manager/credential_manager.dart';
+import 'package:bms_app/data_source/repository.dart';
+import 'package:bms_app/data_source/monitoring_repository.dart';
+import 'package:bms_app/models/common.dart';
+import 'package:bms_app/pages/stats/stats_page.dart';
+import 'package:bms_app/transport/mock_client.dart';
+
+MonitoringRepository _buildNoAuthRepository() {
+  return ClientBackedMonitoringRepository(
+    client: MockMonitoringClient(),
+    credentials: MonitoringCredentialManager(initialMode: AppMode.noAuth),
+    defaultUser: const AppUser(
+      name: '测试用户',
+      role: '系统演示账号',
+      phone: '138-0000-0000',
+      avatarSeed: 7,
+      userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
+      username: 'demo_user',
+      displayName: '测试用户',
+      email: 'demo_user@example.com',
+    ),
+  );
+}
 
 void main() {
   testWidgets('shows login screen and can enter main shell', (
@@ -22,11 +41,11 @@ void main() {
 
     expect(find.text('鸟类监测系统'), findsOneWidget);
     expect(find.text('登录系统'), findsOneWidget);
-    expect(find.text('development'), findsOneWidget);
+    expect(find.textContaining('测试模式'), findsWidgets);
 
     await tester.enterText(find.byType(TextField).first, 'tester');
     await tester.enterText(find.byType(TextField).at(1), 'secret');
-    await tester.tap(find.text('登录并保存会话'));
+    await tester.tap(find.text('登录并进入系统'));
     await tester.pumpAndSettle();
 
     expect(find.text('首页'), findsWidgets);
@@ -46,8 +65,8 @@ void main() {
     await tester.pumpWidget(const BirdMonitoringApp());
     await tester.enterText(find.byType(TextField).first, 'tester');
     await tester.enterText(find.byType(TextField).at(1), 'secret');
-    await tester.ensureVisible(find.text('登录并保存会话'));
-    await tester.tap(find.text('登录并保存会话'));
+    await tester.ensureVisible(find.text('登录并进入系统'));
+    await tester.tap(find.text('登录并进入系统'));
     await tester.pumpAndSettle();
 
     expect(find.text('首页'), findsWidgets);
@@ -57,14 +76,11 @@ void main() {
   testWidgets('renders the weekly trend chart with visible size', (
     WidgetTester tester,
   ) async {
-    const repository = MockClientRepository();
+    final repository = _buildNoAuthRepository();
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: StatsPage(
-            statsDataSource: RepositoryStatsDataSource(repository),
-            recordsDataSource: RepositoryRecordsDataSource(repository),
-          ),
+          body: StatsPage(repository: repository),
         ),
       ),
     );

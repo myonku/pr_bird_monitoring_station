@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/app/app_controller.dart';
-import 'package:bms_app/data_source/home_data_source.dart';
-import 'package:bms_app/models/monitoring_models.dart';
-import 'package:bms_app/pages/record_detail_page.dart';
+import 'package:bms_app/data_source/monitoring_repository.dart';
+import 'package:bms_app/models/common.dart';
+import 'package:bms_app/pages/records/record_detail_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
     required this.controller,
     required this.mode,
-    required this.dataSource,
+    required this.repository,
   });
 
   final AppController controller;
   final AppMode mode;
-  final HomeDataSource dataSource;
+  final MonitoringRepository repository;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -31,7 +31,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<DashboardSnapshot> _loadDashboard() {
-    return widget.dataSource.fetchDashboardSnapshot();
+    return widget.repository.fetchDashboardSnapshot();
   }
 
   Future<void> _reloadDashboard() async {
@@ -222,9 +222,7 @@ class _OverviewBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = mode == AppMode.development
-        ? const [Color(0xFF0B7A75), Color(0xFF125D98)]
-        : const [Color(0xFFC97C1D), Color(0xFFE09F3E)];
+    final colors = mode.bannerColors;
 
     return Container(
       padding: const EdgeInsets.all(20),

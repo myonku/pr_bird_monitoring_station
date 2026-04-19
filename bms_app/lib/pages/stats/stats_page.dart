@@ -2,19 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'package:bms_app/data_source/records_data_source.dart';
-import 'package:bms_app/data_source/stats_data_source.dart';
-import 'package:bms_app/models/monitoring_models.dart';
+import 'package:bms_app/data_source/monitoring_repository.dart';
+import 'package:bms_app/models/common.dart';
 
 class StatsPage extends StatefulWidget {
   const StatsPage({
     super.key,
-    required this.statsDataSource,
-    required this.recordsDataSource,
+    required this.repository,
   });
 
-  final StatsDataSource statsDataSource;
-  final RecordsDataSource recordsDataSource;
+  final MonitoringRepository repository;
 
   @override
   State<StatsPage> createState() => _StatsPageState();
@@ -23,6 +20,7 @@ class StatsPage extends StatefulWidget {
 class _StatsPageState extends State<StatsPage> {
   static const int _maxSelectableRangeDays = 30;
 
+  Future<List<TrendPoint>>? _weeklyTrendFuture;
   String _selectedStationId = '';
   DateTimeRange? _selectedRange;
   bool _isLoading = true;
@@ -40,12 +38,17 @@ class _StatsPageState extends State<StatsPage> {
       start: today.subtract(const Duration(days: 6)),
       end: today,
     );
+    _weeklyTrendFuture = _loadWeeklyTrend();
     _bootstrap();
+  }
+
+  Future<List<TrendPoint>> _loadWeeklyTrend() {
+    return widget.repository.fetchWeeklyTrend(days: 7);
   }
 
   Future<void> _bootstrap() async {
     try {
-      final stations = await widget.recordsDataSource.fetchStationOptions();
+      final stations = await widget.repository.fetchStationOptions();
       if (!mounted) {
         return;
       }
@@ -74,7 +77,7 @@ class _StatsPageState extends State<StatsPage> {
     });
 
     try {
-      final records = await widget.recordsDataSource.fetchRecords(
+      final records = await widget.repository.fetchRecords(
         dateRange: _selectedRange,
         stationId: _selectedStationId.isEmpty ? null : _selectedStationId,
       );
@@ -216,7 +219,6 @@ class _StatsPageState extends State<StatsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final weeklyTrend = widget.statsDataSource.weeklyTrend;
     final dailyDistribution = _dailyDistribution;
     final speciesShares = _speciesShares;
 
@@ -225,7 +227,22 @@ class _StatsPageState extends State<StatsPage> {
       children: [
         Text('最近一周趋势', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
-        _WeeklyTrendCard(points: weeklyTrend),
+        FutureBuilder<List<TrendPoint>>(
+          future: _weeklyTrendFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const _LoadingPanel();
+            }
+            if (snapshot.hasError) {
+              return _MessagePanel(
+                icon: Icons.error_outline,
+                title: '趋势数据加载失败',
+                description: '${snapshot.error}',
+              );
+            }
+            return _WeeklyTrendCard(points: snapshot.data ?? const []);
+          },
+        ),
         const SizedBox(height: 18),
         Text('时间段查询', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),

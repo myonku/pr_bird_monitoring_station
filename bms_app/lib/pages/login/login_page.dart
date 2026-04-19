@@ -1,8 +1,8 @@
-import 'package:bms_app/models/monitoring_models.dart';
+import 'package:bms_app/models/common.dart';
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/auth/auth_controller.dart';
-import 'package:bms_app/pages/register_page.dart';
+import 'package:bms_app/pages/register/register_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.authController});
@@ -29,10 +29,19 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _submit() async {
-    await widget.authController.signIn(
-      identifier: _identifierController.text,
-      password: _passwordController.text,
-    );
+    try {
+      await widget.authController.signIn(
+        identifier: _identifierController.text,
+        password: _passwordController.text,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('登录信息已失效，请重新登录')),
+      );
+    }
   }
 
   Future<void> _openRegisterPage() async {
@@ -93,11 +102,6 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ),
                             const SizedBox(height: 20),
-                            _ModeSelector(
-                              mode: widget.authController.mode,
-                              onChanged: widget.authController.switchMode,
-                            ),
-                            const SizedBox(height: 20),
                             TextField(
                               controller: _identifierController,
                               decoration: const InputDecoration(
@@ -124,10 +128,7 @@ class _LoginPageState extends State<LoginPage> {
                                 onPressed: _submit,
                                 icon: const Icon(Icons.login),
                                 label: Text(
-                                  widget.authController.mode ==
-                                          AppMode.development
-                                      ? '登录并保存凭证'
-                                      : '登录进入演示模式',
+                                  '登录并进入系统',
                                 ),
                               ),
                             ),
@@ -140,14 +141,6 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            Text(
-                              widget.authController.mode == AppMode.development
-                                  ? 'development 模式下会生成 mock access / refresh token，并单独拉取用户资料。'
-                                  : 'no-auth 模式下仅进入业务页面，不保存任何凭证。',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: Colors.black54,
-                              ),
-                            ),
                           ],
                         ),
                       ),
@@ -170,10 +163,7 @@ class _HeroBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDevelopment = mode == AppMode.development;
-    final colors = isDevelopment
-        ? const [Color(0xFF0B7A75), Color(0xFF125D98)]
-        : const [Color(0xFFC97C1D), Color(0xFFE09F3E)];
+    final colors = mode.bannerColors;
 
     return Container(
       width: double.infinity,
@@ -217,33 +207,6 @@ class _HeroBanner extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ModeSelector extends StatelessWidget {
-  const _ModeSelector({required this.mode, required this.onChanged});
-
-  final AppMode mode;
-  final ValueChanged<AppMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: [
-        ChoiceChip(
-          label: const Text('development'),
-          selected: mode == AppMode.development,
-          onSelected: (_) => onChanged(AppMode.development),
-        ),
-        ChoiceChip(
-          label: const Text('no-auth'),
-          selected: mode == AppMode.noAuth,
-          onSelected: (_) => onChanged(AppMode.noAuth),
-        ),
-      ],
     );
   }
 }

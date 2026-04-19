@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from msgspec import Struct
 
 
@@ -30,7 +32,7 @@ class ClientHomeSnapshotRequest(Struct, kw_only=True):
 	用于 `GET /v1/client/home/summary`，当前仅保留 `device_id` 作为可选过滤/观测字段。
 	"""
 
-	device_id: str = ""
+	device_id: str | None = None
 
 
 class ClientRecordStationOptionsRequest(Struct, kw_only=True):
@@ -39,7 +41,7 @@ class ClientRecordStationOptionsRequest(Struct, kw_only=True):
 	用于 `GET /v1/client/records/stations`，可控制是否包含离线站点。
 	"""
 
-	include_offline: bool = True
+	include_offline: bool | None = None
 
 
 class ClientRecordsCursorRequest(Struct, kw_only=True):
@@ -50,12 +52,12 @@ class ClientRecordsCursorRequest(Struct, kw_only=True):
 
 	start_at_ms: int | None = None
 	end_at_ms: int | None = None
-	device_id: str = ""
-	keyword: str = ""
+	device_id: str | None = None
+	keyword: str | None = None
 	confidence_min: float | None = None
-	cursor: str = ""
+	cursor: str | None = None
 	limit: int = 20
-	sort: str = "captured_at_ms_desc"
+	sort: Literal["captured_at_ms_desc"] = "captured_at_ms_desc"
 
 
 class ClientWeeklyTrendRequest(Struct, kw_only=True):
@@ -65,7 +67,7 @@ class ClientWeeklyTrendRequest(Struct, kw_only=True):
 	"""
 
 	days: int = 7
-	device_id: str = ""
+	device_id: str | None = None
 
 
 class ClientRangeSummaryRequest(Struct, kw_only=True):
@@ -76,4 +78,4 @@ class ClientRangeSummaryRequest(Struct, kw_only=True):
 
 	start_at_ms: int = 0
 	end_at_ms: int = 0
-	device_id: str = ""
+	device_id: str | None = None

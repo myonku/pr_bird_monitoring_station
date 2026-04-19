@@ -357,11 +357,63 @@
 
 ---
 
-## 10. 页面与数据来源映射
+## 10. 分层设计
+
+客户端代码按以下五层组织：
+
+### 10.1 页面层
+
+页面层只负责布局、交互和渲染，不直接拼接请求、不直接处理 token 生命周期。
+
+- 登录页、首页、记录页、记录详情页、统计页、个人中心页都放在 `lib/pages/<page>/` 下。
+- 通用组件继续放在 `lib/pages/widgets/` 下。
+- 页面只依赖数据层暴露的渲染数据，不直接依赖通信细节。
+
+### 10.2 数据层
+
+数据层负责向页面提供可渲染的数据，同时协调凭证管理模块与通信层。
+
+- 数据层持有 `MonitoringCredentialManager` 和 `MonitoringClient`。
+- 登录时由数据层调用认证接口，收到的凭证写入凭证管理模块。
+- 业务请求发起前，数据层向凭证管理模块请求认证头，再注入通信层的请求选项。
+- 当凭证管理模块判断 access token 过期、refresh token 即将失效或会话无效时，数据层通过通信层重新刷新凭证。
+- 数据层对页面只暴露一个统一实现：`MonitoringRepository`。
+- 页面层不得绕过数据层直接访问通信层，也不得直接读取本地 mock 数据。
+
+### 10.3 模型层
+
+模型层只放纯数据定义，不承载页面逻辑和传输逻辑。
+
+- `lib/models/common/models.dart` 放客户端展示模型、业务模型和模式信息。
+- `lib/models/client_api_models.dart` 放客户端请求选项和通信异常定义。
+- `lib/models/transport/client_req_dto.dart` 与 `lib/models/transport/client_resp_dto.dart` 放接口 DTO。
+
+### 10.4 通信层
+
+通信层对上提供一套统一接口，分真实通信与 mock 两套实现。
+
+- `lib/transport/transport_client.dart` 定义统一接口。
+- `lib/transport/http_client.dart` 与 `lib/transport/mock_client.dart` 提供两套实现。
+- 通信层同时承接业务请求和认证请求。
+- 除注册接口外，所有业务请求都必须允许接收认证头；认证头由数据层传入通信层，不写入业务请求 DTO。
+- 本地 mock 数据只允许在 `mock_monitoring_client` 路径内被读取和转换，其他层禁止直接访问 `mock_data`。
+- no-auth 模式下，通信链路中的登录请求默认成功，业务请求允许接收空认证头。
+
+### 10.5 凭证管理模块
+
+凭证管理模块独立于页面和数据源，负责 session、token 与认证头组装。
+
+- `lib/auth/credential_manager.dart` 负责保存 session、判断过期、触发刷新、构造认证头。
+- `lib/auth/auth_session_store.dart` 负责会话持久化策略。
+- `lib/auth/client_auth_service.dart` 负责把认证请求转为通信层调用，并把返回凭证写回凭证管理模块。
+- 凭证管理模块不关心凭证来源（mock 或真实后端），只接收上层传入的认证响应并维护生命周期。
+- no-auth 模式下凭证管理模块只返回空认证头，不触发 token 刷新逻辑。
+
+### 10.6 页面与数据来源映射
 
 | 页面       | 当前数据来源 | 后续数据来源 |
 | ---------- | ------------ | ------------ |
-| 登录页     | mock         | 后端登录接口 |
+| 登录页     | mock         | 认证接口     |
 | 首页       | mock         | 首页概览接口 |
 | 记录页     | mock         | 记录列表接口 |
 | 记录详情页 | mock         | 记录详情接口 |
@@ -370,62 +422,25 @@
 
 ---
 
-## 11. 推荐项目结构
-
-```text
-lib/
-  main.dart
-  app.dart
-  routes/
-  config/
-  core/
-    network/
-    storage/
-    mock/
-    theme/
-    utils/
-  features/
-    auth/
-      login_page.dart
-      auth_controller.dart
-      auth_service.dart
-    home/
-      home_page.dart
-      home_repository.dart
-      home_controller.dart
-    records/
-      record_list_page.dart
-      record_detail_page.dart
-      records_repository.dart
-    stats/
-      stats_page.dart
-      stats_repository.dart
-    me/
-      me_page.dart
-      profile_page.dart
-```
-
----
-
-## 12. 状态管理建议
+## 11. 状态管理建议
 
 建议将状态分成三类：
 
-### 12.1 认证状态
+### 11.1 认证状态
 
 - 是否已登录
 - 当前模式
 - token 是否存在
 - 是否正在刷新
 
-### 12.2 业务状态
+### 11.2 业务状态
 
 - 首页数据
 - 记录列表数据
 - 统计图表数据
 - 用户信息
 
-### 12.3 UI 状态
+### 11.3 UI 状态
 
 - loading
 - empty
@@ -434,7 +449,7 @@ lib/
 
 ---
 
-## 13. 开发优先级
+## 12. 开发优先级
 
 ### P0
 
@@ -468,9 +483,9 @@ lib/
 
 ---
 
-## 14. 接口预留建议
+## 13. 接口预留建议
 
-虽然当前全部使用 mock data，但建议从一开始就按真实接口形态封装 repository/service 层，避免后续改动页面。
+虽然当前全部使用 mock data，但建议从一开始就按真实接口形态封装数据层和通信层，避免后续改动页面。
 
 建议预留接口类型：
 
@@ -489,11 +504,11 @@ lib/
 - 统计数据
 - 修改密码
 
-更细的客户端请求路径、请求体、响应体和字段语义草案见 `CLIENT_BACKEND_INTERFACE_DRAFT.md`。
+更细的客户端请求路径、请求体、响应体和字段语义约定见 `CLIENT_BACKEND_INTERFACE_DRAFT.md`。
 
 ---
 
-## 15. no-auth 模式下的特殊约束
+## 14. no-auth 模式下的特殊约束
 
 为了符合测试要求，no-auth 模式需满足：
 
@@ -506,7 +521,7 @@ lib/
 
 ---
 
-## 16. 开发验收标准
+## 15. 开发验收标准
 
 客户端原型完成后，至少满足以下条件：
 
@@ -520,7 +535,7 @@ lib/
 
 ---
 
-## 17. 总结
+## 16. 总结
 
 本原型设计的核心策略是：
 

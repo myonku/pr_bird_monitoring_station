@@ -236,7 +236,3 @@ class EdgeGatewayAuthHttpClient(IEdgeGatewayAuthClient):
             tokens=cls._parse_token_bundle(payload.get("tokens") or {}),
             failure_reason=str(payload.get("failure_reason", "")),
         )
-
-
-# 向后兼容旧命名；后续应直接使用 EdgeAuthCoordinator。
-EdgeAuthTransportCoordinator = EdgeAuthCoordinator

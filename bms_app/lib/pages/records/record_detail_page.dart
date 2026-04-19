@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:bms_app/models/monitoring_models.dart';
+import 'package:bms_app/models/common.dart';
 
 class RecordDetailPage extends StatelessWidget {
   const RecordDetailPage({super.key, required this.record});

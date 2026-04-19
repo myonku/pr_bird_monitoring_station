@@ -2,30 +2,24 @@ import 'package:flutter/material.dart';
 
 import 'package:bms_app/app/app_controller.dart';
 import 'package:bms_app/auth/auth_controller.dart';
-import 'package:bms_app/data_source/home_data_source.dart';
-import 'package:bms_app/data_source/records_data_source.dart';
-import 'package:bms_app/data_source/stats_data_source.dart';
-import 'package:bms_app/models/monitoring_models.dart';
-import 'package:bms_app/pages/home_page.dart';
-import 'package:bms_app/pages/me_page.dart';
-import 'package:bms_app/pages/records_page.dart';
-import 'package:bms_app/pages/stats_page.dart';
+import 'package:bms_app/data_source/monitoring_repository.dart';
+import 'package:bms_app/models/common.dart';
+import 'package:bms_app/pages/home/home_page.dart';
+import 'package:bms_app/pages/me/me_page.dart';
+import 'package:bms_app/pages/records/records_page.dart';
+import 'package:bms_app/pages/stats/stats_page.dart';
 
 class ShellPage extends StatelessWidget {
   const ShellPage({
     super.key,
     required this.controller,
     required this.authController,
-    required this.homeDataSource,
-    required this.recordsDataSource,
-    required this.statsDataSource,
+    required this.repository,
   });
 
   final AppController controller;
   final AuthController authController;
-  final HomeDataSource homeDataSource;
-  final RecordsDataSource recordsDataSource;
-  final StatsDataSource statsDataSource;
+  final MonitoringRepository repository;
 
   @override
   Widget build(BuildContext context) {
@@ -33,13 +27,10 @@ class ShellPage extends StatelessWidget {
       HomePage(
         controller: controller,
         mode: authController.mode,
-        dataSource: homeDataSource,
+        repository: repository,
       ),
-      RecordsPage(dataSource: recordsDataSource),
-      StatsPage(
-        statsDataSource: statsDataSource,
-        recordsDataSource: recordsDataSource,
-      ),
+      RecordsPage(repository: repository),
+      StatsPage(repository: repository),
       MePage(authController: authController),
     ];
 
@@ -62,9 +53,9 @@ class ShellPage extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  authController.mode == AppMode.development ? 'DEV' : 'NA',
+                  authController.mode.displayName,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: Theme.of(context).colorScheme.onPrimaryContainer,
                   ),

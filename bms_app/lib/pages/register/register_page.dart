@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/auth/auth_controller.dart';
-import 'package:bms_app/models/monitoring_models.dart';
+import 'package:bms_app/models/common.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key, required this.authController});
