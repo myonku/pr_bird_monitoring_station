@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/app/app_controller.dart';
-import 'package:bms_app/auth/client_auth_service.dart';
-import 'package:bms_app/auth/auth_controller.dart';
+import 'package:bms_app/controller/controller.dart';
 import 'package:bms_app/credential_manager/credential_manager.dart';
-import 'package:bms_app/data_source/repository.dart';
-import 'package:bms_app/data_source/monitoring_repository.dart';
+import 'package:bms_app/storage/storage.dart';
 import 'package:bms_app/transport/transport_client.dart';
 import 'package:bms_app/transport/mock_client.dart';
 import 'package:bms_app/models/common.dart';
@@ -16,6 +14,7 @@ class BirdMonitoringApp extends StatefulWidget {
   const BirdMonitoringApp({
     super.key,
     this.client,
+    this.sessionStore,
     this.initialMode = AppMode.development,
     this.defaultUser = const AppUser(
       name: '测试用户',
@@ -30,6 +29,7 @@ class BirdMonitoringApp extends StatefulWidget {
   });
 
   final MonitoringClient? client;
+  final AuthSessionStore? sessionStore;
   final AppMode initialMode;
   final AppUser defaultUser;
 
@@ -39,8 +39,7 @@ class BirdMonitoringApp extends StatefulWidget {
 
 class _BirdMonitoringAppState extends State<BirdMonitoringApp> {
   late final AppController controller;
-  late final AuthController authController;
-  late final MonitoringRepository repository;
+  late final MonitoringController monitoringController;
   late final Listenable rebuildListenable;
   late final VoidCallback resetIndexOnAuthChange;
 
@@ -50,24 +49,17 @@ class _BirdMonitoringAppState extends State<BirdMonitoringApp> {
     final client = widget.client ?? MockMonitoringClient();
     final credentials = MonitoringCredentialManager(
       initialMode: widget.initialMode,
+      sessionStore: widget.sessionStore,
     );
-    repository = ClientBackedMonitoringRepository(
+    controller = AppController();
+    monitoringController = MonitoringController(
       client: client,
       credentials: credentials,
       defaultUser: widget.defaultUser,
     );
-    controller = AppController();
-    authController = AuthController(
-      service: ClientAuthService(
-        client: client,
-        credentials: credentials,
-        defaultUser: widget.defaultUser,
-      ),
-      credentials: credentials,
-    );
     resetIndexOnAuthChange = controller.resetIndex;
-    authController.addListener(resetIndexOnAuthChange);
-    rebuildListenable = Listenable.merge([controller, authController]);
+    monitoringController.addListener(resetIndexOnAuthChange);
+    rebuildListenable = Listenable.merge([controller, monitoringController]);
   }
 
   ThemeData _buildTheme(AppMode mode) {
@@ -118,8 +110,8 @@ class _BirdMonitoringAppState extends State<BirdMonitoringApp> {
 
   @override
   void dispose() {
-    authController.removeListener(resetIndexOnAuthChange);
-    authController.dispose();
+    monitoringController.removeListener(resetIndexOnAuthChange);
+    monitoringController.dispose();
     controller.dispose();
     super.dispose();
   }
@@ -132,14 +124,13 @@ class _BirdMonitoringAppState extends State<BirdMonitoringApp> {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: '鸟类监测系统',
-          theme: _buildTheme(authController.mode),
-          home: authController.isAuthenticated
+          theme: _buildTheme(monitoringController.mode),
+          home: monitoringController.isAuthenticated
               ? ShellPage(
                   controller: controller,
-                  authController: authController,
-                  repository: repository,
+                  monitoringController: monitoringController,
                 )
-              : LoginPage(authController: authController),
+              : LoginPage(monitoringController: monitoringController),
         );
       },
     );

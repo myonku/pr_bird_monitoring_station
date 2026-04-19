@@ -1,12 +1,8 @@
 import 'package:bms_app/models/auth_models.dart';
+import 'package:bms_app/storage/storage.dart';
 
-abstract class AuthSessionStore {
-  AuthSession? read();
-
-  Future<void> write(AuthSession session);
-
-  Future<void> clear();
-}
+export 'persistent_auth_session_store_stub.dart'
+    if (dart.library.io) 'persistent_auth_session_store_io.dart';
 
 class MemoryAuthSessionStore implements AuthSessionStore {
   MemoryAuthSessionStore();

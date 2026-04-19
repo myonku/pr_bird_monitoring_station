@@ -21,8 +21,8 @@
 - 客户端页面中的配色、图标、展示文案和局部排序规则由本地决定，不要求后端返回。
 - 客户端运行模式不改变本约定定义的业务响应结构，只影响本地调试、联调和日志标记。
 - 当前约定优先覆盖客户端已经实际使用的数据：首页概览、设备列表、记录列表、最近一周趋势、时间段统计。客户端 UI 可以把 `device_name` 继续显示成“站点”。
-- 登录、刷新令牌、当前用户等认证相关接口不在本约定范围内；注册作为业务接口纳入本约定。
-- 除注册接口外，所有业务请求都必须在发送前附带认证头；认证头由客户端传输层或网关层统一注入，不写入业务请求 DTO。
+- 登录、刷新令牌、当前用户等认证相关接口单独纳入 5.3 认证约定；注册作为业务接口纳入本约定。
+- 除注册、登录和刷新会话接口外，所有业务请求都必须在发送前附带认证头；认证头由客户端传输层或网关层统一注入，不写入业务请求 DTO。
 
 ## 3. 通用约定
 
@@ -45,7 +45,7 @@
 
 ### 3.3 认证头
 
-除注册接口外，客户端调用业务接口前必须携带以下认证头，字段名和边缘端保持一致：
+除注册、登录和刷新会话接口外，客户端调用业务接口前必须携带以下认证头，字段名和边缘端保持一致：
 
 - `Authorization`
 - `x-downstream-session-id`
@@ -70,10 +70,12 @@
 
 ## 4. 业务请求与响应模型
 
-`data_server/src/models/business/client_req_dto.py` 定义本次联调的请求结构，`data_server/src/models/business/client_resp_dto.py` 保持既有响应结构不变。
+`data_server/src/models/business/client_req_dto.py` 与 `data_server/src/models/business/client_resp_dto.py` 负责业务接口的请求与响应结构；客户端认证相关的 `ClientSignInRequest`、`ClientRefreshSessionRequest` 和 `ClientAuthCredentialsResponse` 由客户端 transport 层持有，但字段语义必须与后端保持一致。
 
 ### 4.1 请求模型对照
 
+- `ClientSignInRequest`：登录接口提交的登录标识和密码。
+- `ClientRefreshSessionRequest`：刷新会话接口提交的会话 ID、刷新令牌、令牌 ID、令牌族 ID、主体 ID 和作用域。
 - `ClientUserProfileRequest`：登录后拉取用户资料，按登录标识查询。
 - `ClientRegisterRequest`：注册页提交的用户名、邮箱、手机号、密码。
 - `ClientHomeSnapshotRequest`：首页概览请求，当前仅保留可选的 `device_id`。
@@ -84,10 +86,11 @@
 
 ### 4.2 响应模型对照
 
-`data_server/src/models/business/client_resp_dto.py` 是本次联调的响应结构来源，后端服务接口直接返回这些 Response 模型，客户端再映射为本地展示模型。
+`data_server/src/models/business/client_resp_dto.py` 是本次联调的业务响应结构来源，后端服务接口直接返回这些 Response 模型，客户端再映射为本地展示模型；认证响应 `ClientAuthCredentialsResponse` 由客户端 transport 层持有。
 
-### 4.1 模型对照
+### 4.3 客户端响应模型对照
 
+- `ClientAuthCredentialsResponse` 对应客户端登录 / 刷新会话返回的认证凭证。
 - `ClientDashboardSnapshotResponse` 对应客户端首页的 `DashboardSnapshot`
 - `ClientBirdRecordResponse` 对应客户端记录页 / 详情页的 `BirdRecord`
 - `ClientRecordStationOptionResponse` 对应客户端记录页 / 统计页的 `RecordStationOption`
@@ -196,6 +199,52 @@
 - 后端可在服务内部继续拆分实现，但不再作为客户端依赖面暴露。
 - 该接口返回首页所需全部数据，客户端下滑刷新时应直接重新请求它。
 - 请求头必须包含全局认证头。
+
+### 5.3 认证
+
+`POST /v1/client/auth/sign-in`
+
+请求结构：`ClientSignInRequest`
+
+响应结构：`ClientAuthCredentialsResponse`
+
+说明：
+
+- 用于客户端登录，`identifier` 可以由用户名、邮箱或手机号承担，`password` 为明文密码。
+- 返回的认证凭证由客户端保存，并用于后续业务请求拼装认证头。
+- 该接口在客户端启动认证流程中先于业务页调用，不依赖已有业务认证头。
+
+示例：
+
+```json
+{
+  "access_token": "access-token",
+  "refresh_token": "refresh-token",
+  "downstream_token": "downstream-token",
+  "token_type": "Bearer",
+  "session_id": "session-id",
+  "token_id": "token-id",
+  "principal_id": "principal-id",
+  "token_family_id": "family-id",
+  "scopes": ["client:read"],
+  "issued_at_ms": 1712793720000,
+  "access_expires_at_ms": 1712797320000,
+  "refresh_expires_at_ms": 1715385720000,
+  "persisted": true
+}
+```
+
+`POST /v1/client/auth/refresh-session`
+
+请求结构：`ClientRefreshSessionRequest`
+
+响应结构：`ClientAuthCredentialsResponse`
+
+说明：
+
+- 用于会话续期，客户端应直接提交本地缓存中的会话标识和刷新令牌。
+- 后端可以基于 `session_id`、`refresh_token` 和 `token_id` 重新签发访问凭证。
+- 该接口不携带业务认证头，输入来自本地持久化会话。
 
 ### 5.4 站点选项
 

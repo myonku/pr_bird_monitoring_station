@@ -12,6 +12,7 @@ String _formatDateTimeMs(int millisecondsSinceEpoch) {
   return '$year-$month-$day $hour:$minute';
 }
 
+enum MonitoringDataSource { mockClient, httpClient }
 enum AppMode { development, noAuth }
 
 extension AppModeLabel on AppMode {

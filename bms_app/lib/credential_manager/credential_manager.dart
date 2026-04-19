@@ -1,21 +1,34 @@
 import 'package:bms_app/models/auth_models.dart';
-import 'package:bms_app/storage/auth_store.dart';
+import 'package:bms_app/storage/storage.dart';
 import 'package:bms_app/models/common.dart';
+import 'package:bms_app/storage/auth_stores.dart';
 
 class MonitoringCredentialManager {
   MonitoringCredentialManager({
     AppMode initialMode = AppMode.development,
     AuthSessionStore? sessionStore,
+  }) : this._internal(
+         initialMode: initialMode,
+         persistentSessionStore: sessionStore ?? MemoryAuthSessionStore(),
+       );
+
+  MonitoringCredentialManager._internal({
+    required AppMode initialMode,
+    required AuthSessionStore persistentSessionStore,
   })  : _mode = initialMode,
+        _persistentSessionStore = persistentSessionStore,
         _sessionStore = initialMode == AppMode.noAuth
-            ? const DisabledAuthSessionStore()
-            : sessionStore ?? MemoryAuthSessionStore() {
+            ? _disabledSessionStore
+            : persistentSessionStore {
     _session = _sessionStore.read();
   }
 
   static const Duration _accessTokenRefreshSkew = Duration(seconds: 30);
+  static const AuthSessionStore _disabledSessionStore =
+      DisabledAuthSessionStore();
 
   AppMode _mode;
+  final AuthSessionStore _persistentSessionStore;
   AuthSessionStore _sessionStore;
   AuthSession? _session;
 
@@ -43,8 +56,8 @@ class MonitoringCredentialManager {
     _mode = nextMode;
     _session = null;
     _sessionStore = nextMode == AppMode.noAuth
-        ? const DisabledAuthSessionStore()
-        : MemoryAuthSessionStore();
+        ? _disabledSessionStore
+        : _persistentSessionStore;
     await _sessionStore.clear();
   }
 

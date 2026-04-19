@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
-import 'package:bms_app/data_source/monitoring_repository.dart';
+import 'package:bms_app/controller/controller.dart';
 import 'package:bms_app/models/common.dart';
 import 'package:bms_app/pages/records/record_detail_page.dart';
 
 class RecordsPage extends StatefulWidget {
-  const RecordsPage({super.key, required this.repository});
+  const RecordsPage({super.key, required this.monitoringController});
 
-  final MonitoringRepository repository;
+  final MonitoringController monitoringController;
 
   @override
   State<RecordsPage> createState() => _RecordsPageState();
@@ -47,7 +47,7 @@ class _RecordsPageState extends State<RecordsPage> {
 
   Future<void> _bootstrap() async {
     try {
-      final stations = await widget.repository.fetchStationOptions();
+      final stations = await widget.monitoringController.fetchStationOptions();
       if (!mounted) {
         return;
       }
@@ -106,8 +106,14 @@ class _RecordsPageState extends State<RecordsPage> {
     });
 
     try {
-      final page = await widget.repository.fetchRecordsByCursor(
-        dateRange: _selectedRange,
+      final effectiveRange =
+          _selectedRange ??
+          DateTimeRange(
+            start: DateTime.fromMillisecondsSinceEpoch(0),
+            end: DateUtils.dateOnly(DateTime.now()),
+          );
+      final page = await widget.monitoringController.fetchRecordsByCursor(
+        dateRange: effectiveRange,
         stationId: _selectedStationId.isEmpty ? null : _selectedStationId,
         cursor: _nextCursor,
         limit: 20,

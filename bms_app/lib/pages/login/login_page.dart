@@ -1,13 +1,13 @@
 import 'package:bms_app/models/common.dart';
 import 'package:flutter/material.dart';
 
-import 'package:bms_app/auth/auth_controller.dart';
+import 'package:bms_app/controller/controller.dart';
 import 'package:bms_app/pages/register/register_page.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.authController});
+  const LoginPage({super.key, required this.monitoringController});
 
-  final AuthController authController;
+  final MonitoringController monitoringController;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -30,7 +30,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _submit() async {
     try {
-      await widget.authController.signIn(
+      await widget.monitoringController.signIn(
         identifier: _identifierController.text,
         password: _passwordController.text,
       );
@@ -47,7 +47,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _openRegisterPage() async {
     final registeredUsername = await Navigator.of(context).push<String>(
       MaterialPageRoute(
-        builder: (_) => RegisterPage(authController: widget.authController),
+        builder: (_) => RegisterPage(monitoringController: widget.monitoringController),
       ),
     );
 
@@ -85,7 +85,7 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _HeroBanner(mode: widget.authController.mode),
+                    _HeroBanner(mode: widget.monitoringController.mode),
                     const SizedBox(height: 24),
                     Card(
                       child: Padding(

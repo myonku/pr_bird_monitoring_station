@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-import 'package:bms_app/auth/auth_controller.dart';
+import 'package:bms_app/controller/controller.dart';
 import 'package:bms_app/models/common.dart';
 
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key, required this.authController});
+  const RegisterPage({super.key, required this.monitoringController});
 
-  final AuthController authController;
+  final MonitoringController monitoringController;
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -55,7 +55,7 @@ class _RegisterPageState extends State<RegisterPage> {
     });
 
     try {
-      final result = await widget.authController.register(
+      final result = await widget.monitoringController.register(
         username: _usernameController.text,
         email: _emailController.text,
         phone: _phoneController.text,

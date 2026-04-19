@@ -2,16 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'package:bms_app/data_source/monitoring_repository.dart';
+import 'package:bms_app/controller/controller.dart';
 import 'package:bms_app/models/common.dart';
 
 class StatsPage extends StatefulWidget {
-  const StatsPage({
-    super.key,
-    required this.repository,
-  });
+  const StatsPage({super.key, required this.monitoringController});
 
-  final MonitoringRepository repository;
+  final MonitoringController monitoringController;
 
   @override
   State<StatsPage> createState() => _StatsPageState();
@@ -43,12 +40,12 @@ class _StatsPageState extends State<StatsPage> {
   }
 
   Future<List<TrendPoint>> _loadWeeklyTrend() {
-    return widget.repository.fetchWeeklyTrend(days: 7);
+    return widget.monitoringController.fetchWeeklyTrend(days: 7);
   }
 
   Future<void> _bootstrap() async {
     try {
-      final stations = await widget.repository.fetchStationOptions();
+      final stations = await widget.monitoringController.fetchStationOptions();
       if (!mounted) {
         return;
       }
@@ -77,7 +74,7 @@ class _StatsPageState extends State<StatsPage> {
     });
 
     try {
-      final records = await widget.repository.fetchRecords(
+      final records = await widget.monitoringController.fetchRecords(
         dateRange: _selectedRange,
         stationId: _selectedStationId.isEmpty ? null : _selectedStationId,
       );

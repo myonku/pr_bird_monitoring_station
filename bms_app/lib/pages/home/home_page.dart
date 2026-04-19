@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/app/app_controller.dart';
-import 'package:bms_app/data_source/monitoring_repository.dart';
+import 'package:bms_app/controller/controller.dart';
 import 'package:bms_app/models/common.dart';
 import 'package:bms_app/pages/records/record_detail_page.dart';
 
@@ -10,12 +10,12 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.controller,
     required this.mode,
-    required this.repository,
+    required this.monitoringController,
   });
 
   final AppController controller;
   final AppMode mode;
-  final MonitoringRepository repository;
+  final MonitoringController monitoringController;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -31,7 +31,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<DashboardSnapshot> _loadDashboard() {
-    return widget.repository.fetchDashboardSnapshot();
+    return widget.monitoringController.fetchDashboardSnapshot();
   }
 
   Future<void> _reloadDashboard() async {
@@ -71,8 +71,9 @@ class _HomePageState extends State<HomePage> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           CircleAvatar(
-                            backgroundColor:
-                                Theme.of(context).colorScheme.primaryContainer,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primaryContainer,
                             child: Icon(
                               Icons.refresh_outlined,
                               color: Theme.of(context).colorScheme.primary,
@@ -87,11 +88,8 @@ class _HomePageState extends State<HomePage> {
                           Text(
                             '${snapshot.error}',
                             textAlign: TextAlign.center,
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodyMedium?.copyWith(
-                                  color: Colors.black54,
-                                ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.black54),
                           ),
                           const SizedBox(height: 14),
                           FilledButton.icon(

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/app/app_controller.dart';
-import 'package:bms_app/auth/auth_controller.dart';
-import 'package:bms_app/data_source/monitoring_repository.dart';
+import 'package:bms_app/controller/controller.dart';
 import 'package:bms_app/models/common.dart';
 import 'package:bms_app/pages/home/home_page.dart';
 import 'package:bms_app/pages/me/me_page.dart';
@@ -13,25 +12,23 @@ class ShellPage extends StatelessWidget {
   const ShellPage({
     super.key,
     required this.controller,
-    required this.authController,
-    required this.repository,
+    required this.monitoringController,
   });
 
   final AppController controller;
-  final AuthController authController;
-  final MonitoringRepository repository;
+  final MonitoringController monitoringController;
 
   @override
   Widget build(BuildContext context) {
     final pages = [
       HomePage(
         controller: controller,
-        mode: authController.mode,
-        repository: repository,
+        mode: monitoringController.mode,
+        monitoringController: monitoringController,
       ),
-      RecordsPage(repository: repository),
-      StatsPage(repository: repository),
-      MePage(authController: authController),
+      RecordsPage(monitoringController: monitoringController),
+      StatsPage(monitoringController: monitoringController),
+      MePage(monitoringController: monitoringController),
     ];
 
     const titles = ['首页', '记录', '统计', '我的'];
@@ -53,7 +50,7 @@ class ShellPage extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  authController.mode.displayName,
+                  monitoringController.mode.displayName,
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
