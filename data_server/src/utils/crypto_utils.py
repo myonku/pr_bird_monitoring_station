@@ -2,9 +2,12 @@ import base64
 import hashlib
 import hmac
 import os
+import secrets
 import struct
 from typing import Literal
 
+import bcrypt
+from argon2.low_level import Type, hash_secret_raw
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import (
@@ -26,6 +29,65 @@ KEYSIZE_RSA = Literal[2048, 4096]  # RSA 密钥长度（以位为单位）
 
 class CryptoUtils:
     """提供对称加密、非对称加密、签名验签等常用密码学操作的工具类。"""
+
+    @staticmethod
+    def hash_password(plain_text: str, algorithm: str | None = None) -> tuple[str, str]:
+        """按指定算法或随机算法生成密码哈希。"""
+        normalized = (algorithm or "").strip().lower()
+        if not normalized:
+            normalized = secrets.choice(("argon2", "bcrypt"))
+
+        if normalized in {"argon2", "argon2id"}:
+            return "argon2", CryptoUtils.argon2_hash(plain_text)
+
+        if normalized in {"", "bcrypt"}:
+            return "bcrypt", CryptoUtils.bcrypt_hash(plain_text)
+
+        raise ValueError(f"unsupported password hash algorithm: {algorithm}")
+
+    @staticmethod
+    def argon2_hash(plain_text: str) -> str:
+        """使用 Argon2id 对字符串进行哈希处理，返回 Base64 编码的盐值与哈希值。"""
+        salt = os.urandom(16)
+        hash_bytes = hash_secret_raw(
+            plain_text.encode("utf-8"),
+            salt,
+            time_cost=1,
+            memory_cost=64 * 1024,
+            parallelism=4,
+            hash_len=32,
+            type=Type.ID,
+        )
+        return base64.b64encode(salt + hash_bytes).decode("ascii")
+
+    @staticmethod
+    def bcrypt_hash(plain_text: str) -> str:
+        """使用 bcrypt 对字符串进行哈希处理，返回 Base64 编码的哈希值。"""
+        hash_bytes = bcrypt.hashpw(
+            plain_text.encode("utf-8"),
+            bcrypt.gensalt(rounds=10),
+        )
+        return base64.b64encode(hash_bytes).decode("ascii")
+
+    @staticmethod
+    def verify_password_hash(algorithm: str, stored_hash: str, plain_text: str) -> None:
+        """按给定算法校验密码哈希，失败时抛出 ValueError。"""
+        normalized = (algorithm or "").strip().lower()
+        if normalized in {"argon2", "argon2id"}:
+            if CryptoUtils._verify_argon2_hash(stored_hash, plain_text):
+                return
+            raise ValueError("invalid credentials")
+
+        if normalized in {"", "bcrypt"}:
+            if CryptoUtils._verify_bcrypt_hash(stored_hash, plain_text):
+                return
+            raise ValueError("invalid credentials")
+
+        if CryptoUtils._verify_bcrypt_hash(stored_hash, plain_text):
+            return
+        if CryptoUtils._verify_argon2_hash(stored_hash, plain_text):
+            return
+        raise ValueError("invalid credentials")
 
     @staticmethod
     def derive_random_symmetric_key(
@@ -317,6 +379,45 @@ class CryptoUtils:
             return serialization.load_pem_private_key(private_key_pem, password=None)
         except ValueError as exc:
             raise ValueError("unsupported private key format") from exc
+
+    @staticmethod
+    def _verify_bcrypt_hash(stored_hash: str, plain_text: str) -> bool:
+        hash_bytes = CryptoUtils._decode_maybe_base64(stored_hash)
+        if len(hash_bytes) == 0:
+            return False
+        try:
+            return bcrypt.checkpw(plain_text.encode("utf-8"), hash_bytes)
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _verify_argon2_hash(stored_hash: str, plain_text: str) -> bool:
+        decoded = CryptoUtils._decode_maybe_base64(stored_hash)
+        if len(decoded) < 48:
+            return False
+        salt = decoded[:16]
+        expected = decoded[16:]
+        computed = hash_secret_raw(
+            plain_text.encode("utf-8"),
+            salt,
+            time_cost=1,
+            memory_cost=64 * 1024,
+            parallelism=4,
+            hash_len=len(expected),
+            type=Type.ID,
+        )
+        return hmac.compare_digest(expected, computed)
+
+    @staticmethod
+    def _decode_maybe_base64(raw: str) -> bytes:
+        trimmed = raw.strip()
+        if not trimmed:
+            return b""
+        try:
+            decoded = base64.b64decode(trimmed)
+        except Exception:
+            return trimmed.encode("utf-8")
+        return decoded if decoded else trimmed.encode("utf-8")
 
     @staticmethod
     def _parse_public_key(public_key_pem: bytes):

@@ -9,6 +9,7 @@ import 'package:bms_app/transport/mock_client.dart';
 import 'package:bms_app/models/common.dart';
 import 'package:bms_app/pages/login/login_page.dart';
 import 'package:bms_app/pages/shell/shell_page.dart';
+import 'package:bms_app/mock_repo/mock_repository.dart';
 
 class BirdMonitoringApp extends StatefulWidget {
   const BirdMonitoringApp({
@@ -20,7 +21,7 @@ class BirdMonitoringApp extends StatefulWidget {
       name: '测试用户',
       role: '系统演示账号',
       phone: '138-0000-0000',
-      avatarSeed: 7,
+      avatarB64: kSampleBirdImageB64,
       userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
       username: 'demo_user',
       displayName: '测试用户',

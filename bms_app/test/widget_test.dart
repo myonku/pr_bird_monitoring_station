@@ -8,10 +8,12 @@ import 'package:bms_app/controller/controller.dart';
 import 'package:bms_app/credential_manager/credential_manager.dart';
 import 'package:bms_app/models/auth_models.dart';
 import 'package:bms_app/models/common.dart';
+import 'package:bms_app/pages/records/record_detail_page.dart';
 import 'package:bms_app/pages/records/records_page.dart';
 import 'package:bms_app/pages/stats/stats_page.dart';
 import 'package:bms_app/storage/auth_stores.dart';
 import 'package:bms_app/transport/mock_client.dart';
+import 'package:bms_app/mock_repo/mock_repository.dart';
 
 MonitoringController _buildNoAuthController() {
   return MonitoringController(
@@ -21,7 +23,7 @@ MonitoringController _buildNoAuthController() {
       name: '测试用户',
       role: '系统演示账号',
       phone: '138-0000-0000',
-      avatarSeed: 7,
+      avatarB64: kSampleBirdImageB64,
       userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
       username: 'demo_user',
       displayName: '测试用户',
@@ -39,7 +41,7 @@ class _RecordsPageTestController extends MonitoringController {
           name: '测试用户',
           role: '系统演示账号',
           phone: '138-0000-0000',
-          avatarSeed: 7,
+          avatarB64: kSampleBirdImageB64,
           userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
           username: 'demo_user',
           displayName: '测试用户',
@@ -83,6 +85,7 @@ class _RecordsPageTestController extends MonitoringController {
           humidity: 64,
           uploadSummary: '测试记录',
           speciesIntro: '测试记录',
+          imageB64: kSampleBirdImageB64,
           accent: Color(0xFF0B7A75),
         ),
       ],
@@ -162,6 +165,34 @@ void main() {
 
     expect(find.text('白鹭'), findsOneWidget);
     expect(find.text('没有找到匹配记录'), findsNothing);
+  });
+
+  testWidgets('renders embedded image in record detail page', (
+    WidgetTester tester,
+  ) async {
+    final record = BirdRecord(
+      id: 'record-detail-1',
+      species: '白鹭',
+      scientificName: 'Egretta garzetta',
+      capturedAtTime: DateTime(2026, 4, 11, 9, 20),
+      stationName: '测试站点',
+      capturedAt: '2026-04-11 09:20',
+      confidence: 0.97,
+      temperature: 18.4,
+      humidity: 64,
+      uploadSummary: '测试记录',
+      speciesIntro: '测试记录',
+      imageB64: kSampleBirdImageB64,
+      accent: const Color(0xFF0B7A75),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: RecordDetailPage(record: record)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byIcon(Icons.image_outlined), findsNothing);
   });
 
   test('persists auth session to disk and reloads it', () async {

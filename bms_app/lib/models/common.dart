@@ -13,6 +13,7 @@ String _formatDateTimeMs(int millisecondsSinceEpoch) {
 }
 
 enum MonitoringDataSource { mockClient, httpClient }
+
 enum AppMode { development, noAuth }
 
 extension AppModeLabel on AppMode {
@@ -70,10 +71,7 @@ class LatestUploadSummary {
 }
 
 class RecordStationOption {
-  const RecordStationOption({
-    required this.deviceId,
-    required this.deviceName,
-  });
+  const RecordStationOption({required this.deviceId, required this.deviceName});
 
   final String deviceId;
   final String deviceName;
@@ -134,6 +132,7 @@ class BirdRecord {
     required this.uploadSummary,
     required this.speciesIntro,
     required this.accent,
+    this.imageB64 = '',
     this.recordId,
     this.deviceId,
     this.deviceName,
@@ -159,6 +158,7 @@ class BirdRecord {
   final int humidity;
   final String uploadSummary;
   final String speciesIntro;
+  final String imageB64;
   final Color accent;
   final String? recordId;
   final String? deviceId;
@@ -211,7 +211,7 @@ class AppUser {
     required this.name,
     required this.role,
     required this.phone,
-    required this.avatarSeed,
+    this.avatarB64 = '',
     this.userId,
     this.username,
     this.displayName,
@@ -221,7 +221,7 @@ class AppUser {
   final String name;
   final String role;
   final String phone;
-  final int avatarSeed;
+  final String avatarB64;
   final String? userId;
   final String? username;
   final String? displayName;

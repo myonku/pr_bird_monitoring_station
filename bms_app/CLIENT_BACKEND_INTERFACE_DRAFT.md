@@ -108,6 +108,7 @@
 - 时间字段统一使用 epoch milliseconds，并以 `_ms` 结尾。
 - 站点选择统一使用 `device_id` 做筛选，`device_name` 仅用于展示。
 - `species_shares` 中的 `color_hex` 为可选展示字段，客户端可忽略并自行映射调色板。
+- 用户资料中的 `avatar_b64` 直接携带头像原图的 base64，不再使用旧头像种子字段。
 
 ## 5. 业务接口
 
@@ -160,7 +161,7 @@
   "role": "系统演示账号",
   "email": "demo_user@example.com",
   "phone": "138-0000-0000",
-  "avatar_seed": 7
+  "avatar_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB..."
 }
 ```
 
@@ -306,6 +307,7 @@
       "humidity_pct": 64,
       "upload_summary": "设备自动上传 · 识别结果已同步至业务库",
       "species_intro": "白鹭（Egretta garzetta）...",
+      "image_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB...",
       "media_refs": [],
       "processing_source": "edge",
       "model_version": "",
@@ -324,7 +326,7 @@
 
 - 记录页使用无限滚动 + 游标续拉，不再使用页码分页。
 - 列表项即详情展示数据来源，不再定义单独记录详情接口。
-- `image_url` 等详情字段应在记录列表项中直接返回。
+- `image_b64` 等详情字段应在记录列表项中直接返回，客户端直接解码展示原始图像，不再单独请求图片地址。
 - 请求头必须包含全局认证头。
 
 ### 5.6 最近七日趋势

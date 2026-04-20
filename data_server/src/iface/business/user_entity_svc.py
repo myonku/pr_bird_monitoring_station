@@ -5,7 +5,7 @@ from src.models.common.entities import UserEntity
 
 
 class IUserEntityManager(ABC):
-    """用户实体的插入接口。"""
+    """用户实体写入接口。"""
 
     @abstractmethod
     async def insert(self, user_entity: UserEntity) -> UUID:

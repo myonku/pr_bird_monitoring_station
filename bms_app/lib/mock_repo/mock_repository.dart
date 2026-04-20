@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'package:bms_app/models/common.dart';
 
+const String kSampleBirdImageB64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO4B4oQAAAAASUVORK5CYII=';
+
+
 class MockClientRepository {
   MockClientRepository();
 
@@ -17,7 +21,7 @@ class MockClientRepository {
       name: '测试用户',
       role: '系统演示账号',
       phone: '138-0000-0000',
-      avatarSeed: 7,
+      avatarB64: kSampleBirdImageB64,
       userId: '7a4a7c0c-6b12-4d5f-9a8f-7b2a12d02f19',
       username: 'demo_user',
       displayName: '测试用户',
@@ -27,7 +31,7 @@ class MockClientRepository {
       name: '巡护员张三',
       role: '现场巡护账号',
       phone: '139-1111-2222',
-      avatarSeed: 19,
+      avatarB64: kSampleBirdImageB64,
       userId: '9c6a7e2c-2c4d-4d5c-96b2-53f7b5b2d921',
       username: 'zhangsan',
       displayName: '巡护员张三',
@@ -90,7 +94,8 @@ class MockClientRepository {
           message: '邮箱已存在',
         );
       }
-      if (normalizedPhone.isNotEmpty && _normalizePhone(user.phone) == normalizedPhone) {
+      if (normalizedPhone.isNotEmpty &&
+          _normalizePhone(user.phone) == normalizedPhone) {
         return const RegistrationResult(
           ok: false,
           errorCode: RegistrationErrorCode.phoneExists,
@@ -104,7 +109,7 @@ class MockClientRepository {
         name: username.trim(),
         role: '注册用户',
         phone: phone.trim(),
-        avatarSeed: normalizedUsername.hashCode.abs() % 100,
+        avatarB64: kSampleBirdImageB64,
         userId: 'mock-${normalizedUsername.hashCode.abs()}',
         username: normalizedUsername,
         displayName: username.trim(),
@@ -120,7 +125,8 @@ class MockClientRepository {
     final todayRecords = _recordsOnDay(latestDay);
     final countsByStation = <String, int>{};
     for (final record in todayRecords) {
-      countsByStation[record.stationName] = (countsByStation[record.stationName] ?? 0) + 1;
+      countsByStation[record.stationName] =
+          (countsByStation[record.stationName] ?? 0) + 1;
     }
 
     final topEntry = countsByStation.entries.isEmpty
@@ -133,7 +139,10 @@ class MockClientRepository {
       return left.capturedAtTime.isAfter(right.capturedAtTime) ? left : right;
     });
 
-    final activeStationCount = _records.map((record) => record.stationName).toSet().length;
+    final activeStationCount = _records
+        .map((record) => record.stationName)
+        .toSet()
+        .length;
 
     return DashboardSnapshot(
       todayRecognitionCount: todayRecords.length,
@@ -141,7 +150,9 @@ class MockClientRepository {
       onlineStationCount: _stationDeviceIds.length,
       activeStationCount: activeStationCount,
       topUploadStation: UploadStationSummary(
-        deviceId: topEntry == null ? '' : (_stationDeviceIds[topEntry.key] ?? ''),
+        deviceId: topEntry == null
+            ? ''
+            : (_stationDeviceIds[topEntry.key] ?? ''),
         deviceName: topEntry?.key ?? '暂无数据',
         uploadCount: topEntry?.value ?? 0,
       ),
@@ -151,16 +162,19 @@ class MockClientRepository {
         uploadedAtLabel: latestRecord.capturedAt,
         uploadedAtMs: latestRecord.capturedAtMsValue,
       ),
-      recentRecords: (_sortedRecords()..sort((a, b) => b.capturedAtTime.compareTo(a.capturedAtTime)))
-          .take(3)
-          .toList(growable: false),
+      recentRecords:
+          (_sortedRecords()
+                ..sort((a, b) => b.capturedAtTime.compareTo(a.capturedAtTime)))
+              .take(3)
+              .toList(growable: false),
     );
   }
 
   List<RecordStationOption> listStationOptions() {
     return _stationDeviceIds.entries
         .map(
-          (entry) => RecordStationOption(deviceId: entry.value, deviceName: entry.key),
+          (entry) =>
+              RecordStationOption(deviceId: entry.value, deviceName: entry.key),
         )
         .toList(growable: false);
   }
@@ -182,29 +196,31 @@ class MockClientRepository {
     );
   }
 
-  List<BirdRecord> listRecords({
-    DateTimeRange? dateRange,
-    String? stationId,
-  }) {
+  List<BirdRecord> listRecords({DateTimeRange? dateRange, String? stationId}) {
     final sorted = _sortedRecords();
-    return sorted.where((record) {
-      final stationMatch = stationId == null || stationId.isEmpty || record.deviceIdValue == stationId;
-      final dateMatch = dateRange == null || _recordInRange(record, dateRange);
-      return stationMatch && dateMatch;
-    }).toList(growable: false);
+    return sorted
+        .where((record) {
+          final stationMatch =
+              stationId == null ||
+              stationId.isEmpty ||
+              record.deviceIdValue == stationId;
+          final dateMatch =
+              dateRange == null || _recordInRange(record, dateRange);
+          return stationMatch && dateMatch;
+        })
+        .toList(growable: false);
   }
 
-  List<TrendPoint> weeklyTrend({
-    int days = 7,
-    String? stationId,
-  }) {
+  List<TrendPoint> weeklyTrend({int days = 7, String? stationId}) {
     final normalizedDays = days <= 0 ? 7 : days;
     final latest = _latestRecordDay();
     final start = latest.subtract(Duration(days: normalizedDays - 1));
 
     final countsByDay = <DateTime, int>{};
     for (final record in _records) {
-      if (stationId != null && stationId.isNotEmpty && record.deviceIdValue != stationId) {
+      if (stationId != null &&
+          stationId.isNotEmpty &&
+          record.deviceIdValue != stationId) {
         continue;
       }
       final day = DateUtils.dateOnly(record.capturedAtTime);
@@ -212,7 +228,11 @@ class MockClientRepository {
     }
 
     final points = <TrendPoint>[];
-    for (var day = start; !day.isAfter(latest); day = day.add(const Duration(days: 1))) {
+    for (
+      var day = start;
+      !day.isAfter(latest);
+      day = day.add(const Duration(days: 1))
+    ) {
       points.add(
         TrendPoint(
           label: _weekdayLabel(day.weekday),
@@ -227,9 +247,12 @@ class MockClientRepository {
   List<BirdRecord> _recordsOnDay(DateTime day) {
     final start = DateUtils.dateOnly(day);
     final endExclusive = start.add(const Duration(days: 1));
-    return _records.where((record) {
-      return !record.capturedAtTime.isBefore(start) && record.capturedAtTime.isBefore(endExclusive);
-    }).toList(growable: false);
+    return _records
+        .where((record) {
+          return !record.capturedAtTime.isBefore(start) &&
+              record.capturedAtTime.isBefore(endExclusive);
+        })
+        .toList(growable: false);
   }
 
   DateTime _latestRecordDay() {
@@ -241,14 +264,19 @@ class MockClientRepository {
 
   List<BirdRecord> _sortedRecords() {
     final records = [..._records];
-    records.sort((left, right) => right.capturedAtTime.compareTo(left.capturedAtTime));
+    records.sort(
+      (left, right) => right.capturedAtTime.compareTo(left.capturedAtTime),
+    );
     return records;
   }
 
   bool _recordInRange(BirdRecord record, DateTimeRange dateRange) {
     final start = DateUtils.dateOnly(dateRange.start);
-    final endExclusive = DateUtils.dateOnly(dateRange.end).add(const Duration(days: 1));
-    return !record.capturedAtTime.isBefore(start) && record.capturedAtTime.isBefore(endExclusive);
+    final endExclusive = DateUtils.dateOnly(
+      dateRange.end,
+    ).add(const Duration(days: 1));
+    return !record.capturedAtTime.isBefore(start) &&
+        record.capturedAtTime.isBefore(endExclusive);
   }
 
   int _decodeCursor(String? cursor) {
@@ -438,6 +466,7 @@ class MockClientRepository {
       temperatureC: temperature,
       humidityPct: humidity,
       mediaRefs: const [],
+      imageB64: kSampleBirdImageB64,
       processingSource: 'edge',
       modelVersion: 'demo-v1',
       recordStatus: 'published',

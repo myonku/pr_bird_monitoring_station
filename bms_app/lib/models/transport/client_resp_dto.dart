@@ -7,7 +7,7 @@ class ClientUserProfileResponse {
     required this.role,
     required this.email,
     required this.phone,
-    required this.avatarSeed,
+    this.avatarB64 = '',
   });
 
   final String userId;
@@ -17,7 +17,7 @@ class ClientUserProfileResponse {
   final String role;
   final String email;
   final String phone;
-  final int avatarSeed;
+  final String avatarB64;
 }
 
 class ClientRegisterResponse {
@@ -86,7 +86,7 @@ class ClientBirdRecordResponse {
     required this.humidityPct,
     required this.uploadSummary,
     required this.speciesIntro,
-    required this.imageUrl,
+    this.imageB64 = '',
     required this.mediaRefs,
     required this.processingSource,
     required this.modelVersion,
@@ -108,7 +108,7 @@ class ClientBirdRecordResponse {
   final int? humidityPct;
   final String uploadSummary;
   final String speciesIntro;
-  final String imageUrl;
+  final String imageB64;
   final List<String> mediaRefs;
   final String processingSource;
   final String modelVersion;

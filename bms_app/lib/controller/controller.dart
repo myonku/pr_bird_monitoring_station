@@ -329,7 +329,7 @@ class MonitoringController extends ChangeNotifier {
       role: response.role,
       email: response.email,
       phone: response.phone,
-      avatarSeed: response.avatarSeed,
+      avatarB64: response.avatarB64,
     );
   }
 
@@ -405,6 +405,7 @@ class MonitoringController extends ChangeNotifier {
       humidity: response.humidityPct ?? 0,
       uploadSummary: response.uploadSummary,
       speciesIntro: response.speciesIntro,
+      imageB64: response.imageB64,
       accent: _accentFor(response),
       deviceId: response.deviceId,
       deviceName: response.deviceName,

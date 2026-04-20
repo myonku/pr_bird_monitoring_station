@@ -31,6 +31,7 @@ class StageBInput:
     request: EdgeEventUploadRequest
     envelope: EdgeEventEnvelope
     processing_source: ProcessingSource
+    image_b64: str = ""
     inference_result: TwoStageInferenceResult | None = None
     stage_a_reason: str = ""
 
@@ -202,6 +203,7 @@ class DataWorkerService(IDataWorkerService):
             request=request,
             envelope=envelope,
             processing_source=stage_a.processing_source,
+            image_b64=request.image_b64,
             inference_result=stage_a.inference_result,
             stage_a_reason=stage_a.reason,
         )
@@ -282,6 +284,7 @@ class DataWorkerService(IDataWorkerService):
             confidence=confidence,
             temperature_c=env.temperature_c if env is not None else None,
             humidity_pct=env.humidity_pct if env is not None else None,
+            image_b64=stage_b.image_b64,
             media_refs=self._build_media_refs(stage_b.request),
             processing_source=stage_b.processing_source,
             model_version=self._resolve_model_version(stage_b.inference_result),

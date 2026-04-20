@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/controller/controller.dart';
@@ -148,17 +151,14 @@ class _MePageState extends State<MePage> {
               ),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 34,
-                    backgroundColor: Colors.white.withValues(alpha: 0.18),
-                    child: Text(
-                      user.name.isNotEmpty ? user.name.substring(0, 1) : 'B',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      shape: BoxShape.circle,
                     ),
+                    child: ClipOval(child: _buildAvatarContent(user)),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -240,5 +240,47 @@ class _MePageState extends State<MePage> {
         );
       },
     );
+  }
+
+  Widget _buildAvatarContent(AppUser user) {
+    final bytes = _tryDecodeAvatar(user.avatarB64);
+    if (bytes == null) {
+      return _buildAvatarFallback(user);
+    }
+
+    final fallback = _buildAvatarFallback(user);
+    return Image.memory(
+      bytes,
+      fit: BoxFit.cover,
+      width: 68,
+      height: 68,
+      errorBuilder: (context, error, stackTrace) => fallback,
+    );
+  }
+
+  Widget _buildAvatarFallback(AppUser user) {
+    return Center(
+      child: Text(
+        user.name.isNotEmpty ? user.name.substring(0, 1) : 'B',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 24,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Uint8List? _tryDecodeAvatar(String avatarB64) {
+    final normalized = avatarB64.trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    try {
+      return base64Decode(normalized);
+    } on FormatException {
+      return null;
+    }
   }
 }

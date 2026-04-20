@@ -12,7 +12,7 @@ RecordStatus = Literal["received", "normalized", "stored", "published", "failed"
 class ClientUserProfileResponse(Struct, kw_only=True):
 	"""用户资料响应。
 
-	用于客户端登录后单独拉取个人资料，返回用户展示页需要的基础信息。
+	用于客户端登录后单独拉取个人资料，返回用户展示页需要的基础信息和嵌入式头像图像。
 	"""
 
 	user_id: str = ""
@@ -22,7 +22,7 @@ class ClientUserProfileResponse(Struct, kw_only=True):
 	role: str = "user"
 	email: str = ""
 	phone: str = ""
-	avatar_seed: int = 0
+	avatar_b64: str = ""
 
 
 class ClientRegisterResponse(Struct, kw_only=True):
@@ -72,7 +72,7 @@ class ClientRecordStationOptionResponse(Struct, kw_only=True):
 class ClientBirdRecordResponse(Struct, kw_only=True):
 	"""监测记录响应。
 
-	用于记录列表和首页最近记录，返回物种、站点、时间和摘要信息。
+	用于记录列表和首页最近记录，返回物种、站点、时间、摘要信息和嵌入式原图。
 	"""
 	id: str = ""
 	species: str = ""
@@ -86,7 +86,7 @@ class ClientBirdRecordResponse(Struct, kw_only=True):
 	humidity_pct: int | None = None
 	upload_summary: str = ""
 	species_intro: str = ""
-	image_url: str = ""
+	image_b64: str = ""
 	media_refs: list[str] = field(default_factory=list)
 	processing_source: ProcessingSource = "edge"
 	model_version: str = ""

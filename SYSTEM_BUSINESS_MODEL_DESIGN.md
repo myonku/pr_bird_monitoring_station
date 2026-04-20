@@ -177,7 +177,7 @@
 - `name`
 - `role`（当前默认为 viewer）
 - `phone`
-- `avatar_seed`
+- `avatar_b64`
 
 说明：
 

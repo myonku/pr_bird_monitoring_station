@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import 'package:bms_app/models/common.dart';
@@ -27,9 +30,8 @@ class RecordDetailPage extends StatelessWidget {
                 end: Alignment.bottomRight,
               ),
             ),
-            child: const Center(
-              child: Icon(Icons.image_outlined, color: Colors.white, size: 64),
-            ),
+            clipBehavior: Clip.antiAlias,
+            child: _buildImage(record.imageB64),
           ),
           const SizedBox(height: 20),
           Text(
@@ -98,6 +100,40 @@ class RecordDetailPage extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+Widget _buildImage(String imageB64) {
+  final bytes = _tryDecodeImage(imageB64);
+  if (bytes == null) {
+    return const Center(
+      child: Icon(Icons.image_outlined, color: Colors.white, size: 64),
+    );
+  }
+
+  return Image.memory(
+    bytes,
+    fit: BoxFit.cover,
+    width: double.infinity,
+    height: double.infinity,
+    errorBuilder: (context, error, stackTrace) {
+      return const Center(
+        child: Icon(Icons.broken_image_outlined, color: Colors.white, size: 64),
+      );
+    },
+  );
+}
+
+Uint8List? _tryDecodeImage(String imageB64) {
+  final normalized = imageB64.trim();
+  if (normalized.isEmpty) {
+    return null;
+  }
+
+  try {
+    return base64Decode(normalized);
+  } on FormatException {
+    return null;
   }
 }
 

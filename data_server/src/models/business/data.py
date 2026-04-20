@@ -28,8 +28,7 @@ class UserProfile(UUIDDocument):
     email: str = ""
     phone: str = ""
     role: str = "user"
-    avatar_mongo_document_id: str = ""
-    avatar_content_type: str = ""
+    avatar_b64: str = ""
     metadata: dict[str, str] = Field(default_factory=dict)
 
     class Settings:
@@ -78,7 +77,7 @@ class EdgeEventEnvelope(UUIDDocument):
 
 
 class MonitoringRecord(UUIDDocument):
-    """一次监测记录的业务模型，包含监测到的物种信息、环境信息、媒体信息、处理来源等。"""
+    """一次监测记录的业务模型，包含监测到的物种信息、环境信息、原图、媒体信息、处理来源等。"""
 
     device_entity_id: UUID
     device_name: str = "unknown"
@@ -90,6 +89,7 @@ class MonitoringRecord(UUIDDocument):
     confidence: float = 0.0
     temperature_c: float | None = None
     humidity_pct: int | None = None
+    image_b64: str = ""
     media_refs: list[str] = Field(default_factory=list)
     processing_source: ProcessingSource
     model_version: str = ""
