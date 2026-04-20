@@ -5,7 +5,15 @@ import tomllib
 from typing import Literal
 from urllib.parse import quote_plus, urlencode
 import msgspec
-from msgspec import Struct
+from msgspec import Struct, field
+
+from src.models.auth.auth import TokenType
+from src.models.auth.ratelimit import (
+    RateLimitAlgorithm,
+    RateLimitScope,
+    RateLimitSubjectType,
+)
+from src.models.common.entry_type import EntityType
 
 
 DEFAULT_DATA_WORKER_GRPC_LISTEN_PORT = 50052
@@ -126,6 +134,74 @@ class AuthConfig(Struct, kw_only=True):
             secret_key_dir=self.secret_key_dir.strip() or "secret_keys",
             active_key_id=self.active_key_id.strip(),
         )
+
+
+class AuthControlConfig(Struct, kw_only=True):
+    """本地 AuthControl 限流配置。"""
+
+    enabled: bool = True
+    rule_id: str = ""
+    scope: RateLimitScope = "auth"
+    subject: RateLimitSubjectType = "composite"
+    algorithm: RateLimitAlgorithm = "fixed_window"
+
+    limit: int = 600
+    burst: int = 0
+    window_sec: int = 60
+
+    require_authenticated: bool = False
+
+    match_module: str = ""
+    match_action: str = ""
+    match_route: str = ""
+    match_methods: list[str] = field(default_factory=lambda: ["POST"])
+    match_entity_types: list[EntityType] = field(default_factory=list)
+    match_token_types: list[TokenType] = field(default_factory=list)
+    match_gateway_ids: list[str] = field(default_factory=list)
+    match_source_services: list[str] = field(default_factory=list)
+    match_target_services: list[str] = field(default_factory=list)
+    match_scopes: list[str] = field(default_factory=list)
+    match_tags: dict[str, str] = field(default_factory=dict)
+
+    def normalized(self, default_module: str) -> "AuthControlConfig":
+        normalized = AuthControlConfig(
+            enabled=self.enabled,
+            rule_id=self.rule_id.strip(),
+            scope=normalize_rate_limit_scope(self.scope),
+            subject=normalize_rate_limit_subject_type(self.subject),
+            algorithm=normalize_rate_limit_algorithm(self.algorithm),
+            limit=self.limit,
+            burst=self.burst,
+            window_sec=self.window_sec,
+            require_authenticated=self.require_authenticated,
+            match_module=self.match_module.strip(),
+            match_action=self.match_action.strip(),
+            match_route=self.match_route.strip(),
+            match_methods=normalize_string_list(self.match_methods),
+            match_entity_types=normalize_entity_type_list(self.match_entity_types),
+            match_token_types=normalize_token_type_list(self.match_token_types),
+            match_gateway_ids=normalize_string_list(self.match_gateway_ids),
+            match_source_services=normalize_string_list(self.match_source_services),
+            match_target_services=normalize_string_list(self.match_target_services),
+            match_scopes=normalize_string_list(self.match_scopes),
+            match_tags=normalize_string_map(self.match_tags),
+        )
+
+        if normalized.rule_id == "":
+            normalized.rule_id = "local-auth-control"
+        if normalized.match_module == "":
+            normalized.match_module = default_module.strip()
+        if normalized.limit <= 0:
+            normalized.limit = 600
+        if normalized.burst < 0:
+            normalized.burst = 0
+        if normalized.window_sec <= 0:
+            normalized.window_sec = 60
+        if len(normalized.match_methods) == 0:
+            normalized.match_methods = ["POST"]
+        if normalized.match_tags is None:
+            normalized.match_tags = {}
+        return normalized
 
 
 class SecretKeyStartupParams(Struct, kw_only=True):
@@ -355,3 +431,91 @@ class CircuitBreakerConfig(Struct, kw_only=True):
     failure_threshold: int = 5
     recovery_timeout: float = 10.0
     half_open_max_calls: int = 1
+
+
+def normalize_rate_limit_scope(raw: object) -> RateLimitScope:
+    scope = str(raw or "").strip().lower()
+    if scope in {"", "auth"}:
+        return "auth"
+    if scope == "edge_inbound":
+        return "edge_inbound"
+    if scope == "internal_grpc":
+        return "internal_grpc"
+    return "auth"
+
+
+def normalize_rate_limit_subject_type(raw: object) -> RateLimitSubjectType:
+    subject = str(raw or "").strip().lower()
+    if subject in {"", "composite"}:
+        return "composite"
+    if subject == "ip":
+        return "ip"
+    if subject == "entity":
+        return "entity"
+    if subject == "session":
+        return "session"
+    if subject == "token":
+        return "token"
+    if subject == "client":
+        return "client"
+    if subject == "gateway":
+        return "gateway"
+    if subject == "route":
+        return "route"
+    return "composite"
+
+
+def normalize_rate_limit_algorithm(raw: object) -> RateLimitAlgorithm:
+    algorithm = str(raw or "").strip().lower()
+    if algorithm in {"", "fixed_window"}:
+        return "fixed_window"
+    if algorithm == "sliding_window":
+        return "sliding_window"
+    if algorithm == "token_bucket":
+        return "token_bucket"
+    return "fixed_window"
+
+
+def normalize_string_list(items: list[str] | None) -> list[str]:
+    if not items:
+        return []
+    output: list[str] = []
+    for item in items:
+        trimmed = item.strip()
+        if trimmed:
+            output.append(trimmed)
+    return output
+
+
+def normalize_entity_type_list(items: list[EntityType] | None) -> list[EntityType]:
+    if not items:
+        return []
+    output: list[EntityType] = []
+    for item in items:
+        normalized = str(item).strip().lower()
+        if normalized in {"user", "device", "service"}:
+            output.append(normalized)  # type: ignore[arg-type]
+    return output
+
+
+def normalize_token_type_list(items: list[TokenType] | None) -> list[TokenType]:
+    if not items:
+        return []
+    output: list[TokenType] = []
+    for item in items:
+        normalized = str(item).strip().lower()
+        if normalized in {"access", "refresh", "service", "downstream"}:
+            output.append(normalized)  # type: ignore[arg-type]
+    return output
+
+
+def normalize_string_map(values: dict[str, str] | None) -> dict[str, str]:
+    if not values:
+        return {}
+    output: dict[str, str] = {}
+    for key, value in values.items():
+        trimmed_key = key.strip()
+        trimmed_value = value.strip()
+        if trimmed_key and trimmed_value:
+            output[trimmed_key] = trimmed_value
+    return output

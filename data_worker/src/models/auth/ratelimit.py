@@ -1,8 +1,9 @@
 from typing import Literal
 
-from msgspec import Struct
+from msgspec import Struct, field
 
-from src.models.common.entry import EntityType
+from src.models.auth.auth import TokenType
+from src.models.common.entry_type import EntityType
 
 RateLimitSubjectType = Literal["ip", "entity", "session", "token", "client", "gateway", "route", "composite"]
 RateLimitScope = Literal["edge_inbound", "internal_grpc", "auth"]
@@ -12,7 +13,7 @@ RateLimitAlgorithm = Literal["fixed_window", "sliding_window", "token_bucket"]
 class RateLimitDescriptor(Struct, kw_only=True):
     """描述一个限流事件的上下文信息，用于匹配和决策。"""
 
-    scope: str
+    scope: RateLimitScope
     transport: str
 
     module: str
@@ -34,10 +35,10 @@ class RateLimitDescriptor(Struct, kw_only=True):
     principal_id: str
     session_id: str
     token_id: str
-    token_type: str
+    token_type: TokenType
 
     scopes: list[str]
-    tags: dict[str, str] = {}
+    tags: dict[str, str] = field(default_factory=dict)
 
     def subject_value(self, subject_type: str) -> str:
         if subject_type == "ip":

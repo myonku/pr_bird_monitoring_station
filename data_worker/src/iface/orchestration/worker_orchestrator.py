@@ -32,7 +32,7 @@ class IWorkerOrchestrator(ABC):
     下游接口调用：
       - communication.ITrafficStation.handle_inbound / send_outbound
       - communication.IRoutingPayloadPipeline.resolve_route_profile / build_outbound_payload
-      - authcontrol.IAuthControl.enforce_inbound / prepare_outbound
+      - authcontrol.IInboundAuthControl.enforce_inbound
       - common.ILocalCredentialManager.load_active_credential
     """
 

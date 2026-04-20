@@ -1,47 +1,67 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import cast
 
 from src.iface.authcontrol.ratelimit import InboundRateLimitInput
-from src.models.auth.auth import IdentityContext
-from src.models.auth.ratelimit import RateLimitDecision
+from src.models.auth.auth import TokenType
+from src.models.auth.ratelimit import RateLimitDecision, RateLimitDescriptor
+from src.models.common.entry_type import EntityType
+
+
+def Build(input_data: InboundRateLimitInput | None) -> RateLimitDescriptor:
+    if input_data is None:
+        raise ValueError("inbound rate limit input is nil")
+
+    descriptor = RateLimitDescriptor(
+        scope=input_data.scope,
+        transport=input_data.transport,
+        module=input_data.module,
+        action=input_data.action,
+        route=input_data.route,
+        method=input_data.method,
+        authenticated=False,
+        source_ip=input_data.source_ip,
+        gateway_id=input_data.gateway_id,
+        client_id=input_data.client_id,
+        source_service=input_data.source_service,
+        target_service=input_data.target_service,
+        entity_type="unknown",
+        entity_id="",
+        principal_id="",
+        session_id="",
+        token_id="",
+        token_type=cast(TokenType, ""),
+        scopes=[],
+        tags=dict(input_data.tags or {}),
+    )
+
+    identity = input_data.identity
+    if identity is not None:
+        descriptor.authenticated = True
+        descriptor.entity_type = identity.entity_type
+        descriptor.entity_id = identity.entity_id
+        descriptor.principal_id = identity.principal_id
+        descriptor.session_id = str(identity.session_id)
+        descriptor.token_id = str(identity.token_id)
+        descriptor.token_type = identity.token_type
+        descriptor.scopes = list(identity.scopes)
+
+    return descriptor
 
 
 @dataclass(slots=True, kw_only=True)
-class InboundAuthControlRequest:
-    identity: IdentityContext | None = None
+class InboundControlRequest:
     rate_limit_input: InboundRateLimitInput | None = None
 
 
 @dataclass(slots=True, kw_only=True)
-class InboundAuthControlResult:
-    identity: IdentityContext | None = None
+class InboundControlResult:
     rate_limit_decision: RateLimitDecision | None = None
 
 
-@dataclass(slots=True, kw_only=True)
-class OutboundAuthControlRequest:
-    identity: IdentityContext | None = None
-    target_service: str = ""
-    rate_limit_input: InboundRateLimitInput | None = None
-
-
-@dataclass(slots=True, kw_only=True)
-class OutboundAuthControlResult:
-    rate_limit_decision: RateLimitDecision | None = None
-
-
-class IAuthControl(ABC):
-    """data_worker 的认证与限流控制点。
-
-    下游接口调用：
-      - authcontrol.IDescriptorFactory.build
-      - authcontrol.IRateLimiter.decide
-    """
+class IInboundAuthControl(ABC):
+    """data_server 的本地入站认证控制。"""
 
     @abstractmethod
-    async def enforce_inbound(self, req: InboundAuthControlRequest) -> InboundAuthControlResult:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def prepare_outbound(self, req: OutboundAuthControlRequest) -> OutboundAuthControlResult:
+    async def enforce_inbound(self, req: InboundControlRequest) -> InboundControlResult:
         raise NotImplementedError

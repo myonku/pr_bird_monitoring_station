@@ -39,7 +39,7 @@ class ITrafficStation(ABC):
 
     下游接口调用：
       - communication.IRoutingPayloadPipeline.resolve_route_profile / build_outbound_payload
-      - authcontrol.IAuthControl.enforce_inbound / prepare_outbound
+            - authcontrol.IInboundAuthControl.enforce_inbound
       - orchestration.IWorkerOrchestrator.handle_task / handle_inbound_rpc
     """
 
