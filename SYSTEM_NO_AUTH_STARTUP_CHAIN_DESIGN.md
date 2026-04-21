@@ -80,7 +80,7 @@
 
 禁用：
 
-- bootstrap/refresh/verify/revoke。
+- bootstrap/refresh/verify。revoke 相关语义保留，不纳入当前基线。
 - 入站/出站限流决策。
 - 额外下游准备与应用层加密。
 

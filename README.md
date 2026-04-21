@@ -9,7 +9,8 @@
 - 后端路由与 Proto 合并基准：`SYSTEM_BACKEND_ROUTE_PROTO_BASELINE.md`
 - 后端推进阶段记录（时间线基准）：`SYSTEM_BACKEND_PROGRESS_TIMELINE.md`
 - 业务模型设计说明草案：`SYSTEM_BUSINESS_MODEL_DESIGN.md`
-- 边缘端网关通信契约（认证通道 + 上传通道）：待重建（当前暂时下线）
+- 全局外部接口清单：`SYSTEM_EXTERNAL_INTERFACE_CATALOG_DESIGN.md`
+- 网关业务转发设计：`SYSTEM_GATEWAY_BUSINESS_FORWARDING_DESIGN.md`
 
 模块架构文档（仅层级/结构/接口）：
 
@@ -21,5 +22,4 @@
 
 补充文档：
 
-- 客户端认证索引：`bms_app/CLIENT_AUTH_DESIGN_SPEC.md`
-- 客户端后端接口草案：`bms_app/CLIENT_BACKEND_INTERFACE_DRAFT.md`
+- 客户端认证与业务接口总表：`SYSTEM_EXTERNAL_INTERFACE_CATALOG_DESIGN.md`

@@ -15,7 +15,7 @@
 
 不在范围内：
 
-- 认证实现细节（见 `EDGE_AUTH_DESIGN_SPEC.md`）。
+- 认证实现细节（见 `EDGE_AUTH_DESIGN_SPEC.md`）；边缘端对外接口清单见 `SYSTEM_EXTERNAL_INTERFACE_CATALOG_DESIGN.md`。
 - 模型训练流水线细节。
 
 ## 2. 端到端流程

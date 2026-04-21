@@ -16,7 +16,7 @@
 - 各模块内设计文档仅保留层级/结构/接口等架构信息。
 - 全局统一约定以本文件为唯一基准。
 - 按模块认证链路与启动链路见 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
-- 边缘端认证与上传通信协议细节的独立契约文档待重建（当前暂时下线）。
+- 边缘端认证与上传通信协议细节已统一收敛到 `SYSTEM_EXTERNAL_INTERFACE_CATALOG_DESIGN.md`。
 
 ---
 
@@ -204,7 +204,7 @@
 
 - 按模块认证链路与启动链路见 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
 - 全系统 `no-auth` 启动链路与 development 对照见 `SYSTEM_NO_AUTH_STARTUP_CHAIN_DESIGN.md`。
-- 边缘端认证通道与上传通道的接口契约文档待重建（当前暂时下线）。
+- 边缘端认证通道与上传通道的外部接口已统一收敛到 `SYSTEM_EXTERNAL_INTERFACE_CATALOG_DESIGN.md`；网关业务转发基线见 `SYSTEM_GATEWAY_BUSINESS_FORWARDING_DESIGN.md`。
 
 ---
 
@@ -212,15 +212,12 @@
 
 - Gateway：公共入口与协议映射，认证相关操作统一转发认证中心；不管理他方请求主体的 challenge/session/token 状态，但需负责本模块自身凭证生命周期。
 - Certification Server：认证签发、会话/令牌/通道安全控制中心。
-- API Service：业务处理与出站调用，认证相关操作统一转发认证中心；不管理他方请求主体的 challenge/session/token 状态，但需负责本模块自身凭证生命周期。
-- Data Worker：异步任务处理与出站调用，认证相关操作统一转发认证中心；不管理他方请求主体的 challenge/session/token 状态，但需负责本模块自身凭证生命周期。
+- Data Server：业务处理与出站调用，不管理他方请求主体的 challenge/session/token 状态，但需负责本模块自身凭证生命周期。
+- Data Worker：异步任务处理与出站调用，不管理他方请求主体的 challenge/session/token 状态，但需负责本模块自身凭证生命周期。
 - Edge Server：本地采集/推理/上传与边缘认证协调，不直接调用认证中心。
 - Client：仅走用户名密码链路，不参与密钥 bootstrap。
 - 非认证中心模块不得本地签发、刷新、撤销或缓存“他方请求主体”的认证凭证状态；同时必须负责本模块自身凭证生命周期管理。
-- 内部限流描述符主体来源统一为“认证中心复核后的身份上下文”（verified identity），不再以原始转发头作为主依据。
 - 会话与令牌标识统一使用 `x-verified-session-id` / `x-verified-token-id` 与 `x-downstream-*-id` 规范键，避免 `-id` 与非 `-id` 分裂。
-- 普通服务模块（API Service / Data Worker）运行期会话/令牌回源校验路径必须保留并作为内部转发默认校验路径。
-- 运行期告警指标至少覆盖：回源认证校验失败量、回源认证超时量。
 - 后端模块出站侧必须遵循对应模块的认证与路由基线，不再依赖额外连接前置条件。
 - 各模块的 AuthControl 仅负责认证控制与限流；Gateway 的 AuthControl 承担全局认证确认并基于认证中心结果执行限流，非 Gateway 模块的 AuthControl 仅保留本地资源级控制与限流语义，不承担远程认证调用。
 - bootstrap 与用户名密码认证成功后，认证中心返回统一凭证结果结构；当前实现以 TokenBundle 作为核心令牌子集，必要时可附加身份、会话与时间信息。调用方不得按模块拆分成功载体。
@@ -260,10 +257,8 @@
 - `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`（模块认证链路与启动链路）
 - `SYSTEM_NO_AUTH_STARTUP_CHAIN_DESIGN.md`（全系统 no-auth 启动链路与 development 对照）
 - `SYSTEM_BUSINESS_MODEL_DESIGN.md`（业务模型设计说明）
-- 边缘通信契约文档待重建（当前暂时下线）
-- `CLIENT_AUTH_DESIGN_SPEC.md`（客户端认证索引）
-
----
+- `SYSTEM_EXTERNAL_INTERFACE_CATALOG_DESIGN.md`（客户端与边缘端外部接口清单）
+- `SYSTEM_GATEWAY_BUSINESS_FORWARDING_DESIGN.md`（网关业务转发基线）
 
 ## 12. 变更治理
 

@@ -22,7 +22,7 @@
 2. 边缘端不直接调用认证中心，认证请求统一经网关转发。
 3. 认证通道与业务上传通道必须严格隔离。
 4. 全局标识、密钥与配置生命周期规则见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
-5. 认证接口 HTTP 契约独立文档待重建（当前暂时下线），实现以本模块代码与全局基线约束为准。
+5. 认证接口 HTTP 契约统一见 `SYSTEM_EXTERNAL_INTERFACE_CATALOG_DESIGN.md`，实现以本模块代码与全局基线约束为准。
 6. 边缘端认证模块不承担 commsec/EnsureChannel 握手编排；在 `full_development` 模式下本分区不要求 TLS 配置。
 7. 运行模式约束：
 	- development：认证模块不初始化，仅保留业务本地流程；
@@ -66,7 +66,7 @@
 - init bootstrap challenge
 - authenticate bootstrap
 - refresh token
-- revoke token/family
+- revoke token/family（保留，不作为当前实现能力）
 
 3. IEdgeAuthStateStore
 - 本地持久化认证状态（session + token bundle + stage）。
@@ -129,6 +129,6 @@
 
 - 跨模块认证链路与启动链路见 `SYSTEM_AUTH_STARTUP_CHAIN_DESIGN.md`。
 - 全局统一约定见 `SYSTEM_GLOBAL_BASELINE_DESIGN.md`。
-- 边缘端到网关的接口契约文档待重建（当前暂时下线）。
+- 边缘端到网关的外部接口清单见 `SYSTEM_EXTERNAL_INTERFACE_CATALOG_DESIGN.md`；本文档仅承载边缘认证模块内部架构定义。
 - 本文档仅承载边缘认证模块内部架构定义。
 - 边缘端上传链路在 `full_development` 模式下不强制要求 TLS 配置，不引入 commsec 握手流程。

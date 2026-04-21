@@ -25,7 +25,7 @@
 本文件不覆盖：
 
 - 完整业务转发策略与细粒度授权票据生命周期。
-- 认证中心全部 verify/refresh/revoke 的完整业务语义细节。
+- 认证中心全部 verify/refresh 的完整业务语义细节；revoke 相关语义保留，不纳入当前冻结范围。
 - 底层传输实现细节（仅保留本阶段对路由边界的最小约束）。
 
 ## 3. Proto 最小边界（Bootstrap 与内部认证 RPC）
@@ -78,12 +78,12 @@
 - 本轮 external_auth 的外部 bootstrap 转发修补只涉及 gateway 与 certification_server；token_refresh 路由与 client 适配已同步对齐 gateway / certification_server / data_worker。
 - bootstrap 与用户名密码认证成功后的凭证载体统一按统一凭证结果结构处理；当前实现以 TokenBundle 作为核心令牌子集，必要时可附加 identity/session 等上下文，不按调用模块拆分成功结果结构。
 
-### 3.6 令牌生命周期通路（refresh 已冻结，revoke 待补）
+### 3.6 令牌生命周期通路（refresh 已冻结，revoke 相关语义保留）
 
-- `RefreshTokenBundle` / `RevokeToken` 已存在于模块接口与 TokenManager 能力层。
+- `RefreshTokenBundle` 已存在于模块接口与 TokenManager 能力层；`RevokeToken` 相关语义仅保留，不纳入当前路由基线。
 - `AuthAuthorityExternalAuthService.ForwardRefreshTokenBundle` 与 `AuthAuthorityTokenRefreshService.RefreshTokenBundle` 已冻结为独立通信通路，分别承担 gateway 外部刷新转发与后端模块自刷新。
 - `FlowCategoryModuleTokenRefresh` 已加入路由基线，对应 `auth.external.forward.token_refresh_bundle` 与 `auth.module.refresh.token_bundle`。
-- `RevokeToken` 仍保留在能力层接口，独立 route_key / flow_category / proto service 尚未冻结。
+- `RevokeToken` 相关语义保留，不冻结独立 route_key / flow_category / proto service。
 
 ## 4. 路由输入输出语义
 

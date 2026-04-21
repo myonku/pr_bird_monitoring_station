@@ -504,7 +504,7 @@
 - 统计数据
 - 修改密码
 
-更细的客户端请求路径、请求体、响应体和字段语义约定见 `CLIENT_BACKEND_INTERFACE_DRAFT.md`。
+更细的客户端请求路径、请求体、响应体和字段语义约定见 `SYSTEM_EXTERNAL_INTERFACE_CATALOG_DESIGN.md`。
 
 ---
 
