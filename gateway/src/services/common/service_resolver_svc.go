@@ -203,9 +203,37 @@ func (s *ServiceResolverService) resolveTargetServiceName(
 		commonif.FlowCategoryRemoteAuthVerify,
 		commonif.FlowCategoryModuleTokenRefresh:
 		return s.authAuthorityService
+	case commonif.FlowCategoryBusinessForward:
+		return resolveBusinessTargetServiceName(flow)
 	default:
 		return ""
 	}
+}
+
+func resolveBusinessTargetServiceName(flow *commonif.FlowRouteInput) string {
+	if flow == nil {
+		return ""
+	}
+
+	path := strings.TrimSpace(strings.ToLower(flow.Path))
+	if path == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(path, "/v1/client/auth/") {
+		return ""
+	}
+	if strings.HasPrefix(path, "/v1/client/") {
+		return "data_server"
+	}
+	if strings.HasPrefix(path, "/v1/edge/auth/") {
+		return ""
+	}
+	if strings.HasPrefix(path, "/v1/edge/") {
+		return "data_worker"
+	}
+
+	return ""
 }
 
 func resolveFlowCategory(flow *commonif.FlowRouteInput) commonif.FlowCategory {

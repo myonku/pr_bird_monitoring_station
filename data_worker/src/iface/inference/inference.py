@@ -6,6 +6,7 @@ from src.models.inference.workflow import (
     DetectionResult,
     InferenceImagePayload,
     InferenceModelContract,
+    LoadedInferenceBundle,
     TwoStageInferenceResult,
 )
 

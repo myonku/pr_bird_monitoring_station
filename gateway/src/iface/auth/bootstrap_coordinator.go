@@ -22,7 +22,7 @@ type BootstrapEnsureReadyRequest struct {
 //
 // 下游接口调用:
 //   - common.IKeyManager.GetPrivateKeyRef / GetPublicKey
-//   - communication.IAuthAuthorityClient.InitBootstrapChallenge / AuthenticateBootstrap / RefreshTokenBundle / RevokeToken
+//   - communication.rpc_client.BootstrapRPCClient.ExecuteBootstrapHandshake
 //   - common.ILocalCredentialManager.SaveBootstrapCredential / LoadActiveCredential / MarkCredentialExpired / RevokeCredential
 type IBootstrapCoordinator interface {
 	EnsureModuleReady(ctx context.Context, req *BootstrapEnsureReadyRequest) (*commonif.ModuleCredentialSnapshot, error)

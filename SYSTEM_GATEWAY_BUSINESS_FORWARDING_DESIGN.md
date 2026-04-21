@@ -76,6 +76,8 @@
 - `error_code`
 - `error_message`
 
+对应 proto 基线见 [`schemas/proto/business/v1/business_forward.proto`](schemas/proto/business/v1/business_forward.proto)。
+
 ## 5. 目标服务侧分发模型
 
 目标服务在 gRPC 入站后，不应直接把每个外部 HTTP 接口映射成独立 RPC 方法，而应采用以下方式：

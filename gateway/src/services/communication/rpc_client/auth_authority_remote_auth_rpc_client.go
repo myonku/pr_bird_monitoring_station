@@ -85,6 +85,8 @@ func (c *RemoteAuthRPCClient) VerifyToken(
 	return &authmodel.TokenVerificationResult{
 		Valid:                resp.GetValid(),
 		Status:               mapProtoTokenStatusToModel(resp.GetStatus()),
+		Identity:             mapProtoIdentityToGatewayModel(resp.GetIdentity()),
+		Token:                mapProtoTokenRecordToGatewayModel(resp.GetToken()),
 		RevalidationRequired: resp.GetRevalidationRequired(),
 		FailureReason:        strings.TrimSpace(resp.GetFailureReason()),
 	}, nil
@@ -177,6 +179,56 @@ func mapProtoTokenStatusToModel(status authv1.TokenStatus) authmodel.TokenStatus
 		return authmodel.TokenStatusExpired
 	default:
 		return ""
+	}
+}
+
+func mapProtoTokenStorageToModel(storage authv1.TokenStorage) authmodel.TokenStorage {
+	switch storage {
+	case authv1.TokenStorage_TOKEN_STORAGE_CACHE:
+		return authmodel.TokenStorageCache
+	case authv1.TokenStorage_TOKEN_STORAGE_DATABASE:
+		return authmodel.TokenStorageDatabase
+	case authv1.TokenStorage_TOKEN_STORAGE_HYBRID:
+		return authmodel.TokenStorageHybrid
+	default:
+		return ""
+	}
+}
+
+func mapProtoTokenRecordToGatewayModel(token *authv1.TokenRecord) *authmodel.TokenRecord {
+	if token == nil {
+		return nil
+	}
+
+	principal := authmodel.Principal{}
+	if protoPrincipal := token.GetPrincipal(); protoPrincipal != nil {
+		principal.EntityType = mapProtoEntityTypeToModel(protoPrincipal.GetEntityType())
+		principal.EntityID = strings.TrimSpace(protoPrincipal.GetEntityId())
+	}
+
+	principalID := strings.TrimSpace(token.GetPrincipalId())
+	if principalID == "" {
+		principalID = strings.TrimSpace(principal.PrincipalID())
+	}
+
+	return &authmodel.TokenRecord{
+		ID:              parseUUIDOrNil(token.GetId()),
+		FamilyID:        parseUUIDOrNil(token.GetFamilyId()),
+		SessionID:       parseUUIDOrNil(token.GetSessionId()),
+		Type:            mapProtoTokenTypeToGatewayModel(token.GetTokenType()),
+		Status:          mapProtoTokenStatusToModel(token.GetStatus()),
+		Storage:         mapProtoTokenStorageToModel(token.GetStorage()),
+		Principal:       principal,
+		PrincipalID:     principalID,
+		ParentTokenID:   parseUUIDOrNil(token.GetParentTokenId()),
+		ClientID:        strings.TrimSpace(token.GetClientId()),
+		GatewayID:       strings.TrimSpace(token.GetGatewayId()),
+		RoleSnapshot:    strings.TrimSpace(token.GetRoleSnapshot()),
+		ScopeSnapshot:   append([]string(nil), token.GetScopeSnapshot()...),
+		IssuedAt:        fromUnixMillis(token.GetIssuedAtMs()),
+		ExpiresAt:       fromUnixMillis(token.GetExpiresAtMs()),
+		LastValidatedAt: fromUnixMillis(token.GetLastValidatedAtMs()),
+		RevokedAt:       fromUnixMillis(token.GetRevokedAtMs()),
 	}
 }
 

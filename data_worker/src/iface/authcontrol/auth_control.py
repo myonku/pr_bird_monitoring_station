@@ -1,11 +1,35 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 
-from src.iface.authcontrol.ratelimit import InboundRateLimitInput
+from src.models.auth.auth import IdentityContext
+from src.models.auth.ratelimit import RateLimitScope
 from src.models.auth.auth import TokenType
 from src.models.auth.ratelimit import RateLimitDecision, RateLimitDescriptor
 from src.models.common.entry_type import EntityType
+
+
+@dataclass(slots=True, kw_only=True)
+class InboundRateLimitInput:
+    scope: RateLimitScope
+    transport: str
+
+    module: str
+    action: str
+    route: str
+    method: str
+
+    source_ip: str = ""
+    gateway_id: str = ""
+    client_id: str = ""
+
+    source_service: str = ""
+    target_service: str = ""
+
+    headers: dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
+
+    identity: IdentityContext | None = None
 
 
 def Build(input_data: InboundRateLimitInput | None) -> RateLimitDescriptor:

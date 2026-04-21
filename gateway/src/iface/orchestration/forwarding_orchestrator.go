@@ -33,7 +33,6 @@ type ForwardingResult struct {
 // 下游接口调用：
 //   - communication.ITrafficStation.HandleInbound / SendOutbound
 //   - communication.IRoutingPayloadPipeline.ResolveRouteProfile / BuildOutboundPayload
-//   - authcontrol.IGatewayAuthControl.PrepareOutbound
 //   - common.IServiceResolver.ResolveTargetInstance
 type IForwardingOrchestrator interface {
 	HandleBusinessForward(ctx context.Context, req *ForwardingRequest) (*ForwardingResult, error)

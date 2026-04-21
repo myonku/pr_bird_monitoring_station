@@ -18,8 +18,10 @@ import (
 	commonmodel "gateway/src/models/common"
 	modelsystem "gateway/src/models/system"
 	"gateway/src/repo"
+	authcontrolsvc "gateway/src/services/authcontrol"
 	commonsvc "gateway/src/services/common"
 	communicationsvc "gateway/src/services/communication"
+	gatewayhttp "gateway/src/services/http"
 	orchestrationsvc "gateway/src/services/orchestration"
 
 	"github.com/google/uuid"
@@ -75,7 +77,8 @@ func Run() error {
 	policySnapshotMgr := commonsvc.NewPolicySnapshotService("gateway-default", string(runtimeCfg.RunMode))
 	serviceResolver := commonsvc.NewServiceResolverService(registrySvc, policySnapshotMgr, defaultAuthAuthorityName)
 	routingPipeline := communicationsvc.NewRoutingPayloadPipelineService(serviceResolver)
-	trafficStation := communicationsvc.NewTrafficStationService(routingPipeline)
+	authControl := authcontrolsvc.NewGatewayAuthControlService(runtimeCfg.RunMode, serviceResolver, nil, nil)
+	trafficStation := communicationsvc.NewTrafficStationService(routingPipeline, authControl)
 
 	_, startupParams, err := commonsvc.NewSecretKeyServiceFromProjectConfig(cfg, nil, nil)
 	if err != nil {
@@ -96,15 +99,11 @@ func Run() error {
 	}
 	log.Printf("stage=registry_register_success service=%s instance=%s endpoint=%s", instance.Name, instance.ID.String(), instance.Endpoint)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	httpHandler := gatewayhttp.NewGatewayHTTPHandler(runtimeCfg, routingPipeline, authControl, nil, nil, nil)
 
 	server := &http.Server{
 		Addr:              buildGatewayListenAddr(runtimeCfg),
-		Handler:           mux,
+		Handler:           httpHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

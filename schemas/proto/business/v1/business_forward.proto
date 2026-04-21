@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package bms.business.v1;
+
+option go_package = "pr_bird_monitoring_station/schemas/proto/business/v1;businessv1";
+
+// BusinessForwardService defines the unified business forwarding entry for service modules.
+service BusinessForwardService {
+  // business.forward.generic -> ForwardBusiness.
+  rpc ForwardBusiness(BusinessForwardRequest) returns (BusinessForwardResponse);
+}
+
+// BusinessAuthContext carries the normalized auth context that the gateway forwards downstream.
+message BusinessAuthContext {
+  string principal_id = 1;
+  string session_id = 2;
+  string token_id = 3;
+  string token_family_id = 4;
+
+  string token_type = 5;
+  repeated string scopes = 6;
+  string auth_method = 7;
+
+  string client_id = 8;
+  string gateway_id = 9;
+  string source_ip = 10;
+  string user_agent = 11;
+
+  int64 issued_at_ms = 12;
+  int64 expires_at_ms = 13;
+}
+
+// BusinessForwardRequest defines the gateway-to-module business forwarding envelope.
+message BusinessForwardRequest {
+  string route_key = 1;
+  string operation = 2;
+  string flow_category = 3;
+
+  string source_service = 4;
+  string target_service_type = 5;
+  string target_service_name = 6;
+  string target_endpoint = 7;
+
+  string request_id = 8;
+  string trace_id = 9;
+
+  map<string, string> headers = 10;
+  BusinessAuthContext auth_context = 11;
+  map<string, string> metadata = 12;
+
+  // Serialized business body. The concrete encoding is owned by the caller and the target service.
+  string payload = 13;
+}
+
+// BusinessForwardResponse defines the unified business forwarding result.
+message BusinessForwardResponse {
+  bool accepted = 1;
+  string status = 2;
+
+  string route_key = 3;
+  string operation = 4;
+  string target_service_name = 5;
+  string target_endpoint = 6;
+
+  // Serialized business response body.
+  string payload = 7;
+  map<string, string> metadata = 8;
+
+  string error_code = 9;
+  string error_message = 10;
+}

@@ -1,10 +1,8 @@
 package communication
 
 import (
-	"context"
 	"time"
 
-	authif "gateway/src/iface/auth"
 	authmodel "gateway/src/models/auth"
 )
 
@@ -33,21 +31,4 @@ type UserPasswordAuthResult struct {
 
 	IssuedAt  time.Time
 	ExpiresAt time.Time
-}
-
-// IAuthAuthorityClient 定义网关侧对认证中心的客户端调用。
-type IAuthAuthorityClient interface {
-	InitBootstrapChallenge(ctx context.Context, req *authmodel.ChallengeRequest) (*authmodel.ChallengePayload, error)
-	AuthenticateBootstrap(ctx context.Context, req *authmodel.BootstrapAuthRequest) (*authmodel.BootstrapAuthResult, error)
-
-	VerifyToken(ctx context.Context, req *authif.TokenVerifyRequest) (*authmodel.TokenVerificationResult, error)
-	ValidateSession(ctx context.Context, req *authif.SessionValidateRequest) (*authmodel.Session, error)
-
-	AuthenticateUserPassword(ctx context.Context, req *UserPasswordAuthRequest) (*UserPasswordAuthResult, error)
-
-	ForwardBootstrapChallenge(ctx context.Context, req *authmodel.ChallengeRequest) (*authmodel.ChallengePayload, error)
-	ForwardBootstrapAuthenticate(ctx context.Context, req *authmodel.BootstrapAuthRequest) (*authmodel.BootstrapAuthResult, error)
-
-	RefreshTokenBundle(ctx context.Context, req *authif.TokenRefreshRequest) (*authmodel.TokenBundle, error)
-	RevokeToken(ctx context.Context, req *authif.TokenRevokeRequest) error
 }
