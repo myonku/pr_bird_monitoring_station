@@ -294,6 +294,47 @@ func TestServeHTTP_NoAuthModeSkipsAuthControlForBusinessRoute(t *testing.T) {
 	}
 }
 
+func TestServeHTTP_NoAuthModeDisablesAuthRoutes(t *testing.T) {
+	pipe := &fakeRoutingPipeline{
+		profile: &commonif.RouteProfile{
+			TargetServiceName: "certification_server",
+			TargetEndpoint:    "certification.example:9443",
+			FlowCategory:      commonif.FlowCategoryExternalAuthRelay,
+		},
+	}
+	externalClient := &fakeExternalAuthClient{
+		userPasswordResult: &communicationif.UserPasswordAuthResult{
+			Identity: &authmodel.IdentityContext{
+				Principal:   authmodel.Principal{EntityType: authmodel.EntityUser, EntityID: "alice"},
+				PrincipalID: "user:alice",
+			},
+		},
+	}
+
+	handler := http_handler.NewGatewayHTTPHandler(
+		modelsystem.RuntimeConfig{ServiceName: "gateway", InstanceID: "gateway", RunMode: modelsystem.RuntimeRunModeNoAuth},
+		pipe,
+		nil,
+		func(endpoint string) http_handler.BusinessForwardClient { return &fakeBusinessClient{} },
+		func(endpoint string) http_handler.ExternalAuthClient { return externalClient },
+		nil,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/client/auth/sign-in", strings.NewReader(`{"identifier":"alice","password":"secret"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	if externalClient.userPasswordCalls != 0 {
+		t.Fatalf("AuthenticateUserPassword calls = %d, want 0 in no-auth mode", externalClient.userPasswordCalls)
+	}
+	if pipe.lastFlow != nil {
+		t.Fatalf("expected no route resolution in no-auth mode, got %+v", pipe.lastFlow)
+	}
+}
+
 type fakeRoutingPipeline struct {
 	profile  *commonif.RouteProfile
 	lastFlow *commonif.FlowRouteInput

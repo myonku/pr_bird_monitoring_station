@@ -43,8 +43,9 @@
 5. 服务发现注册路径、最小实例字段、失败回退与阶段日志保持可执行基线。
 6. bootstrap 及内部认证通路的 route_key 与方法映射已完成收敛；token_refresh 的外部转发与模块自刷新 route 也已同步对齐。
 7. 路由匹配优先级与未知规则失败语义已完成本阶段收敛。
-8. 目前仍有两项推进差距需要后续补齐：gateway 的对外启动链路与运行态接线尚未闭环，data_worker 的顶层编排与实际调用接线也仍停留在骨架/预留层。
+8. 目前仍有一项推进差距需要后续补齐：data_worker 的顶层编排与实际调用接线仍停留在骨架/预留层。
 9. runtime token refresh 已补齐独立 route/proto 通路；revoke 仍保留在能力层接口与启动链路语义中，尚未冻结独立 route/proto 约定。
+10. gateway 现已补齐 bootstrap 真签名、本地凭证快照、refresh-first 凭证发现监督器与 no-auth 认证入口短路；data_worker 的顶层编排与实际调用接线仍待继续补齐。
 
 ## 4. 时间线（精简记录）
 
@@ -105,6 +106,13 @@
 - certification_server 已补齐 user_credential / session / token / secret_key / orchestrator 的最小单测，覆盖成功、缺参、过期、失活、找不到、依赖缺失与错误码映射。
 - certification_server 已补齐编排层 smoke test，串起 bootstrap、用户名密码、token refresh、session validate 四条主路径。
 - certification_server 已通过 `go test ./...` 全量校验。
+
+### 2026-04-22（gateway 启动链闭环）
+
+- gateway 的 bootstrap 已切换为真实签名与完整凭证结果映射，本地凭证快照补齐 refresh 相关元数据。
+- gateway 新增凭证发现监督器，按“可用则注册、临期先刷新、失效先注销再重 bootstrap”的顺序维持服务发现状态。
+- no-auth 模式下 gateway 的 HTTP 认证入口已在入站边界短路，仅保留健康检查与业务转发。
+- gateway tests 下补齐了 no-auth 认证入口短路、凭证缺失注销重建与刷新窗口回写的回归测试。
 
 ## 5. 阶段问题精简结论（来自已归档问题单）
 

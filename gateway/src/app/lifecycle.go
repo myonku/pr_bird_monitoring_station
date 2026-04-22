@@ -14,7 +14,6 @@ import (
 	"time"
 
 	commonif "gateway/src/iface/common"
-	communicationif "gateway/src/iface/communication"
 	commonmodel "gateway/src/models/common"
 	modelsystem "gateway/src/models/system"
 	"gateway/src/repo"
@@ -80,15 +79,22 @@ func Run() error {
 	authControl := authcontrolsvc.NewGatewayAuthControlService(runtimeCfg.RunMode, serviceResolver, nil, nil)
 	trafficStation := communicationsvc.NewTrafficStationService(routingPipeline, authControl)
 
-	_, startupParams, err := commonsvc.NewSecretKeyServiceFromProjectConfig(cfg, nil, nil)
+	secretKeySvc, startupParams, err := commonsvc.NewSecretKeyServiceFromProjectConfig(cfg, nil, nil)
 	if err != nil {
 		return err
 	}
 	log.Printf("stage=dependencies_initialized service=%s", runtimeCfg.ServiceName)
 
+	bootstrapOrchestrator := orchestrationsvc.NewBootstrapStartupOrchestratorService(
+		localCredentialMgr,
+		secretKeySvc,
+		trafficStation,
+		defaultAuthAuthorityName,
+	)
+
 	if runtimeCfg.RunMode == modelsystem.RuntimeRunModeNoAuth {
 		log.Printf("stage=bootstrap_skipped_or_ready service=%s mode=no_auth", runtimeCfg.ServiceName)
-	} else if err = ensureGatewayBootstrapReady(runtimeCfg, startupParams, localCredentialMgr, trafficStation); err != nil {
+	} else if err = ensureGatewayBootstrapReady(runtimeCfg, startupParams, bootstrapOrchestrator); err != nil {
 		return err
 	}
 
@@ -98,6 +104,17 @@ func Run() error {
 		return err
 	}
 	log.Printf("stage=registry_register_success service=%s instance=%s endpoint=%s", instance.Name, instance.ID.String(), instance.Endpoint)
+
+	credentialSupervisor := orchestrationsvc.NewCredentialDiscoverySupervisorService(
+		runtimeCfg,
+		startupParams,
+		localCredentialMgr,
+		registrySvc,
+		bootstrapOrchestrator,
+		instance,
+		defaultGatewayRegistryTTL,
+	)
+	credentialSupervisor.MarkRegistered()
 
 	httpHandler := gatewayhttp.NewGatewayHTTPHandler(runtimeCfg, routingPipeline, authControl, nil, nil, nil)
 
@@ -111,6 +128,8 @@ func Run() error {
 	defer stop()
 
 	serveErrCh := make(chan error, 1)
+	go credentialSupervisor.Run(ctx)
+	log.Printf("stage=credential_supervisor_started service=%s instance=%s", runtimeCfg.ServiceName, instance.ID.String())
 	log.Printf("stage=server_start_attempt service=%s transport=http addr=%s", runtimeCfg.ServiceName, server.Addr)
 	go func() {
 		if serveErr := server.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
@@ -142,15 +161,12 @@ func Run() error {
 func ensureGatewayBootstrapReady(
 	runtime modelsystem.RuntimeConfig,
 	startupParams modelsystem.SecretKeyStartupParams,
-	localCredentialMgr commonif.ILocalCredentialManager,
-	trafficStation communicationif.ITrafficStation,
+	bootstrapEnsurer orchestrationsvc.BootstrapReadyEnsurer,
 ) error {
-	startupOrchestrator := orchestrationsvc.NewBootstrapStartupOrchestratorService(
-		localCredentialMgr,
-		trafficStation,
-		defaultAuthAuthorityName,
-	)
-	result, err := startupOrchestrator.EnsureReady(
+	if bootstrapEnsurer == nil {
+		return &modelsystem.ErrModuleCredentialDependenciesRequired
+	}
+	result, err := bootstrapEnsurer.EnsureReady(
 		context.Background(),
 		&orchestrationsvc.BootstrapStartupRequest{
 			Runtime:              runtime,

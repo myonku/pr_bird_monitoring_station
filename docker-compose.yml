@@ -174,7 +174,7 @@ services:
       - project-network
     environment:
       ETCDCTL_API: 3
-    # 需要自定义设置 root 用户密码，并确保与后续使用 etcdctl 连接时的密码一致
+    # 需要自定义设置 root 用户密码
     command: >
       sh -c "sleep 5 &&
       etcdctl --endpoints=http://etcd-1:2379 user add root:YourEtcdPassword123! --interactive=false &&

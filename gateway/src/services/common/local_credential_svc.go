@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -163,4 +164,38 @@ func resolveCredentialTTL(expiresAt time.Time, now time.Time) time.Duration {
 		return expiresAt.Sub(now)
 	}
 	return defaultLocalCredentialTTL
+}
+
+// IsCredentialValidForDiscovery 判断当前模块凭证是否足以参与服务发现。
+func IsCredentialValidForDiscovery(snapshot *commonif.ModuleCredentialSnapshot, now time.Time) bool {
+	if snapshot == nil {
+		return false
+	}
+	if strings.TrimSpace(snapshot.PrincipalID) == "" {
+		return false
+	}
+	if snapshot.Stage != authmodel.BootstrapStageReady {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(snapshot.Metadata["credential_status"]), "revoked") {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(snapshot.Metadata["credential_status"]), "expired") {
+		return false
+	}
+	if strings.TrimSpace(snapshot.RefreshTokenRaw) == "" {
+		return false
+	}
+
+	expiresAt := snapshot.ExpiresAt
+	if raw := strings.TrimSpace(snapshot.Metadata["refresh_expires_at_ms"]); raw != "" {
+		if millis, err := strconv.ParseInt(raw, 10, 64); err == nil && millis > 0 {
+			expiresAt = time.UnixMilli(millis)
+		}
+	}
+	if !expiresAt.IsZero() && !expiresAt.After(now) {
+		return false
+	}
+
+	return true
 }

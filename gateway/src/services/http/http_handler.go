@@ -113,6 +113,10 @@ func (h *GatewayHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 		return
 	}
+	if spec.Kind == RouteKindAuth && h.runtime.RunMode == modelsystem.RuntimeRunModeNoAuth {
+		http.NotFound(w, r)
+		return
+	}
 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -161,15 +165,15 @@ func (h *GatewayHTTPHandler) handleAuthRoute(
 
 	switch spec.AuthRoute {
 	case AuthRouteClientSignIn:
-		h.handleClientSignIn(ctx, w, r, client, headers, bodyBytes, profile)
+		h.handleClientSignIn(ctx, w, r, client, headers, bodyBytes)
 	case AuthRouteClientRefreshSession:
 		h.handleClientRefreshSession(ctx, w, r, client, headers, bodyBytes, profile)
 	case AuthRouteEdgeBootstrapChallenge:
-		h.handleEdgeBootstrapChallenge(ctx, w, r, client, headers, bodyBytes, profile)
+		h.handleEdgeBootstrapChallenge(ctx, w, r, client, headers, bodyBytes)
 	case AuthRouteEdgeBootstrapAuthenticate:
-		h.handleEdgeBootstrapAuthenticate(ctx, w, r, client, headers, bodyBytes, profile)
+		h.handleEdgeBootstrapAuthenticate(ctx, w, client, bodyBytes)
 	case AuthRouteEdgeTokenRefresh:
-		h.handleEdgeTokenRefresh(ctx, w, r, client, headers, bodyBytes, profile)
+		h.handleEdgeTokenRefresh(ctx, w, r, client, headers, bodyBytes)
 	default:
 		h.writeError(w, http.StatusNotFound, "auth route not found")
 	}
@@ -293,15 +297,7 @@ func (h *GatewayHTTPHandler) handleBusinessRoute(
 	_, _ = w.Write([]byte(resp.GetPayload()))
 }
 
-func (h *GatewayHTTPHandler) handleClientSignIn(
-	ctx context.Context,
-	w http.ResponseWriter,
-	r *http.Request,
-	client ExternalAuthClient,
-	headers map[string]string,
-	bodyBytes []byte,
-	profile *commonif.RouteProfile,
-) {
+func (h *GatewayHTTPHandler) handleClientSignIn(ctx context.Context, w http.ResponseWriter, r *http.Request, client ExternalAuthClient, headers map[string]string, bodyBytes []byte) {
 	var reqBody appclientauthdto.ClientSignInRequest
 	if err := json.Unmarshal(bodyBytes, &reqBody); err != nil {
 		h.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid sign-in request: %v", err))
@@ -333,7 +329,7 @@ func (h *GatewayHTTPHandler) handleClientSignIn(
 		return
 	}
 
-	response := mapClientAuthCredentialsResponse(result, nil, nil, time.Time{}, profile)
+	response := mapClientAuthCredentialsResponse(result, nil, nil, time.Time{})
 	h.writeJSON(w, http.StatusOK, response)
 }
 
@@ -362,7 +358,7 @@ func (h *GatewayHTTPHandler) handleClientRefreshSession(
 		return
 	}
 
-	remoteClient, err := h.resolveRemoteAuthClient(ctx, profile)
+	remoteClient, err := h.resolveRemoteAuthClient(profile)
 	if err != nil {
 		h.writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -396,7 +392,7 @@ func (h *GatewayHTTPHandler) handleClientRefreshSession(
 		return
 	}
 
-	response := mapClientAuthCredentialsResponse(nil, session, tokenBundle, time.Now(), profile)
+	response := mapClientAuthCredentialsResponse(nil, session, tokenBundle, time.Now())
 	if response.TokenID == "" {
 		response.TokenID = strings.TrimSpace(reqBody.TokenID)
 	}
@@ -409,15 +405,7 @@ func (h *GatewayHTTPHandler) handleClientRefreshSession(
 	h.writeJSON(w, http.StatusOK, response)
 }
 
-func (h *GatewayHTTPHandler) handleEdgeBootstrapChallenge(
-	ctx context.Context,
-	w http.ResponseWriter,
-	r *http.Request,
-	client ExternalAuthClient,
-	headers map[string]string,
-	bodyBytes []byte,
-	profile *commonif.RouteProfile,
-) {
+func (h *GatewayHTTPHandler) handleEdgeBootstrapChallenge(ctx context.Context, w http.ResponseWriter, r *http.Request, client ExternalAuthClient, headers map[string]string, bodyBytes []byte) {
 	var reqBody edgeserverauthdto.BootstrapChallengeRequest
 	if err := json.Unmarshal(bodyBytes, &reqBody); err != nil {
 		h.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid bootstrap challenge request: %v", err))
@@ -445,15 +433,7 @@ func (h *GatewayHTTPHandler) handleEdgeBootstrapChallenge(
 	h.writeJSON(w, http.StatusOK, response)
 }
 
-func (h *GatewayHTTPHandler) handleEdgeBootstrapAuthenticate(
-	ctx context.Context,
-	w http.ResponseWriter,
-	r *http.Request,
-	client ExternalAuthClient,
-	headers map[string]string,
-	bodyBytes []byte,
-	profile *commonif.RouteProfile,
-) {
+func (h *GatewayHTTPHandler) handleEdgeBootstrapAuthenticate(ctx context.Context, w http.ResponseWriter, client ExternalAuthClient, bodyBytes []byte) {
 	var reqBody edgeserverauthdto.BootstrapAuthenticateRequest
 	if err := json.Unmarshal(bodyBytes, &reqBody); err != nil {
 		h.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid bootstrap authenticate request: %v", err))
@@ -487,15 +467,7 @@ func (h *GatewayHTTPHandler) handleEdgeBootstrapAuthenticate(
 	h.writeJSON(w, http.StatusOK, response)
 }
 
-func (h *GatewayHTTPHandler) handleEdgeTokenRefresh(
-	ctx context.Context,
-	w http.ResponseWriter,
-	r *http.Request,
-	client ExternalAuthClient,
-	headers map[string]string,
-	bodyBytes []byte,
-	profile *commonif.RouteProfile,
-) {
+func (h *GatewayHTTPHandler) handleEdgeTokenRefresh(ctx context.Context, w http.ResponseWriter, r *http.Request, client ExternalAuthClient, headers map[string]string, bodyBytes []byte) {
 	var reqBody edgeserverauthdto.RefreshTokenRequest
 	if err := json.Unmarshal(bodyBytes, &reqBody); err != nil {
 		h.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid token refresh request: %v", err))
@@ -556,10 +528,7 @@ func (h *GatewayHTTPHandler) resolveRouteProfile(
 	return profile, nil
 }
 
-func (h *GatewayHTTPHandler) resolveRemoteAuthClient(
-	ctx context.Context,
-	profile *commonif.RouteProfile,
-) (RemoteAuthClient, error) {
+func (h *GatewayHTTPHandler) resolveRemoteAuthClient(profile *commonif.RouteProfile) (RemoteAuthClient, error) {
 	if profile == nil {
 		return nil, &modelsystem.ErrRouteRuleNotFound
 	}
@@ -753,13 +722,7 @@ func buildBusinessMetadata(
 	return metadata
 }
 
-func mapClientAuthCredentialsResponse(
-	userResult *communicationif.UserPasswordAuthResult,
-	session *authmodel.Session,
-	tokenBundle *authmodel.TokenBundle,
-	issuedAt time.Time,
-	profile *commonif.RouteProfile,
-) appclientauthdto.ClientAuthCredentialsResponse {
+func mapClientAuthCredentialsResponse(userResult *communicationif.UserPasswordAuthResult, session *authmodel.Session, tokenBundle *authmodel.TokenBundle, issuedAt time.Time) appclientauthdto.ClientAuthCredentialsResponse {
 	response := appclientauthdto.ClientAuthCredentialsResponse{Persisted: false}
 	if userResult != nil {
 		response.AccessToken = tokenRaw(userResult.Tokens.AccessToken)

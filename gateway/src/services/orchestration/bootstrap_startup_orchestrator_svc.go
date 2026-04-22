@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,9 @@ import (
 	commonmodel "gateway/src/models/common"
 	modelsystem "gateway/src/models/system"
 	rpcclient "gateway/src/services/communication/rpc_client"
+	"gateway/src/utils"
+
+	"github.com/google/uuid"
 )
 
 const defaultBootstrapAuthorityServiceName = "certification_server"
@@ -34,12 +38,14 @@ type BootstrapStartupResult struct {
 // BootstrapStartupOrchestratorService 将启动期 bootstrap 逻辑下沉到编排层。
 type BootstrapStartupOrchestratorService struct {
 	localCredentialMgr  commonif.ILocalCredentialManager
+	KeyManager          commonif.IKeyManager
 	trafficStation      communicationif.ITrafficStation
 	authAuthorityTarget string
 }
 
 func NewBootstrapStartupOrchestratorService(
 	localCredentialMgr commonif.ILocalCredentialManager,
+	keyManager commonif.IKeyManager,
 	trafficStation communicationif.ITrafficStation,
 	authAuthorityService string,
 ) *BootstrapStartupOrchestratorService {
@@ -50,6 +56,7 @@ func NewBootstrapStartupOrchestratorService(
 
 	return &BootstrapStartupOrchestratorService{
 		localCredentialMgr:  localCredentialMgr,
+		KeyManager:          keyManager,
 		trafficStation:      trafficStation,
 		authAuthorityTarget: resolvedAuthority,
 	}
@@ -63,6 +70,9 @@ func (s *BootstrapStartupOrchestratorService) EnsureReady(
 		return nil, &modelsystem.ErrReadinessRequestInvalid
 	}
 	if s.localCredentialMgr == nil {
+		return nil, &modelsystem.ErrModuleCredentialDependenciesRequired
+	}
+	if s.KeyManager == nil {
 		return nil, &modelsystem.ErrModuleCredentialDependenciesRequired
 	}
 
@@ -87,6 +97,11 @@ func (s *BootstrapStartupOrchestratorService) EnsureReady(
 		keyID = strings.TrimSpace(runtime.InstanceID)
 	}
 
+	signer, err := s.BuildChallengeSigner(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	bootstrapClient := rpcclient.NewBootstrapRPCClient(authorityEndpoint)
 	handshakeResult, callErr := bootstrapClient.ExecuteBootstrapHandshake(
 		ctx,
@@ -95,6 +110,7 @@ func (s *BootstrapStartupOrchestratorService) EnsureReady(
 			EntityID:   runtime.InstanceID,
 			Audience:   runtime.ServiceName,
 			KeyID:      keyID,
+			Signer:     signer,
 		},
 	)
 	if callErr != nil {
@@ -112,6 +128,38 @@ func (s *BootstrapStartupOrchestratorService) EnsureReady(
 	}
 	principalID := fmt.Sprintf("%s:%s", entityType, entityID)
 
+	issuedAt := handshakeResult.IssuedAt
+	if issuedAt.IsZero() {
+		issuedAt = now
+	}
+	expiresAt := handshakeResult.ExpiresAt
+	if expiresAt.IsZero() && handshakeResult.Session != nil {
+		expiresAt = handshakeResult.Session.ExpiresAt
+	}
+	if expiresAt.IsZero() {
+		expiresAt = now.Add(24 * time.Hour)
+	}
+	refreshExpiresAt := expiresAt
+	if refreshToken := handshakeResult.Tokens.RefreshToken; refreshToken != nil && refreshToken.TTLSec > 0 {
+		refreshExpiresAt = issuedAt.Add(time.Duration(refreshToken.TTLSec) * time.Second)
+	}
+	if refreshExpiresAt.IsZero() {
+		refreshExpiresAt = expiresAt
+	}
+	nextRefreshAt := issuedAt.Add(30 * time.Minute)
+	if handshakeResult.Session != nil && !handshakeResult.Session.NextRefreshAt.IsZero() {
+		nextRefreshAt = handshakeResult.Session.NextRefreshAt
+	}
+	sessionID := uuidOrZero(handshakeResult.Session)
+	tokenFamilyID := uuidOrZeroFromIdentity(handshakeResult.Identity)
+	if tokenFamilyID == uuid.Nil && handshakeResult.Session != nil {
+		tokenFamilyID = handshakeResult.Session.TokenFamilyID
+	}
+	accessRaw := tokenRawFromIssuedToken(handshakeResult.Tokens.AccessToken)
+	refreshRaw := tokenRawFromIssuedToken(handshakeResult.Tokens.RefreshToken)
+	scopes := collectBootstrapScopes(handshakeResult.Identity, handshakeResult.Session)
+	role := collectBootstrapRole(handshakeResult.Identity, handshakeResult.Session)
+
 	activeCommKeyID := strings.TrimSpace(handshakeResult.ActiveCommKeyID)
 	if activeCommKeyID == "" {
 		activeCommKeyID = keyID
@@ -122,17 +170,27 @@ func (s *BootstrapStartupOrchestratorService) EnsureReady(
 			PrincipalID:     principalID,
 			EntityType:      entityType,
 			EntityID:        entityID,
+			SessionID:       sessionID,
+			TokenFamilyID:   tokenFamilyID,
+			AccessTokenRaw:  accessRaw,
+			RefreshTokenRaw: refreshRaw,
+			Scopes:          scopes,
+			Role:            role,
 			Stage:           authmodel.BootstrapStageReady,
 			ActiveCommKeyID: activeCommKeyID,
-			IssuedAt:        now,
-			ExpiresAt:       now.Add(15 * time.Minute),
+			IssuedAt:        issuedAt,
+			ExpiresAt:       refreshExpiresAt,
 			UpdatedAt:       now,
 			Metadata: map[string]string{
-				"run_mode":            string(runtime.RunMode),
-				"auth_authority":      authorityService,
-				"auth_authority_ep":   authorityEndpoint,
-				"credential_status":   "active",
-				"bootstrap_rpc_stage": handshakeResult.Stage,
+				"run_mode":              string(runtime.RunMode),
+				"auth_authority":        authorityService,
+				"auth_authority_ep":     authorityEndpoint,
+				"credential_status":     "active",
+				"bootstrap_rpc_stage":   handshakeResult.Stage,
+				"last_bootstrap_at_ms":  strconv.FormatInt(now.UnixMilli(), 10),
+				"last_refresh_at_ms":    strconv.FormatInt(now.UnixMilli(), 10),
+				"next_refresh_at_ms":    strconv.FormatInt(nextRefreshAt.UnixMilli(), 10),
+				"refresh_expires_at_ms": strconv.FormatInt(refreshExpiresAt.UnixMilli(), 10),
 			},
 		},
 	)
@@ -145,6 +203,110 @@ func (s *BootstrapStartupOrchestratorService) EnsureReady(
 		AuthorityEndpoint: authorityEndpoint,
 		CredentialKey:     credentialKey,
 	}, nil
+}
+
+func (s *BootstrapStartupOrchestratorService) BuildChallengeSigner(ctx context.Context) (authmodel.ChallengeSigner, error) {
+	if s.KeyManager == nil {
+		return nil, &modelsystem.ErrModuleCredentialDependenciesRequired
+	}
+	publicKey, err := s.KeyManager.GetPublicKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	privateKey, err := s.KeyManager.GetPrivateKeyRef(ctx)
+	if err != nil {
+		return nil, err
+	}
+	algorithm, err := (&utils.CryptoUtils{}).DetectSignatureAlgorithmFromPublicPEM([]byte(publicKey.PublicKeyPEM))
+	if err != nil {
+		return nil, err
+	}
+
+	resolvedKeyID := strings.TrimSpace(publicKey.KeyID)
+	if resolvedKeyID == "" {
+		resolvedKeyID = strings.TrimSpace(privateKey.KeyID)
+	}
+
+	return func(signCtx context.Context, payload *authmodel.ChallengePayload) (*authmodel.SignedChallengeResponse, error) {
+		_ = signCtx
+		if payload == nil {
+			return nil, &modelsystem.ErrChallengeRequestNil
+		}
+		message, err := BuildBootstrapSignaturePayload(payload)
+		if err != nil {
+			return nil, err
+		}
+		signature, signErr := (&utils.CryptoUtils{}).SignByAlgorithm(string(algorithm), message, []byte(privateKey.PrivateKeyRef))
+		if signErr != nil {
+			return nil, signErr
+		}
+		return &authmodel.SignedChallengeResponse{
+			ChallengeID:        payload.ChallengeID,
+			KeyID:              resolvedKeyID,
+			SignatureAlgorithm: algorithm,
+			Signature:          signature,
+			SignedAt:           time.Now().UTC(),
+		}, nil
+	}, nil
+}
+
+func BuildBootstrapSignaturePayload(challenge *authmodel.ChallengePayload) ([]byte, error) {
+	if challenge == nil {
+		return nil, &modelsystem.ErrChallengeRequestNil
+	}
+	fields := []string{
+		strings.TrimSpace(challenge.ChallengeID.String()),
+		strings.TrimSpace(challenge.Issuer),
+		strings.TrimSpace(challenge.Audience),
+		strings.ToLower(strings.TrimSpace(string(challenge.EntityType))),
+		strings.TrimSpace(challenge.EntityID),
+		strings.TrimSpace(challenge.KeyID),
+		strings.TrimSpace(challenge.Nonce),
+		challenge.IssuedAt.UTC().Format(time.RFC3339Nano),
+		challenge.ExpiresAt.UTC().Format(time.RFC3339Nano),
+	}
+	return []byte(strings.Join(fields, "|")), nil
+}
+
+func tokenRawFromIssuedToken(token *authmodel.IssuedToken) string {
+	if token == nil {
+		return ""
+	}
+	return strings.TrimSpace(token.Raw)
+}
+
+func uuidOrZero(session *authmodel.Session) (value uuid.UUID) {
+	if session == nil {
+		return uuid.Nil
+	}
+	return session.ID
+}
+
+func uuidOrZeroFromIdentity(identity *authmodel.IdentityContext) (value uuid.UUID) {
+	if identity == nil {
+		return uuid.Nil
+	}
+	return identity.TokenFamilyID
+}
+
+func collectBootstrapScopes(identity *authmodel.IdentityContext, session *authmodel.Session) []string {
+	if identity != nil && len(identity.Scopes) > 0 {
+		return append([]string(nil), identity.Scopes...)
+	}
+	if session != nil && len(session.ScopeSnapshot) > 0 {
+		return append([]string(nil), session.ScopeSnapshot...)
+	}
+	return []string{}
+}
+
+func collectBootstrapRole(identity *authmodel.IdentityContext, session *authmodel.Session) string {
+	if identity != nil && strings.TrimSpace(identity.Role) != "" {
+		return strings.TrimSpace(identity.Role)
+	}
+	if session != nil {
+		return strings.TrimSpace(session.RoleSnapshot)
+	}
+	return ""
 }
 
 func (s *BootstrapStartupOrchestratorService) resolveAuthorityEndpoint(

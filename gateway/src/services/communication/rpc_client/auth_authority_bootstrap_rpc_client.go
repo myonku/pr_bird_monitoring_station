@@ -2,12 +2,12 @@ package rpcclient
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
 
 	authv1 "gateway/src/gen/auth/v1"
+	authmodel "gateway/src/models/auth"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -20,12 +20,18 @@ type BootstrapHandshakeRequest struct {
 	EntityID   string
 	Audience   string
 	KeyID      string
+	Signer     authmodel.ChallengeSigner
 }
 
 // BootstrapHandshakeResult 表示最小握手结果快照。
 type BootstrapHandshakeResult struct {
 	Stage           string
+	Identity        *authmodel.IdentityContext
+	Session         *authmodel.Session
+	Tokens          authmodel.TokenBundle
 	ActiveCommKeyID string
+	IssuedAt        time.Time
+	ExpiresAt       time.Time
 }
 
 // BootstrapRPCClient 负责执行认证中心 bootstrap 最小 RPC 调用。
@@ -105,15 +111,44 @@ func (c *BootstrapRPCClient) ExecuteBootstrapHandshake(
 	if challengeKeyID == "" {
 		challengeKeyID = strings.TrimSpace(req.KeyID)
 	}
+	if req.Signer == nil {
+		return nil, fmt.Errorf("challenge signer is required")
+	}
+
+	challengePayload, err := mapProtoChallengePayloadToModel(challenge)
+	if err != nil {
+		return nil, fmt.Errorf("map bootstrap challenge payload failed: %w", err)
+	}
+	signerCtx, signerCancel := context.WithTimeout(ctx, c.callTimeout)
+	signedChallenge, err := req.Signer(signerCtx, challengePayload)
+	signerCancel()
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap challenge signing failed: %w", err)
+	}
+	if signedChallenge == nil {
+		return nil, fmt.Errorf("bootstrap challenge signer returned nil response")
+	}
+	signedAlgorithm, err := mapGatewaySignatureAlgorithmToProto(signedChallenge.SignatureAlgorithm)
+	if err != nil {
+		return nil, fmt.Errorf("map bootstrap signature algorithm failed: %w", err)
+	}
+	signedChallengeID := strings.TrimSpace(signedChallenge.ChallengeID.String())
+	if signedChallengeID == "" || signedChallengeID == "00000000-0000-0000-0000-000000000000" {
+		signedChallengeID = challengeID
+	}
+	signedKeyID := strings.TrimSpace(signedChallenge.KeyID)
+	if signedKeyID == "" {
+		signedKeyID = challengeKeyID
+	}
 
 	authReq := &authv1.BootstrapAuthenticateRequest{
 		Challenge: challenge,
 		Signed: &authv1.SignedChallengeResponse{
-			ChallengeId:        challengeID,
-			KeyId:              challengeKeyID,
-			SignatureAlgorithm: authv1.SignatureAlgorithm_SIGNATURE_ALGORITHM_ED25519,
-			Signature:          base64.StdEncoding.EncodeToString([]byte("bootstrap:" + challengeID)),
-			SignedAtMs:         time.Now().UnixMilli(),
+			ChallengeId:        signedChallengeID,
+			KeyId:              signedKeyID,
+			SignatureAlgorithm: signedAlgorithm,
+			Signature:          strings.TrimSpace(signedChallenge.Signature),
+			SignedAtMs:         signedChallenge.SignedAt.UTC().UnixMilli(),
 		},
 		Scopes:                 []string{"service:bootstrap"},
 		Role:                   "service",
@@ -133,7 +168,12 @@ func (c *BootstrapRPCClient) ExecuteBootstrapHandshake(
 
 	return &BootstrapHandshakeResult{
 		Stage:           stage,
+		Identity:        mapProtoIdentityToGatewayModel(authResp.GetIdentity()),
+		Session:         mapProtoSessionToModel(authResp.GetSession()),
+		Tokens:          mapProtoTokenBundleToGatewayModel(authResp.GetTokens()),
 		ActiveCommKeyID: strings.TrimSpace(authResp.GetActiveCommKeyId()),
+		IssuedAt:        fromUnixMillis(authResp.GetIssuedAtMs()),
+		ExpiresAt:       fromUnixMillis(authResp.GetExpiresAtMs()),
 	}, nil
 }
 
@@ -180,5 +220,34 @@ func normalizeBootstrapStage(stage authv1.BootstrapStage) string {
 		return ""
 	default:
 		return strings.TrimSpace(strings.ToLower(stage.String()))
+	}
+}
+
+func mapProtoChallengePayloadToModel(payload *authv1.ChallengePayload) (*authmodel.ChallengePayload, error) {
+	if payload == nil {
+		return nil, fmt.Errorf("bootstrap challenge payload is nil")
+	}
+	entityType := mapProtoEntityTypeToModel(payload.GetEntityType())
+	return &authmodel.ChallengePayload{
+		ChallengeID: parseUUIDOrNil(payload.GetChallengeId()),
+		Issuer:      strings.TrimSpace(payload.GetIssuer()),
+		Audience:    strings.TrimSpace(payload.GetAudience()),
+		EntityType:  authmodel.EntityType(entityType),
+		EntityID:    strings.TrimSpace(payload.GetEntityId()),
+		KeyID:       strings.TrimSpace(payload.GetKeyId()),
+		Nonce:       strings.TrimSpace(payload.GetNonce()),
+		IssuedAt:    fromUnixMillis(payload.GetIssuedAtMs()),
+		ExpiresAt:   fromUnixMillis(payload.GetExpiresAtMs()),
+	}, nil
+}
+
+func mapProtoTokenBundleToGatewayModel(bundle *authv1.TokenBundle) authmodel.TokenBundle {
+	if bundle == nil {
+		return authmodel.TokenBundle{}
+	}
+	return authmodel.TokenBundle{
+		AccessToken:     mapProtoIssuedTokenToGatewayModel(bundle.GetAccessToken()),
+		RefreshToken:    mapProtoIssuedTokenToGatewayModel(bundle.GetRefreshToken()),
+		DownstreamToken: mapProtoIssuedTokenToGatewayModel(bundle.GetDownstreamToken()),
 	}
 }
