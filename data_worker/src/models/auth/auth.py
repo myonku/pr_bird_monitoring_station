@@ -179,9 +179,9 @@ class IssuedToken(Struct, kw_only=True):
 
     raw: str
     type: TokenType
-    storage: TokenStorage
-    claims: TokenClaims
-    ttl_sec: int
+    storage: TokenStorage = "cache"
+    claims: TokenClaims | None = None
+    ttl_sec: int = 0
 
 
 class TokenBundle(Struct, kw_only=True):

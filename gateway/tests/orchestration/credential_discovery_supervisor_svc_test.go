@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	authif "gateway/src/iface/auth"
 	commonif "gateway/src/iface/common"
 	authmodel "gateway/src/models/auth"
 	commonmodel "gateway/src/models/common"
@@ -103,47 +102,91 @@ func (r *recordingRegistryManager) ChooseEndpoint(serviceName string, affinityKe
 	return nil, nil
 }
 
-type bootstrapEnsurerStub struct {
-	credentialMgr *memoryCredentialManager
-	callCount     int
+type bootstrapCoordinatorStub struct {
+	credentialMgr    *memoryCredentialManager
+	ensureSnapshot   *commonif.ModuleCredentialSnapshot
+	refreshSnapshot  *commonif.ModuleCredentialSnapshot
+	ensureCallCount  int
+	refreshCallCount int
+	revokeCallCount  int
+	revokeReason     string
 }
 
-func (b *bootstrapEnsurerStub) EnsureReady(ctx context.Context, req *orchestration.BootstrapStartupRequest) (*orchestration.BootstrapStartupResult, error) {
+func (b *bootstrapCoordinatorStub) EnsureModuleReady(ctx context.Context) (*commonif.ModuleCredentialSnapshot, error) {
 	_ = ctx
-	b.callCount++
-	principalID := strings.ToLower(strings.TrimSpace(req.Runtime.EntityType)) + ":" + strings.TrimSpace(req.Runtime.InstanceID)
-	now := time.Now().UTC()
-	expiresAt := now.Add(2 * time.Hour)
-	if b.credentialMgr.snapshots == nil {
-		b.credentialMgr.snapshots = make(map[string]*commonif.ModuleCredentialSnapshot)
+	b.ensureCallCount++
+	if b.ensureSnapshot == nil {
+		return nil, nil
 	}
-	b.credentialMgr.snapshots[principalID] = &commonif.ModuleCredentialSnapshot{
+	clone := cloneCredentialSnapshot(b.ensureSnapshot)
+	if b.credentialMgr != nil {
+		if b.credentialMgr.snapshots == nil {
+			b.credentialMgr.snapshots = make(map[string]*commonif.ModuleCredentialSnapshot)
+		}
+		b.credentialMgr.snapshots[clone.PrincipalID] = cloneCredentialSnapshot(clone)
+	}
+	return clone, nil
+}
+
+func (b *bootstrapCoordinatorStub) RefreshModuleCredential(ctx context.Context) (*commonif.ModuleCredentialSnapshot, error) {
+	_ = ctx
+	b.refreshCallCount++
+	if b.refreshSnapshot == nil {
+		return nil, nil
+	}
+	clone := cloneCredentialSnapshot(b.refreshSnapshot)
+	if b.credentialMgr != nil {
+		if b.credentialMgr.snapshots == nil {
+			b.credentialMgr.snapshots = make(map[string]*commonif.ModuleCredentialSnapshot)
+		}
+		b.credentialMgr.snapshots[clone.PrincipalID] = cloneCredentialSnapshot(clone)
+	}
+	return clone, nil
+}
+
+func (b *bootstrapCoordinatorStub) RevokeModuleCredential(ctx context.Context, reason string) error {
+	_ = ctx
+	b.revokeCallCount++
+	b.revokeReason = reason
+	return nil
+}
+
+func buildCredentialSnapshot(
+	principalID string,
+	runtime modelsystem.RuntimeConfig,
+	sessionID uuid.UUID,
+	familyID uuid.UUID,
+	accessToken string,
+	refreshToken string,
+	activeCommKeyID string,
+	issuedAt time.Time,
+	expiresAt time.Time,
+	updatedAt time.Time,
+	nextRefreshAt time.Time,
+	authAuthorityEndpoint string,
+) *commonif.ModuleCredentialSnapshot {
+	return &commonif.ModuleCredentialSnapshot{
 		PrincipalID:     principalID,
-		EntityType:      commonmodel.EntityType(req.Runtime.EntityType),
-		EntityID:        req.Runtime.InstanceID,
-		SessionID:       uuid.MustParse("22222222-2222-2222-2222-222222222222"),
-		TokenFamilyID:   uuid.MustParse("33333333-3333-3333-3333-333333333333"),
-		AccessTokenRaw:  "access-token",
-		RefreshTokenRaw: "refresh-token",
+		EntityType:      commonmodel.EntityType(runtime.EntityType),
+		EntityID:        runtime.InstanceID,
+		SessionID:       sessionID,
+		TokenFamilyID:   familyID,
+		AccessTokenRaw:  accessToken,
+		RefreshTokenRaw: refreshToken,
 		Scopes:          []string{"gateway:discover"},
 		Role:            "service",
 		Stage:           authmodel.BootstrapStageReady,
-		ActiveCommKeyID: "gateway-local-key",
-		IssuedAt:        now,
+		ActiveCommKeyID: activeCommKeyID,
+		IssuedAt:        issuedAt,
 		ExpiresAt:       expiresAt,
-		UpdatedAt:       now,
+		UpdatedAt:       updatedAt,
 		Metadata: map[string]string{
 			"credential_status":     "active",
-			"auth_authority_ep":     "certification_server:9000",
-			"next_refresh_at_ms":    strconv.FormatInt(now.Add(30*time.Minute).UnixMilli(), 10),
+			"auth_authority_ep":     authAuthorityEndpoint,
+			"next_refresh_at_ms":    strconv.FormatInt(nextRefreshAt.UnixMilli(), 10),
 			"refresh_expires_at_ms": strconv.FormatInt(expiresAt.UnixMilli(), 10),
 		},
 	}
-	return &orchestration.BootstrapStartupResult{
-		Stage:             string(authmodel.BootstrapStageReady),
-		AuthorityEndpoint: "certification_server:9000",
-		CredentialKey:     "/memory/" + principalID,
-	}, nil
 }
 
 func TestCredentialDiscoverySupervisorSyncOnceRebuildsExpiredCredentialAndRegisters(t *testing.T) {
@@ -153,30 +196,36 @@ func TestCredentialDiscoverySupervisorSyncOnceRebuildsExpiredCredentialAndRegist
 		InstanceID:  "gateway-instance",
 		RunMode:     modelsystem.RuntimeRunModeDevelopment,
 	}
-	startupParams := modelsystem.SecretKeyStartupParams{
-		ActiveKeyID:  "gateway-local-key",
-		EntityType:   runtime.EntityType,
-		EntityID:     runtime.InstanceID,
-		EntityName:   runtime.ServiceName,
-		InstanceID:   runtime.InstanceID,
-		InstanceName: runtime.ServiceName,
-	}
 	principalID := "service:gateway-instance"
-	expiredSnapshot := &commonif.ModuleCredentialSnapshot{
-		PrincipalID:     principalID,
-		EntityType:      commonmodel.EntityType(runtime.EntityType),
-		EntityID:        runtime.InstanceID,
-		RefreshTokenRaw: "",
-		Stage:           authmodel.BootstrapStageReady,
-		ActiveCommKeyID: "gateway-local-key",
-		IssuedAt:        time.Now().Add(-2 * time.Hour),
-		ExpiresAt:       time.Now().Add(-time.Minute),
-		UpdatedAt:       time.Now().Add(-time.Minute),
-		Metadata: map[string]string{
-			"credential_status":     "expired",
-			"refresh_expires_at_ms": strconv.FormatInt(time.Now().Add(-time.Minute).UnixMilli(), 10),
-		},
-	}
+	now := time.Now().UTC()
+	expiredSnapshot := buildCredentialSnapshot(
+		principalID,
+		runtime,
+		uuid.MustParse("44444444-4444-4444-4444-444444444444"),
+		uuid.MustParse("55555555-5555-5555-5555-555555555555"),
+		"access-old",
+		"",
+		"gateway-local-key",
+		now.Add(-2*time.Hour),
+		now.Add(-time.Minute),
+		now.Add(-time.Minute),
+		now.Add(-time.Minute),
+		"certification_server:9000",
+	)
+	bootstrapSnapshot := buildCredentialSnapshot(
+		principalID,
+		runtime,
+		uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+		uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+		"access-token",
+		"refresh-token",
+		"gateway-local-key",
+		now,
+		now.Add(2*time.Hour),
+		now,
+		now.Add(30*time.Minute),
+		"certification_server:9000",
+	)
 
 	credentialMgr := &memoryCredentialManager{
 		snapshots: map[string]*commonif.ModuleCredentialSnapshot{
@@ -184,21 +233,23 @@ func TestCredentialDiscoverySupervisorSyncOnceRebuildsExpiredCredentialAndRegist
 		},
 	}
 	registryMgr := &recordingRegistryManager{}
-	bootstrapEnsurer := &bootstrapEnsurerStub{credentialMgr: credentialMgr}
+	bootstrapCoordinator := &bootstrapCoordinatorStub{
+		credentialMgr:  credentialMgr,
+		ensureSnapshot: bootstrapSnapshot,
+	}
 	instance := &commonmodel.ServiceInstance{
 		ID:        uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 		Name:      runtime.ServiceName,
 		Endpoint:  "127.0.0.1:8080",
-		HeartBeat: time.Now().UnixMilli(),
+		HeartBeat: now.UnixMilli(),
 		Weight:    1,
 	}
 
 	supervisor := orchestration.NewCredentialDiscoverySupervisorService(
 		runtime,
-		startupParams,
 		credentialMgr,
 		registryMgr,
-		bootstrapEnsurer,
+		bootstrapCoordinator,
 		instance,
 		30,
 	)
@@ -207,8 +258,8 @@ func TestCredentialDiscoverySupervisorSyncOnceRebuildsExpiredCredentialAndRegist
 	if err := supervisor.SyncOnce(context.Background()); err != nil {
 		t.Fatalf("SyncOnce returned error: %v", err)
 	}
-	if bootstrapEnsurer.callCount != 1 {
-		t.Fatalf("bootstrap call count = %d, want %d", bootstrapEnsurer.callCount, 1)
+	if bootstrapCoordinator.ensureCallCount != 1 {
+		t.Fatalf("bootstrap call count = %d, want %d", bootstrapCoordinator.ensureCallCount, 1)
 	}
 	if registryMgr.unregisterCalls != 1 {
 		t.Fatalf("unregister call count = %d, want %d", registryMgr.unregisterCalls, 1)
@@ -229,18 +280,6 @@ func TestCredentialDiscoverySupervisorSyncOnceRebuildsExpiredCredentialAndRegist
 	}
 }
 
-type stubTokenRefreshClient struct {
-	callCount int
-	response  *authmodel.TokenBundle
-}
-
-func (s *stubTokenRefreshClient) RefreshTokenBundle(ctx context.Context, req *authif.TokenRefreshRequest) (*authmodel.TokenBundle, error) {
-	_ = ctx
-	_ = req
-	s.callCount++
-	return s.response, nil
-}
-
 func TestCredentialDiscoverySupervisorSyncOnceRefreshesBeforeRebootstrap(t *testing.T) {
 	runtime := modelsystem.RuntimeConfig{
 		EntityType:  "service",
@@ -248,67 +287,47 @@ func TestCredentialDiscoverySupervisorSyncOnceRefreshesBeforeRebootstrap(t *test
 		InstanceID:  "gateway-instance",
 		RunMode:     modelsystem.RuntimeRunModeDevelopment,
 	}
-	startupParams := modelsystem.SecretKeyStartupParams{
-		ActiveKeyID:  "gateway-local-key",
-		EntityType:   runtime.EntityType,
-		EntityID:     runtime.InstanceID,
-		EntityName:   runtime.ServiceName,
-		InstanceID:   runtime.InstanceID,
-		InstanceName: runtime.ServiceName,
-	}
 	now := time.Now().UTC()
 	principalID := "service:gateway-instance"
-	initialSnapshot := &commonif.ModuleCredentialSnapshot{
-		PrincipalID:     principalID,
-		EntityType:      commonmodel.EntityType(runtime.EntityType),
-		EntityID:        runtime.InstanceID,
-		SessionID:       uuid.MustParse("44444444-4444-4444-4444-444444444444"),
-		TokenFamilyID:   uuid.MustParse("55555555-5555-5555-5555-555555555555"),
-		AccessTokenRaw:  "access-old",
-		RefreshTokenRaw: "refresh-old",
-		Scopes:          []string{"gateway:discover"},
-		Role:            "service",
-		Stage:           authmodel.BootstrapStageReady,
-		ActiveCommKeyID: "gateway-local-key",
-		IssuedAt:        now.Add(-20 * time.Minute),
-		ExpiresAt:       now.Add(2 * time.Hour),
-		UpdatedAt:       now.Add(-20 * time.Minute),
-		Metadata: map[string]string{
-			"credential_status":     "active",
-			"auth_authority_ep":     "certification_server:9000",
-			"next_refresh_at_ms":    strconv.FormatInt(now.Add(-time.Minute).UnixMilli(), 10),
-			"refresh_expires_at_ms": strconv.FormatInt(now.Add(2*time.Hour).UnixMilli(), 10),
-		},
-	}
+	initialSnapshot := buildCredentialSnapshot(
+		principalID,
+		runtime,
+		uuid.MustParse("44444444-4444-4444-4444-444444444444"),
+		uuid.MustParse("55555555-5555-5555-5555-555555555555"),
+		"access-old",
+		"refresh-old",
+		"gateway-local-key",
+		now.Add(-20*time.Minute),
+		now.Add(2*time.Hour),
+		now.Add(-20*time.Minute),
+		now.Add(-time.Minute),
+		"certification_server:9000",
+	)
+	refreshedSnapshot := buildCredentialSnapshot(
+		principalID,
+		runtime,
+		initialSnapshot.SessionID,
+		initialSnapshot.TokenFamilyID,
+		"access-new",
+		"refresh-new",
+		"gateway-local-key",
+		now,
+		now.Add(24*time.Hour),
+		now,
+		now.Add(30*time.Minute),
+		"certification_server:9000",
+	)
+
 	credentialMgr := &memoryCredentialManager{
 		snapshots: map[string]*commonif.ModuleCredentialSnapshot{
 			principalID: initialSnapshot,
 		},
 	}
 	registryMgr := &recordingRegistryManager{}
-	refreshClient := &stubTokenRefreshClient{
-		response: &authmodel.TokenBundle{
-			AccessToken: &authmodel.IssuedToken{
-				Raw: "access-new",
-				Claims: authmodel.TokenClaims{
-					IssuedAt:  now,
-					ExpiresAt: now.Add(5 * time.Minute),
-				},
-			},
-			RefreshToken: &authmodel.IssuedToken{
-				Raw: "refresh-new",
-				Claims: authmodel.TokenClaims{
-					SessionID: uuid.MustParse("44444444-4444-4444-4444-444444444444"),
-					FamilyID:  uuid.MustParse("55555555-5555-5555-5555-555555555555"),
-					IssuedAt:  now,
-					ExpiresAt: now.Add(24 * time.Hour),
-					Scopes:    []string{"gateway:discover"},
-					Role:      "service",
-				},
-			},
-		},
+	bootstrapCoordinator := &bootstrapCoordinatorStub{
+		credentialMgr:   credentialMgr,
+		refreshSnapshot: refreshedSnapshot,
 	}
-	bootstrapEnsurer := &bootstrapEnsurerStub{credentialMgr: credentialMgr}
 	instance := &commonmodel.ServiceInstance{
 		ID:        uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 		Name:      runtime.ServiceName,
@@ -319,27 +338,22 @@ func TestCredentialDiscoverySupervisorSyncOnceRefreshesBeforeRebootstrap(t *test
 
 	supervisor := orchestration.NewCredentialDiscoverySupervisorService(
 		runtime,
-		startupParams,
 		credentialMgr,
 		registryMgr,
-		bootstrapEnsurer,
+		bootstrapCoordinator,
 		instance,
 		30,
 	)
-	supervisor.SetTokenRefreshClientFactory(func(endpoint string) orchestration.TokenRefreshClient {
-		_ = endpoint
-		return refreshClient
-	})
 	supervisor.MarkRegistered()
 
 	if err := supervisor.SyncOnce(context.Background()); err != nil {
 		t.Fatalf("SyncOnce returned error: %v", err)
 	}
-	if refreshClient.callCount != 1 {
-		t.Fatalf("refresh call count = %d, want %d", refreshClient.callCount, 1)
+	if bootstrapCoordinator.refreshCallCount != 1 {
+		t.Fatalf("refresh call count = %d, want %d", bootstrapCoordinator.refreshCallCount, 1)
 	}
-	if bootstrapEnsurer.callCount != 0 {
-		t.Fatalf("bootstrap call count = %d, want %d", bootstrapEnsurer.callCount, 0)
+	if bootstrapCoordinator.ensureCallCount != 0 {
+		t.Fatalf("bootstrap call count = %d, want %d", bootstrapCoordinator.ensureCallCount, 0)
 	}
 	if registryMgr.unregisterCalls != 0 {
 		t.Fatalf("unregister call count = %d, want %d", registryMgr.unregisterCalls, 0)
@@ -384,32 +398,40 @@ func TestCredentialDiscoverySupervisorSyncOnceUnregistersMissingSnapshotBeforeRe
 		InstanceID:  "gateway-instance",
 		RunMode:     modelsystem.RuntimeRunModeDevelopment,
 	}
-	startupParams := modelsystem.SecretKeyStartupParams{
-		ActiveKeyID:  "gateway-local-key",
-		EntityType:   runtime.EntityType,
-		EntityID:     runtime.InstanceID,
-		EntityName:   runtime.ServiceName,
-		InstanceID:   runtime.InstanceID,
-		InstanceName: runtime.ServiceName,
-	}
 	principalID := "service:gateway-instance"
+	now := time.Now().UTC()
 	credentialMgr := &memoryCredentialManager{snapshots: map[string]*commonif.ModuleCredentialSnapshot{}}
 	registryMgr := &recordingRegistryManager{}
-	bootstrapEnsurer := &bootstrapEnsurerStub{credentialMgr: credentialMgr}
+	bootstrapCoordinator := &bootstrapCoordinatorStub{
+		credentialMgr: credentialMgr,
+		ensureSnapshot: buildCredentialSnapshot(
+			principalID,
+			runtime,
+			uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+			uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+			"access-token",
+			"refresh-token",
+			"gateway-local-key",
+			now,
+			now.Add(2*time.Hour),
+			now,
+			now.Add(30*time.Minute),
+			"certification_server:9000",
+		),
+	}
 	instance := &commonmodel.ServiceInstance{
 		ID:        uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 		Name:      runtime.ServiceName,
 		Endpoint:  "127.0.0.1:8080",
-		HeartBeat: time.Now().UnixMilli(),
+		HeartBeat: now.UnixMilli(),
 		Weight:    1,
 	}
 
 	supervisor := orchestration.NewCredentialDiscoverySupervisorService(
 		runtime,
-		startupParams,
 		credentialMgr,
 		registryMgr,
-		bootstrapEnsurer,
+		bootstrapCoordinator,
 		instance,
 		30,
 	)
@@ -418,8 +440,8 @@ func TestCredentialDiscoverySupervisorSyncOnceUnregistersMissingSnapshotBeforeRe
 	if err := supervisor.SyncOnce(context.Background()); err != nil {
 		t.Fatalf("SyncOnce returned error: %v", err)
 	}
-	if bootstrapEnsurer.callCount != 1 {
-		t.Fatalf("bootstrap call count = %d, want %d", bootstrapEnsurer.callCount, 1)
+	if bootstrapCoordinator.ensureCallCount != 1 {
+		t.Fatalf("bootstrap call count = %d, want %d", bootstrapCoordinator.ensureCallCount, 1)
 	}
 	if registryMgr.unregisterCalls != 1 {
 		t.Fatalf("unregister call count = %d, want %d", registryMgr.unregisterCalls, 1)

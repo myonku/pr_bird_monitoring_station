@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import json
+import json as std_json
 import time
+from typing import cast
 
+from msgspec import json as msgspec_json
 from redis.asyncio import Redis
 from redis.asyncio.cluster import RedisCluster
 
@@ -31,7 +33,9 @@ class LocalCredentialService(ILocalCredentialManager):
         self._key_prefix = resolved_prefix or DEFAULT_LOCAL_CREDENTIAL_KEY_PREFIX
         self._default_ttl_sec = max(int(default_ttl_sec), 1)
 
-    async def save_bootstrap_credential(self, snapshot: ModuleCredentialSnapshot) -> str:
+    async def save_bootstrap_credential(
+        self, snapshot: ModuleCredentialSnapshot
+    ) -> str:
         if snapshot is None:
             raise ValueError("bootstrap credential snapshot is required")
 
@@ -49,22 +53,14 @@ class LocalCredentialService(ILocalCredentialManager):
         snapshot.updated_at = now
         snapshot.metadata = dict(snapshot.metadata or {})
 
-        payload = {
-            "principal_id": principal_id,
-            "stage": snapshot.stage,
-            "active_comm_key_id": snapshot.active_comm_key_id,
-            "issued_at": snapshot.issued_at,
-            "expires_at": snapshot.expires_at,
-            "updated_at": snapshot.updated_at,
-            "metadata": snapshot.metadata,
-        }
-
         key = self._credential_key(principal_id)
         ttl_sec = self._resolve_ttl_sec(snapshot.expires_at, now)
-        await self._redis.set(key, json.dumps(payload, ensure_ascii=True), ex=ttl_sec)
+        await self._redis.set(key, msgspec_json.encode(snapshot), ex=ttl_sec)
         return key
 
-    async def load_active_credential(self, principal_id: str) -> ModuleCredentialSnapshot | None:
+    async def load_active_credential(
+        self, principal_id: str
+    ) -> ModuleCredentialSnapshot | None:
         resolved_principal = (principal_id or "").strip()
         if not resolved_principal:
             raise ValueError("principal_id is required")
@@ -74,25 +70,42 @@ class LocalCredentialService(ILocalCredentialManager):
             return None
 
         if isinstance(raw, bytes):
-            raw = raw.decode("utf-8")
-        payload = json.loads(raw)
-        metadata = payload.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
+            raw_bytes = raw
+        else:
+            raw_bytes = str(raw).encode("utf-8")
 
-        get_stage = lambda s: s if s in BootstrapStage else "uninitialized"
-        
-        return ModuleCredentialSnapshot(
-            principal_id=str(payload.get("principal_id", "")).strip(),
-            stage=get_stage(str(payload.get("stage", "uninitialized")).strip() or "uninitialized"),
-            active_comm_key_id=str(payload.get("active_comm_key_id", "")).strip(),
-            issued_at=float(payload.get("issued_at", 0.0) or 0.0),
-            expires_at=float(payload.get("expires_at", 0.0) or 0.0),
-            updated_at=float(payload.get("updated_at", 0.0) or 0.0),
-            metadata={str(k): str(v) for k, v in metadata.items()},
-        )
+        try:
+            snapshot = msgspec_json.decode(raw_bytes, type=ModuleCredentialSnapshot)
+        except Exception:
+            payload = std_json.loads(raw_bytes.decode("utf-8"))
+            metadata = payload.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
 
-    async def mark_credential_expired(self, principal_id: str, reason: str = "") -> None:
+            snapshot = ModuleCredentialSnapshot(
+                principal_id=str(payload.get("principal_id", "")).strip(),
+                stage=_normalize_stage(
+                    str(payload.get("stage", "uninitialized")).strip()
+                    or "uninitialized"
+                ),
+                active_comm_key_id=str(payload.get("active_comm_key_id", "")).strip(),
+                issued_at=float(payload.get("issued_at", 0.0) or 0.0),
+                expires_at=float(payload.get("expires_at", 0.0) or 0.0),
+                updated_at=float(payload.get("updated_at", 0.0) or 0.0),
+                metadata={str(k): str(v) for k, v in metadata.items()},
+            )
+
+        snapshot.principal_id = snapshot.principal_id.strip()
+        snapshot.stage = _normalize_stage((snapshot.stage or "uninitialized").strip())
+        snapshot.active_comm_key_id = snapshot.active_comm_key_id.strip()
+        snapshot.metadata = {
+            str(k): str(v) for k, v in dict(snapshot.metadata or {}).items()
+        }
+        return snapshot
+
+    async def mark_credential_expired(
+        self, principal_id: str, reason: str = ""
+    ) -> None:
         snapshot = await self.load_active_credential(principal_id)
         if snapshot is None:
             return
@@ -118,3 +131,66 @@ class LocalCredentialService(ILocalCredentialManager):
         if expires_at > now:
             return max(int(expires_at - now), 1)
         return self._default_ttl_sec
+
+
+def is_credential_valid_for_discovery(
+    snapshot: ModuleCredentialSnapshot | None,
+    now: float | None = None,
+) -> bool:
+    if snapshot is None:
+        return False
+
+    now_ts = time.time() if now is None else now
+    if not snapshot.principal_id.strip():
+        return False
+    if _normalize_stage((snapshot.stage or "uninitialized").strip()) != "ready":
+        return False
+
+    metadata = dict(snapshot.metadata or {})
+    credential_status = (
+        str(metadata.get("credential_status", "active") or "active").strip().lower()
+    )
+    if credential_status not in {"active", "ready"}:
+        return False
+
+    if snapshot.identity is None or snapshot.session is None or snapshot.tokens is None:
+        return False
+    if snapshot.tokens.access_token is None or snapshot.tokens.refresh_token is None:
+        return False
+
+    if snapshot.session.status != "active":
+        return False
+    if snapshot.session.expires_at > 0 and snapshot.session.expires_at <= now_ts:
+        return False
+    if snapshot.expires_at > 0 and snapshot.expires_at <= now_ts:
+        return False
+    return True
+
+
+def is_credential_refresh_due(
+    snapshot: ModuleCredentialSnapshot | None,
+    now: float | None = None,
+    refresh_leeway_sec: int = 60,
+) -> bool:
+    if not is_credential_valid_for_discovery(snapshot, now=now):
+        return False
+
+    now_ts = time.time() if now is None else now
+    leeway = max(int(refresh_leeway_sec), 0)
+    session = snapshot.session if snapshot is not None else None
+    next_refresh_at = 0.0
+    if session is not None and session.next_refresh_at > 0:
+        next_refresh_at = session.next_refresh_at
+    elif snapshot is not None and snapshot.expires_at > 0:
+        next_refresh_at = snapshot.expires_at - leeway
+
+    if next_refresh_at <= 0:
+        return False
+    return now_ts >= max(0.0, next_refresh_at - leeway)
+
+
+def _normalize_stage(raw_stage: str) -> BootstrapStage:
+    normalized = (raw_stage or "").strip().lower()
+    if normalized in {"uninitialized", "challenging", "authenticating", "ready"}:
+        return cast(BootstrapStage, normalized)
+    return cast(BootstrapStage, "uninitialized")

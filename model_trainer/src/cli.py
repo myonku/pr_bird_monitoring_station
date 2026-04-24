@@ -213,6 +213,7 @@ def command_crop_dataset(args: argparse.Namespace) -> None:
         max_box_area_ratio=crop_cfg.max_box_area_ratio,
         min_box_edge_margin_ratio=crop_cfg.min_box_edge_margin_ratio,
         max_images_per_class=crop_cfg.max_images_per_class,
+        padding_ratio=crop_cfg.padding_ratio,
         show_progress=crop_cfg.show_progress,
         progress_interval=crop_cfg.progress_interval,
     )

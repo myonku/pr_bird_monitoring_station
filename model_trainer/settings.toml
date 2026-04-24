@@ -40,17 +40,19 @@ detector_model_path = "output_models/detection_lite/latest_detection_lightweight
 label_file_name = "labels.txt"
 source_root = "E:/photos"
 output_root = "E:/classification_cropped"
-score_threshold = 0.25
+score_threshold = 0.30
 max_crops_per_image = 1
 # 在自动选模时仅考虑按评分排序后的前 N 个候选
 max_selection_candidates = 20
 # 候选框面积比例过滤，过小/过大框将被视为不可靠并丢弃
-min_box_area_ratio = 0.20
+min_box_area_ratio = 0.05
 max_box_area_ratio = 0.90
 # 候选框到图像边缘的最小留白比例（0 表示不启用该约束）
-min_box_edge_margin_ratio = 0.0
+min_box_edge_margin_ratio = 0.03
 # 每个类别最终最多保留多少张成品图（0 表示不限制）
-max_images_per_class = 100
+max_images_per_class = 1000
+# 在裁剪生成过程中，为了增加模型的鲁棒性，可以在候选框周围添加一定比例的留白（padding）
+padding_ratio = 0.12
 # 进度显示开关与输出间隔
 show_progress = true
 progress_interval = 100
@@ -70,7 +72,7 @@ task = "detection"
 export_formats = ["onnx"]
 
 [candidates.train_params]
-epochs = 2
+epochs = 20
 imgsz = 640
 pretrained = "weights/yolo11n.pt"
 
@@ -100,7 +102,7 @@ task = "detection"
 export_formats = ["onnx"]
 
 [candidates.train_params]
-epochs = 2
+epochs = 30
 imgsz = 640
 pretrained = "weights/yolo11m.pt"
 
@@ -131,7 +133,7 @@ task = "classification"
 export_formats = ["onnx"]
 
 [candidates.train_params]
-epochs = 2
+epochs = 20
 imgsz = 224
 pretrained = "weights/yolo11n-cls.pt"
 
@@ -158,7 +160,7 @@ task = "classification"
 export_formats = ["onnx"]
 
 [candidates.train_params]
-epochs = 3
+epochs = 30
 imgsz = 224
 pretrained = "weights/yolo11m-cls.pt"
 

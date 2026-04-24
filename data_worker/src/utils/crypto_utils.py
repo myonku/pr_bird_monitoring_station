@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 import base64
 import hashlib
 import hmac
@@ -15,6 +16,9 @@ from cryptography.hazmat.primitives.asymmetric import (
 )
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.ciphers import aead as _aead
+
+from src.models.auth.bootstrap import ChallengePayload
+from src.models.commsec.commsec import SignatureAlgorithm
 
 
 XChaCha20Poly1305 = getattr(_aead, "XChaCha20Poly1305", None)
@@ -241,6 +245,63 @@ class CryptoUtils:
                 return base64.b64encode(signature).decode("ascii")
             case _:
                 raise ValueError(f"unsupported signature algorithm: {algorithm}")
+
+    @staticmethod
+    def detect_signature_algorithm_from_private_key(
+        private_key_pem: bytes,
+    ) -> SignatureAlgorithm:
+        """根据私钥 PEM 推断签名算法。"""
+        private_key = CryptoUtils._parse_private_key(private_key_pem)
+        if isinstance(private_key, ed25519.Ed25519PrivateKey):
+            return "ed25519"
+        if isinstance(private_key, ec.EllipticCurvePrivateKey):
+            if not isinstance(private_key.curve, ec.SECP256R1):
+                raise ValueError("unsupported ecdsa curve, only p256 is allowed")
+            return "ecdsa_p256_sha256"
+        if isinstance(private_key, rsa.RSAPrivateKey):
+            return "rsa_pss_sha256"
+        raise ValueError("unsupported private key type")
+
+    @staticmethod
+    def build_bootstrap_signature_payload(
+        challenge: ChallengePayload,
+        *,
+        key_id: str,
+        entity_type: str,
+        entity_id: str,
+    ) -> bytes:
+        """构建与认证中心校验器兼容的标准化启动签名载荷。"""
+        parts = [
+            str(challenge.challenge_id),
+            challenge.issuer,
+            challenge.audience,
+            entity_type,
+            entity_id,
+            key_id,
+            challenge.nonce,
+            CryptoUtils.unix_ts_to_rfc3339nano(challenge.issued_at),
+            CryptoUtils.unix_ts_to_rfc3339nano(challenge.expires_at),
+        ]
+        return "|".join(parts).encode("utf-8")
+
+    @staticmethod
+    def unix_ts_to_rfc3339nano(ts: float) -> str:
+        """将 Unix 秒时间戳转换为 UTC 的 RFC3339Nano 字符串。"""
+        sec = int(ts)
+        nanos = int(round((ts - sec) * 1_000_000_000))
+        if nanos >= 1_000_000_000:
+            sec += 1
+            nanos -= 1_000_000_000
+        if nanos < 0:
+            sec -= 1
+            nanos += 1_000_000_000
+
+        dt = datetime.fromtimestamp(sec, tz=UTC)
+        base = dt.strftime("%Y-%m-%dT%H:%M:%S")
+        if nanos == 0:
+            return f"{base}Z"
+        frac = f"{nanos:09d}".rstrip("0")
+        return f"{base}.{frac}Z"
 
     @staticmethod
     def verify_by_algorithm(

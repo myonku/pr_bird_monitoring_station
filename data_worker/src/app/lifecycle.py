@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import logging
 import signal
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 import grpc
 
 from src.iface.common.local_credential_manager import (
@@ -16,6 +16,7 @@ from src.models.sys.config import (
     EtcdConfig,
     ProjectConfig,
     RuntimeConfig,
+    SecretKeyStartupParams,
 )
 from src.models.sys.func import load_project_config_from_toml
 from src.repo.etcd_client import EtcdAsyncClient
@@ -28,8 +29,14 @@ from src.services.communication.routing_payload_pipeline_svc import (
 )
 from src.services.inference.inference_module import build_standard_inference_module
 from src.services.communication.traffic_station_svc import TrafficStationService
+from src.services.orchestration.credential_discovery_supervisor_svc import (
+    CredentialDiscoverySupervisorService,
+)
 from src.services.orchestration.bootstrap_startup_orchestrator_svc import (
     BootstrapStartupOrchestratorService,
+)
+from src.services.orchestration.startup_security_svc import (
+    resolve_startup_security_materials,
 )
 from src.services.orchestration.worker_orchestrator_svc import WorkerOrchestratorService
 
@@ -65,7 +72,9 @@ async def run_data_worker() -> None:
         runtime_cfg.service_name,
         runtime_cfg.run_mode,
     )
-    assert config.inference is not None, "inference config is required for data_worker startup"
+    assert (
+        config.inference is not None
+    ), "inference config is required for data_worker startup"
     inference_module = build_standard_inference_module(config.inference)
     logger.info(
         "stage=inference_initialized service=%s module=%s root_dir=%s detection_dir=%s classification_dir=%s",
@@ -81,8 +90,13 @@ async def run_data_worker() -> None:
     registry_service: RegistryService | None = None
     traffic_station: ITrafficStation | None = None
     local_credential_manager: ILocalCredentialManager | None = None
+    secret_key_service: SecretKeyService | None = None
+    startup_params: SecretKeyStartupParams | None = None
     registered_instance: ServiceInstance | None = None
     worker_server: grpc.aio.Server | None = None
+    credential_supervisor: CredentialDiscoverySupervisorService | None = None
+    credential_supervisor_task: asyncio.Task[None] | None = None
+    stop_event = asyncio.Event()
 
     try:
         etcd_client = EtcdAsyncClient(config)
@@ -96,6 +110,12 @@ async def run_data_worker() -> None:
         traffic_station = TrafficStationService(routing_pipeline=routing_pipeline)
         _ = WorkerOrchestratorService(traffic_station=traffic_station)
 
+        startup_params, secret_key_service = resolve_startup_security_materials(
+            config=config,
+            runtime_cfg=runtime_cfg,
+            default_entity_id="data_worker",
+        )
+
         if config.redis is not None:
             redis_manager = RedisManager(config)
             await redis_manager.connect()
@@ -103,10 +123,6 @@ async def run_data_worker() -> None:
                 redis_client=redis_manager.get_client()
             )
 
-        _, startup_params = SecretKeyService.from_project_config(
-            config=config,
-            default_entity_id="data_worker",
-        )
         logger.info(
             "stage=dependencies_initialized service=%s", runtime_cfg.service_name
         )
@@ -116,17 +132,40 @@ async def run_data_worker() -> None:
                 "stage=bootstrap_skipped_or_ready service=%s mode=no_auth",
                 runtime_cfg.service_name,
             )
+            resolved_active_key_id = startup_params.active_key_id if startup_params else ""
         else:
+            if local_credential_manager is None:
+                raise RuntimeError("local credential manager dependencies are required")
+            if secret_key_service is None or startup_params is None:
+                raise RuntimeError("secret key dependencies are required")
             await ensure_worker_bootstrap_ready(
                 runtime_cfg=runtime_cfg,
                 startup_params=startup_params,
                 traffic_station=traffic_station,
                 local_credential_manager=local_credential_manager,
+                secret_key_service=secret_key_service,
+            )
+
+            loaded_snapshot = await local_credential_manager.load_active_credential(
+                f"{runtime_cfg.entity_type}:{runtime_cfg.instance_id or runtime_cfg.service_name}"
+            )
+            resolved_active_key_id = (
+                (
+                    loaded_snapshot.active_comm_key_id
+                    if loaded_snapshot is not None
+                    else ""
+                )
+                or startup_params.active_key_id
+                or (
+                    startup_params.instance_id
+                    or runtime_cfg.instance_id
+                    or runtime_cfg.service_name
+                )
             )
 
         instance = build_worker_instance(
             runtime_cfg=runtime_cfg,
-            active_key_id=startup_params.active_key_id,
+            active_key_id=resolved_active_key_id,
         )
         registered_instance = instance
 
@@ -143,6 +182,32 @@ async def run_data_worker() -> None:
             instance.endpoint,
         )
 
+        if runtime_cfg.run_mode != "no_auth":
+            if local_credential_manager is None:
+                raise RuntimeError("local credential manager dependencies are required")
+            if secret_key_service is None or startup_params is None:
+                raise RuntimeError("secret key dependencies are required")
+            credential_supervisor = CredentialDiscoverySupervisorService(
+                runtime_cfg=runtime_cfg,
+                startup_params=startup_params,
+                traffic_station=traffic_station,
+                local_credential_manager=local_credential_manager,
+                registry_service=registry_service,
+                secret_key_service=secret_key_service,
+                service_instance_factory=lambda active_key_id: build_worker_instance(
+                    runtime_cfg=runtime_cfg,
+                    active_key_id=active_key_id,
+                ),
+                auth_authority_service=DEFAULT_AUTH_AUTHORITY_SERVICE,
+                registry_ttl_sec=DEFAULT_REGISTRY_TTL_SEC,
+            )
+            credential_supervisor_task = asyncio.create_task(
+                credential_supervisor.run(
+                    stop_event=stop_event,
+                    registered_instance=registered_instance,
+                )
+            )
+
         logger.info(
             "stage=server_start_attempt service=%s transport=grpc addr=%s",
             runtime_cfg.service_name,
@@ -157,7 +222,6 @@ async def run_data_worker() -> None:
             raise RuntimeError("data_worker grpc listener bind failed")
         await worker_server.start()
 
-        stop_event = asyncio.Event()
         install_signal_handlers(stop_event)
         logger.info(
             "stage=server_start_success service=%s transport=grpc addr=%s",
@@ -166,6 +230,10 @@ async def run_data_worker() -> None:
         )
         await stop_event.wait()
     finally:
+        if credential_supervisor_task is not None:
+            credential_supervisor_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await credential_supervisor_task
         if worker_server is not None:
             with contextlib.suppress(Exception):
                 await worker_server.stop(grace=5)
@@ -219,7 +287,7 @@ def parse_or_create_uuid(raw: str) -> UUID:
         try:
             return UUID(candidate)
         except ValueError:
-            pass
+            return uuid5(NAMESPACE_DNS, candidate)
     return uuid4()
 
 
@@ -228,6 +296,7 @@ async def ensure_worker_bootstrap_ready(
     startup_params,
     traffic_station: ITrafficStation,
     local_credential_manager: ILocalCredentialManager | None,
+    secret_key_service: SecretKeyService,
 ) -> None:
     logger = logging.getLogger("data_worker.startup")
     if local_credential_manager is None:
@@ -235,6 +304,7 @@ async def ensure_worker_bootstrap_ready(
     startup_orchestrator = BootstrapStartupOrchestratorService(
         traffic_station=traffic_station,
         local_credential_manager=local_credential_manager,
+        secret_key_service=secret_key_service,
         auth_authority_service=DEFAULT_AUTH_AUTHORITY_SERVICE,
     )
     result = await startup_orchestrator.ensure_ready(

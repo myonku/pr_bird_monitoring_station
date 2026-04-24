@@ -30,6 +30,7 @@ class DatasetCropper:
         max_box_area_ratio: float = 0.90,
         min_box_edge_margin_ratio: float = 0.0,
         max_images_per_class: int = 0,
+        padding_ratio: float = 0.0,
         show_progress: bool = True,
         progress_interval: int = 1000,
     ) -> None:
@@ -42,6 +43,7 @@ class DatasetCropper:
         self.max_box_area_ratio = max_box_area_ratio
         self.min_box_edge_margin_ratio = min_box_edge_margin_ratio
         self.max_images_per_class = max_images_per_class
+        self.padding_ratio = float(max(0.0, float(padding_ratio)))
         self.show_progress = show_progress
         self.progress_interval = max(1, progress_interval)
         self._detector_handle = backend.load_detector(detector_model_path)
@@ -229,10 +231,26 @@ class DatasetCropper:
 
                         box = selected[0]
                         width, height = image.size
-                        left = int(max(0, min(width - 1, box.x1 * width)))
-                        top = int(max(0, min(height - 1, box.y1 * height)))
-                        right = int(max(left + 1, min(width, box.x2 * width)))
-                        bottom = int(max(top + 1, min(height, box.y2 * height)))
+                        # apply optional padding_ratio around detected box
+                        x1f = box.x1 * width
+                        y1f = box.y1 * height
+                        x2f = box.x2 * width
+                        y2f = box.y2 * height
+
+                        box_w = max(1.0, x2f - x1f)
+                        box_h = max(1.0, y2f - y1f)
+                        pad_w = box_w * self.padding_ratio
+                        pad_h = box_h * self.padding_ratio
+
+                        leftf = max(0.0, x1f - pad_w / 2.0)
+                        topf = max(0.0, y1f - pad_h / 2.0)
+                        rightf = min(float(width), x2f + pad_w / 2.0)
+                        bottomf = min(float(height), y2f + pad_h / 2.0)
+
+                        left = int(max(0, min(width - 1, leftf)))
+                        top = int(max(0, min(height - 1, topf)))
+                        right = int(max(left + 1, min(width, rightf)))
+                        bottom = int(max(top + 1, min(height, bottomf)))
 
                         output_path.parent.mkdir(parents=True, exist_ok=True)
                         cropped = image.crop((left, top, right, bottom))

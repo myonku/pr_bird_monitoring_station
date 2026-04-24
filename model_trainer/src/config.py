@@ -133,6 +133,7 @@ class CropGenerationConfig:
     max_box_area_ratio: float = 0.90
     min_box_edge_margin_ratio: float = 0.0
     max_images_per_class: int = 0
+    padding_ratio: float = 0.0
     show_progress: bool = True
     progress_interval: int = 1000
 
@@ -161,6 +162,8 @@ class CropGenerationConfig:
             raise ValueError("progress_interval must be >= 1")
         if not self.label_file_name.strip():
             raise ValueError("label_file_name must not be empty")
+        if not (0.0 <= self.padding_ratio <= 1.0):
+            raise ValueError("padding_ratio must be within [0.0, 1.0]")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -179,6 +182,7 @@ class CropGenerationConfig:
             "max_images_per_class": self.max_images_per_class,
             "show_progress": self.show_progress,
             "progress_interval": self.progress_interval,
+            "padding_ratio": self.padding_ratio,
         }
 
 
@@ -459,6 +463,7 @@ def load_pipeline_from_settings_toml(path: Path) -> PipelineConfig:
         max_images_per_class=int(crop_tbl.get("max_images_per_class", 0)),
         show_progress=bool(crop_tbl.get("show_progress", True)),
         progress_interval=int(crop_tbl.get("progress_interval", 1000)),
+        padding_ratio=float(crop_tbl.get("padding_ratio", 0.0)),
     )
 
     candidates: list[ModelCandidate] = []
@@ -538,6 +543,7 @@ def build_default_pipeline_config() -> PipelineConfig:
             min_box_area_ratio=0.02,
             max_box_area_ratio=0.90,
             min_box_edge_margin_ratio=0.0,
+            padding_ratio=0.12,
             max_images_per_class=0,
             show_progress=True,
             progress_interval=1000,

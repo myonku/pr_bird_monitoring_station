@@ -78,43 +78,61 @@ func Run() error {
 	routingPipeline := communicationsvc.NewRoutingPayloadPipelineService(serviceResolver)
 	authControl := authcontrolsvc.NewGatewayAuthControlService(runtimeCfg.RunMode, serviceResolver, nil, nil)
 	trafficStation := communicationsvc.NewTrafficStationService(routingPipeline, authControl)
-
-	secretKeySvc, startupParams, err := commonsvc.NewSecretKeyServiceFromProjectConfig(cfg, nil, nil)
-	if err != nil {
-		return err
-	}
 	log.Printf("stage=dependencies_initialized service=%s", runtimeCfg.ServiceName)
 
-	bootstrapOrchestrator := orchestrationsvc.NewBootstrapStartupOrchestratorService(
-		localCredentialMgr,
-		secretKeySvc,
-		trafficStation,
-		defaultAuthAuthorityName,
-	)
-
+	var startupParams modelsystem.SecretKeyStartupParams
+	var bootstrapCoordinator *orchestrationsvc.BootstrapCoordinatorService
+	resolvedActiveKeyID := ""
 	if runtimeCfg.RunMode == modelsystem.RuntimeRunModeNoAuth {
 		log.Printf("stage=bootstrap_skipped_or_ready service=%s mode=no_auth", runtimeCfg.ServiceName)
-	} else if err = ensureGatewayBootstrapReady(runtimeCfg, startupParams, bootstrapOrchestrator); err != nil {
-		return err
+	} else {
+		secretKeySvc, resolvedStartupParams, err := commonsvc.NewSecretKeyServiceFromProjectConfig(cfg, nil, nil)
+		if err != nil {
+			return err
+		}
+		startupParams = resolvedStartupParams
+		bootstrapOrchestrator := orchestrationsvc.NewBootstrapStartupOrchestratorService(
+			localCredentialMgr,
+			secretKeySvc,
+			trafficStation,
+			defaultAuthAuthorityName,
+		)
+		bootstrapCoordinator = orchestrationsvc.NewBootstrapCoordinatorService(
+			runtimeCfg,
+			startupParams,
+			localCredentialMgr,
+			bootstrapOrchestrator,
+			nil,
+			defaultAuthAuthorityName,
+		)
+		snapshot, err := bootstrapCoordinator.EnsureModuleReady(context.Background())
+		if err != nil {
+			return err
+		}
+		if snapshot != nil {
+			resolvedActiveKeyID = snapshot.ActiveCommKeyID
+		}
 	}
 
-	instance := buildGatewayInstance(runtimeCfg, startupParams.ActiveKeyID)
+	instance := buildGatewayInstance(runtimeCfg, resolvedActiveKeyID)
 	log.Printf("stage=registry_register_attempt service=%s instance=%s", instance.Name, instance.ID.String())
 	if err = registrySvc.Register(instance, defaultGatewayRegistryTTL); err != nil {
 		return err
 	}
 	log.Printf("stage=registry_register_success service=%s instance=%s endpoint=%s", instance.Name, instance.ID.String(), instance.Endpoint)
 
-	credentialSupervisor := orchestrationsvc.NewCredentialDiscoverySupervisorService(
-		runtimeCfg,
-		startupParams,
-		localCredentialMgr,
-		registrySvc,
-		bootstrapOrchestrator,
-		instance,
-		defaultGatewayRegistryTTL,
-	)
-	credentialSupervisor.MarkRegistered()
+	var credentialSupervisor *orchestrationsvc.CredentialDiscoverySupervisorService
+	if runtimeCfg.RunMode != modelsystem.RuntimeRunModeNoAuth {
+		credentialSupervisor = orchestrationsvc.NewCredentialDiscoverySupervisorService(
+			runtimeCfg,
+			localCredentialMgr,
+			registrySvc,
+			bootstrapCoordinator,
+			instance,
+			defaultGatewayRegistryTTL,
+		)
+		credentialSupervisor.MarkRegistered()
+	}
 
 	httpHandler := gatewayhttp.NewGatewayHTTPHandler(runtimeCfg, routingPipeline, authControl, nil, nil, nil)
 
@@ -128,8 +146,10 @@ func Run() error {
 	defer stop()
 
 	serveErrCh := make(chan error, 1)
-	go credentialSupervisor.Run(ctx)
-	log.Printf("stage=credential_supervisor_started service=%s instance=%s", runtimeCfg.ServiceName, instance.ID.String())
+	if credentialSupervisor != nil {
+		go credentialSupervisor.Run(ctx)
+		log.Printf("stage=credential_supervisor_started service=%s instance=%s", runtimeCfg.ServiceName, instance.ID.String())
+	}
 	log.Printf("stage=server_start_attempt service=%s transport=http addr=%s", runtimeCfg.ServiceName, server.Addr)
 	go func() {
 		if serveErr := server.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
@@ -156,38 +176,6 @@ func Run() error {
 		}
 		return serveErr
 	}
-}
-
-func ensureGatewayBootstrapReady(
-	runtime modelsystem.RuntimeConfig,
-	startupParams modelsystem.SecretKeyStartupParams,
-	bootstrapEnsurer orchestrationsvc.BootstrapReadyEnsurer,
-) error {
-	if bootstrapEnsurer == nil {
-		return &modelsystem.ErrModuleCredentialDependenciesRequired
-	}
-	result, err := bootstrapEnsurer.EnsureReady(
-		context.Background(),
-		&orchestrationsvc.BootstrapStartupRequest{
-			Runtime:              runtime,
-			StartupParams:        startupParams,
-			AuthAuthorityService: defaultAuthAuthorityName,
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	log.Printf(
-		"stage=bootstrap_skipped_or_ready service=%s mode=%s auth_authority=%s authority_endpoint=%s stage=%s credential_key=%s",
-		runtime.ServiceName,
-		runtime.RunMode,
-		defaultAuthAuthorityName,
-		result.AuthorityEndpoint,
-		result.Stage,
-		result.CredentialKey,
-	)
-	return nil
 }
 
 func buildGatewayListenAddr(runtime modelsystem.RuntimeConfig) string {
