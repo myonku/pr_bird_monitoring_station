@@ -6,8 +6,8 @@ import (
 	commsecmodel "certification_server/src/models/commsec"
 )
 
-// IKeyManager 定义密钥管理相关操作。
-type IKeyManager interface {
+// ISecretKeyManager 定义密钥管理相关操作。
+type ISecretKeyManager interface {
 	// GetPublicKey 获取本地服务的公钥信息。
 	GetPublicKey(ctx context.Context) (commsecmodel.ServicePublicKeyRecord, error)
 	// GetPrivateKeyRef 获取本地服务的私钥引用信息。

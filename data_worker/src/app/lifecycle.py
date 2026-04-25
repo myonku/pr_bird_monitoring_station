@@ -23,7 +23,7 @@ from src.repo.etcd_client import EtcdAsyncClient
 from src.repo.redis_store import RedisManager
 from src.services.common.registry_svc import RegistryService
 from src.services.common.local_credential_svc import LocalCredentialService
-from src.services.common.secret_key_svc import SecretKeyService
+from src.iface.common.key_manager import ISecretKeyManager
 from src.services.communication.routing_payload_pipeline_svc import (
     RoutingPayloadPipelineService,
 )
@@ -55,11 +55,11 @@ def run() -> None:
     try:
         asyncio.run(run_data_worker())
     except KeyboardInterrupt:
-        logging.getLogger("data_worker.startup").info("data_worker interrupted")
+        logging.getLogger("startup").info("data_worker interrupted")
 
 
 async def run_data_worker() -> None:
-    logger = logging.getLogger("data_worker.startup")
+    logger = logging.getLogger("startup")
 
     config = resolve_project_config(DEFAULT_SETTINGS_PATH, DEFAULT_ETCD_ENDPOINT)
     runtime_cfg = (
@@ -90,7 +90,7 @@ async def run_data_worker() -> None:
     registry_service: RegistryService | None = None
     traffic_station: ITrafficStation | None = None
     local_credential_manager: ILocalCredentialManager | None = None
-    secret_key_service: SecretKeyService | None = None
+    secret_key_service: ISecretKeyManager | None = None
     startup_params: SecretKeyStartupParams | None = None
     registered_instance: ServiceInstance | None = None
     worker_server: grpc.aio.Server | None = None
@@ -296,9 +296,9 @@ async def ensure_worker_bootstrap_ready(
     startup_params,
     traffic_station: ITrafficStation,
     local_credential_manager: ILocalCredentialManager | None,
-    secret_key_service: SecretKeyService,
+    secret_key_service: ISecretKeyManager,
 ) -> None:
-    logger = logging.getLogger("data_worker.startup")
+    logger = logging.getLogger("startup")
     if local_credential_manager is None:
         raise RuntimeError("local credential manager dependencies are required")
     startup_orchestrator = BootstrapStartupOrchestratorService(

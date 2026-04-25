@@ -23,7 +23,7 @@ import (
 	"gateway/src/repo"
 )
 
-var _ commonif.IKeyManager = (*SecretKeyService)(nil)
+var _ commonif.ISecretKeyManager = (*SecretKeyService)(nil)
 
 const defaultGatewayEntityID = "gateway"
 

@@ -14,7 +14,7 @@ var _ iface.IAuthRequestOrchestrator = (*AuthRequestOrchestratorService)(nil)
 
 // AuthRequestOrchestratorService 是认证中心请求编排的最小实现骨架。
 type AuthRequestOrchestratorService struct {
-	keyManager     commonif.IKeyManager
+	keyManager     commonif.ISecretKeyManager
 	sessionManager commonif.ISessionManager
 	tokenManager   commonif.ITokenManager
 	userCredential commonif.IUserCredentialManager
@@ -30,7 +30,7 @@ func NewAuthRequestOrchestratorService() *AuthRequestOrchestratorService {
 }
 
 func NewAuthRequestOrchestratorServiceWithDeps(
-	keyManager commonif.IKeyManager,
+	keyManager commonif.ISecretKeyManager,
 	sessionManager commonif.ISessionManager,
 	tokenManager commonif.ITokenManager,
 	userCredential commonif.IUserCredentialManager,

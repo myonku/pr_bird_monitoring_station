@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from src.iface.business.data_worker_svc import IDataWorkerService
+from src.iface.business.data_worker_svc import IDataWorkerService, EdgeEventProcessingResult
 from src.iface.business.envelope_svc import IEnvelopeManager
 from src.iface.business.monitoring_record_svc import IMonitoringRecordManager
 from src.iface.business.species_profile_svc import ISpeciesProfileManager
@@ -66,7 +66,7 @@ class DataWorkerService(IDataWorkerService):
     async def handle_edge_upload(
         self,
         request: EdgeEventUploadRequest,
-    ) -> MonitoringRecord | None:
+    ) -> EdgeEventProcessingResult:
         if request is None:
             raise ValueError("edge event request is required")
 
@@ -75,13 +75,32 @@ class DataWorkerService(IDataWorkerService):
 
         stage_a = await self._run_stage_a(request)
         if not stage_a.enter_stage_b:
-            return None
+            return EdgeEventProcessingResult(
+                request=request,
+                envelope=envelope,
+                processing_source=stage_a.processing_source,
+                stage_a_enter_stage_b=False,
+                stage_a_reason=stage_a.reason,
+                inference_result=stage_a.inference_result,
+                monitoring_record=None,
+            )
 
         stage_b = self._build_stage_b_input(request, stage_a, envelope)
 
         species_profile = await self._resolve_species_profile(stage_b)
         monitoring_record = self._build_monitoring_record(stage_b, species_profile)
-        return await self._monitoring_record_manager.create(monitoring_record)
+        stored_monitoring_record = await self._monitoring_record_manager.create(
+            monitoring_record
+        )
+        return EdgeEventProcessingResult(
+            request=request,
+            envelope=envelope,
+            processing_source=stage_b.processing_source,
+            stage_a_enter_stage_b=True,
+            stage_a_reason=stage_b.stage_a_reason,
+            inference_result=stage_b.inference_result,
+            monitoring_record=stored_monitoring_record,
+        )
 
     async def _run_stage_a(self, request: EdgeEventUploadRequest) -> StageAResult:
         if not request.requires_server_assist:

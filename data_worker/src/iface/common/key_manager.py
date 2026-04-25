@@ -8,7 +8,7 @@ from src.models.commsec.commsec import (
 )
 
 
-class IKeyManager(ABC):
+class ISecretKeyManager(ABC):
     """本地密钥管理和公钥目录查询接口，提供本地公私钥访问和目录查询功能。"""
 
     @abstractmethod

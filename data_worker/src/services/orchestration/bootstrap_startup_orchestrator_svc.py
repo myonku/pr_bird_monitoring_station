@@ -21,7 +21,7 @@ from src.services.communication.rpc_client.auth_authority_bootstrap_rpc_client i
     BOOTSTRAP_AUTH_METHOD,
     AuthAuthorityBootstrapRPCClient,
 )
-from src.services.common.secret_key_svc import SecretKeyService
+from src.iface.common.key_manager import ISecretKeyManager
 
 
 DEFAULT_AUTH_AUTHORITY_SERVICE = "certification_server"
@@ -43,7 +43,7 @@ class BootstrapStartupOrchestratorService:
         *,
         traffic_station: ITrafficStation,
         local_credential_manager: ILocalCredentialManager,
-        secret_key_service: SecretKeyService,
+        secret_key_service: ISecretKeyManager,
         auth_authority_service: str = DEFAULT_AUTH_AUTHORITY_SERVICE,
     ) -> None:
         self._traffic_station = traffic_station

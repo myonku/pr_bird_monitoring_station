@@ -17,6 +17,7 @@ import (
 	commonmodel "gateway/src/models/common"
 	modelsystem "gateway/src/models/system"
 	"gateway/src/repo"
+	authsvc "gateway/src/services/auth"
 	authcontrolsvc "gateway/src/services/authcontrol"
 	commonsvc "gateway/src/services/common"
 	communicationsvc "gateway/src/services/communication"
@@ -81,7 +82,7 @@ func Run() error {
 	log.Printf("stage=dependencies_initialized service=%s", runtimeCfg.ServiceName)
 
 	var startupParams modelsystem.SecretKeyStartupParams
-	var bootstrapCoordinator *orchestrationsvc.BootstrapCoordinatorService
+	var bootstrapCoordinator *authsvc.BootstrapCoordinatorService
 	resolvedActiveKeyID := ""
 	if runtimeCfg.RunMode == modelsystem.RuntimeRunModeNoAuth {
 		log.Printf("stage=bootstrap_skipped_or_ready service=%s mode=no_auth", runtimeCfg.ServiceName)
@@ -97,7 +98,7 @@ func Run() error {
 			trafficStation,
 			defaultAuthAuthorityName,
 		)
-		bootstrapCoordinator = orchestrationsvc.NewBootstrapCoordinatorService(
+		bootstrapCoordinator = authsvc.NewBootstrapCoordinatorService(
 			runtimeCfg,
 			startupParams,
 			localCredentialMgr,

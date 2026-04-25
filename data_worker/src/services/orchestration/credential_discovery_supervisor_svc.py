@@ -25,7 +25,7 @@ from src.services.common.local_credential_svc import (
     is_credential_refresh_due,
     is_credential_valid_for_discovery,
 )
-from src.services.common.secret_key_svc import SecretKeyService
+from src.iface.common.key_manager import ISecretKeyManager
 from src.services.communication.rpc_client.auth_authority_token_refresh_rpc_client import (
     AuthAuthorityTokenRefreshRPCClient,
 )
@@ -55,7 +55,7 @@ class CredentialDiscoverySupervisorService:
         traffic_station: ITrafficStation,
         local_credential_manager: ILocalCredentialManager,
         registry_service: IRegistryManager,
-        secret_key_service: SecretKeyService,
+        secret_key_service: ISecretKeyManager,
         service_instance_factory: Callable[[str], ServiceInstance],
         auth_authority_service: str = DEFAULT_AUTH_AUTHORITY_SERVICE,
         registry_ttl_sec: int = DEFAULT_REGISTRY_TTL_SEC,
@@ -81,7 +81,7 @@ class CredentialDiscoverySupervisorService:
             secret_key_service=secret_key_service,
             auth_authority_service=self._auth_authority_service,
         )
-        self._logger = logging.getLogger("data_worker.credential_supervisor")
+        self._logger = logging.getLogger("credential_supervisor")
 
     async def run(
         self,

@@ -21,9 +21,10 @@ from src.models.commsec.commsec import (
 from src.models.sys.config import ProjectConfig, SecretKeyStartupParams
 from src.repo.mysql_client import MySQLClient
 from src.repo.mysql_dao import ServicePublicKeysDAO
+from src.iface.common.key_manager import ISecretKeyManager
 
 
-class SecretKeyService:
+class SecretKeyService(ISecretKeyManager):
     """密钥服务：本地私钥引用 + 全局公钥目录查询。"""
 
     @classmethod

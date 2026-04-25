@@ -1,4 +1,4 @@
-package orchestration
+package auth
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	authif "gateway/src/iface/auth"
 	commonif "gateway/src/iface/common"
 	authmodel "gateway/src/models/auth"
+	commonmodel "gateway/src/models/common"
 	modelsystem "gateway/src/models/system"
 	commonsvc "gateway/src/services/common"
 	rpcclient "gateway/src/services/communication/rpc_client"
@@ -17,15 +18,21 @@ import (
 	"github.com/google/uuid"
 )
 
-type bootstrapReadyExecutor interface {
-	EnsureReady(ctx context.Context, req *BootstrapStartupRequest) (*BootstrapStartupResult, error)
+const defaultBootstrapAuthorityServiceName = "certification_server"
+
+// BootstrapStartupRequest 是网关启动阶段 bootstrap 编排输入。
+type BootstrapStartupRequest struct {
+	Runtime              modelsystem.RuntimeConfig
+	StartupParams        modelsystem.SecretKeyStartupParams
+	AuthAuthorityService string
 }
 
-type tokenRefreshExecutor interface {
-	RefreshTokenBundle(ctx context.Context, req *authif.TokenRefreshRequest) (*authmodel.TokenBundle, error)
+// BootstrapStartupResult 是网关启动阶段 bootstrap 编排输出。
+type BootstrapStartupResult struct {
+	Stage             string
+	AuthorityEndpoint string
+	CredentialKey     string
 }
-
-var _ authif.IBootstrapCoordinator = (*BootstrapCoordinatorService)(nil)
 
 // BootstrapCoordinatorService 将启动期 bootstrap、运行期 refresh 和本地凭证持久化
 // 收敛到一个模块级协调面，供 supervisor 与生命周期统一依赖。
@@ -36,6 +43,14 @@ type BootstrapCoordinatorService struct {
 	bootstrapExecutor    bootstrapReadyExecutor
 	refreshFactory       func(endpoint string) tokenRefreshExecutor
 	authAuthorityService string
+}
+
+type bootstrapReadyExecutor interface {
+	EnsureReady(ctx context.Context, req *BootstrapStartupRequest) (*BootstrapStartupResult, error)
+}
+
+type tokenRefreshExecutor interface {
+	RefreshTokenBundle(ctx context.Context, req *authif.TokenRefreshRequest) (*authmodel.TokenBundle, error)
 }
 
 // NewBootstrapCoordinatorService 创建模块凭证协调器。
@@ -301,4 +316,36 @@ func cloneCredentialSnapshot(snapshot *commonif.ModuleCredentialSnapshot) *commo
 		}
 	}
 	return &clone
+}
+
+func resolveNextRefreshAt(snapshot *commonif.ModuleCredentialSnapshot, now time.Time) time.Time {
+	if snapshot == nil {
+		return time.Time{}
+	}
+	if raw := strings.TrimSpace(snapshot.Metadata["next_refresh_at_ms"]); raw != "" {
+		if millis, err := strconv.ParseInt(raw, 10, 64); err == nil && millis > 0 {
+			candidate := time.UnixMilli(millis)
+			if !candidate.IsZero() {
+				return candidate
+			}
+		}
+	}
+	if snapshot.ExpiresAt.IsZero() {
+		return time.Time{}
+	}
+	candidate := snapshot.ExpiresAt.Add(-5 * time.Minute)
+	if candidate.After(now) {
+		return candidate
+	}
+	return now
+}
+
+func normalizeBootstrapEntityType(raw string) commonmodel.EntityType {
+	entityType := strings.TrimSpace(strings.ToLower(raw))
+	switch commonmodel.EntityType(entityType) {
+	case commonmodel.EntityUser, commonmodel.EntityDevice, commonmodel.EntityService:
+		return commonmodel.EntityType(entityType)
+	default:
+		return commonmodel.EntityService
+	}
 }

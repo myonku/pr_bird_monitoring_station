@@ -23,7 +23,7 @@ import (
 	"certification_server/src/repo"
 )
 
-var _ iface.IKeyManager = (*SecretKeyService)(nil)
+var _ iface.ISecretKeyManager = (*SecretKeyService)(nil)
 
 const defaultCertificationEntityID = "certification_server"
 

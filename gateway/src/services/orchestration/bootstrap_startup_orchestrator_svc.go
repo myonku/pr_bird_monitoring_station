@@ -12,6 +12,7 @@ import (
 	authmodel "gateway/src/models/auth"
 	commonmodel "gateway/src/models/common"
 	modelsystem "gateway/src/models/system"
+	authsvc "gateway/src/services/auth"
 	rpcclient "gateway/src/services/communication/rpc_client"
 	"gateway/src/utils"
 
@@ -21,31 +22,17 @@ import (
 const defaultBootstrapAuthorityServiceName = "certification_server"
 const bootstrapAuthenticateRouteKey = "auth.bootstrap.authenticate"
 
-// BootstrapStartupRequest 是网关启动阶段 bootstrap 编排输入。
-type BootstrapStartupRequest struct {
-	Runtime              modelsystem.RuntimeConfig
-	StartupParams        modelsystem.SecretKeyStartupParams
-	AuthAuthorityService string
-}
-
-// BootstrapStartupResult 是网关启动阶段 bootstrap 编排输出。
-type BootstrapStartupResult struct {
-	Stage             string
-	AuthorityEndpoint string
-	CredentialKey     string
-}
-
 // BootstrapStartupOrchestratorService 将启动期 bootstrap 逻辑下沉到编排层。
 type BootstrapStartupOrchestratorService struct {
 	localCredentialMgr  commonif.ILocalCredentialManager
-	KeyManager          commonif.IKeyManager
+	KeyManager          commonif.ISecretKeyManager
 	trafficStation      communicationif.ITrafficStation
 	authAuthorityTarget string
 }
 
 func NewBootstrapStartupOrchestratorService(
 	localCredentialMgr commonif.ILocalCredentialManager,
-	keyManager commonif.IKeyManager,
+	keyManager commonif.ISecretKeyManager,
 	trafficStation communicationif.ITrafficStation,
 	authAuthorityService string,
 ) *BootstrapStartupOrchestratorService {
@@ -64,8 +51,8 @@ func NewBootstrapStartupOrchestratorService(
 
 func (s *BootstrapStartupOrchestratorService) EnsureReady(
 	ctx context.Context,
-	req *BootstrapStartupRequest,
-) (*BootstrapStartupResult, error) {
+	req *authsvc.BootstrapStartupRequest,
+) (*authsvc.BootstrapStartupResult, error) {
 	if req == nil {
 		return nil, &modelsystem.ErrReadinessRequestInvalid
 	}
@@ -198,7 +185,7 @@ func (s *BootstrapStartupOrchestratorService) EnsureReady(
 		return nil, fmt.Errorf("save bootstrap credential failed: %w", saveErr)
 	}
 
-	return &BootstrapStartupResult{
+	return &authsvc.BootstrapStartupResult{
 		Stage:             handshakeResult.Stage,
 		AuthorityEndpoint: authorityEndpoint,
 		CredentialKey:     credentialKey,
