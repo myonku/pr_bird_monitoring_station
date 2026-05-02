@@ -1,14 +1,14 @@
 [runtime]
 entity_type = "service"
 service_name = "certification_server"
-instance_id = "certification_server"
-run_mode = "no_auth"
+instance_id = "ef29f54b-11a8-4358-a812-fba710193d18"
+run_mode = "development" # 可选值：no_auth、development
 grpc_listen_host = "127.0.0.1"
 grpc_listen_port = 50051
 
 [auth]
 secret_key_dir = "secret_keys"
-active_key_id = "cert-local-key"
+active_key_id = "e52c4caf-d4bc-49b1-8f37-9ea71eff3134"
 
 [mysql]
 dsn = "project_user:YourUserPassword123!@tcp(127.0.0.1:3306)/bms_test?charset=utf8mb4&parseTime=true&loc=Local"
@@ -25,6 +25,7 @@ circuit_breaker_half_open_max_calls = 1
 [redis]
 mode = "cluster"
 addrs = "127.0.0.1:7001,127.0.0.1:7002,127.0.0.1:7003,127.0.0.1:7004,127.0.0.1:7005,127.0.0.1:7006"
+password = "YourRedisPassword123!"
 db = 0
 max_retries = 3
 pool_size = 10

@@ -24,7 +24,7 @@ services:
   # MongoDB Atlas Local 8.0 单例
   # ==========================================
   mongodb:
-    image: mongodb/mongodb-atlas-local:8.0
+    image: mongo:8.0
     container_name: mongo-standalone
     restart: always
     environment:

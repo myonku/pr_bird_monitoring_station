@@ -1,3 +1,15 @@
+[runtime]
+entity_type = "service"
+service_name = "data_server"
+instance_id = "d07e348-c73d-4497-b238-28d586deeab7"
+run_mode = "no_auth"
+grpc_listen_host = "127.0.0.1"
+grpc_listen_port = 50053
+
+[auth]
+secret_key_dir = "secret_keys"
+active_key_id = "3b385136-d4da-418d-b92c-c4e226abf3e5"
+
 [mysql]
 DIALECT = "mysql"
 HOST = "127.0.0.1"

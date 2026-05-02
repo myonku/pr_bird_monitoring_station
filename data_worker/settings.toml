@@ -1,14 +1,14 @@
 [runtime]
 entity_type = "service"
 service_name = "data_worker"
-instance_id = "data_worker"
+instance_id = "fcbc089e-7573-44c4-9a59-4b4c80074a11"
 run_mode = "no_auth"
 grpc_listen_host = "127.0.0.1"
 grpc_listen_port = 50052
 
 [auth]
 secret_key_dir = "secret_keys"
-active_key_id = "cert-local-key"
+active_key_id = "8b48109b-17f2-4ca1-9a82-662b0143a0f0"
 
 [etcd]
 HOSTS = ["127.0.0.1:23791", "127.0.0.1:23811", "127.0.0.1:23813"]

@@ -1,14 +1,14 @@
 [runtime]
 entity_type = "service"
 service_name = "gateway"
-instance_id = "gateway"
+instance_id = "7a1e467a-9287-4ad3-947e-6e92ace9686c"
 run_mode = "no_auth"
 http_listen_host = "127.0.0.1"
 http_listen_port = 8080
 
 [auth]
 secret_key_dir = "secret_keys"
-active_key_id = "gateway-local-key"
+active_key_id = "01e6abf7-88fb-4b03-bbb5-a1fdb4fb4f1f"
 
 [mysql]
 dsn = "project_user:YourUserPassword123!@tcp(127.0.0.1:3306)/bms_test?charset=utf8mb4&parseTime=true&loc=Local"
