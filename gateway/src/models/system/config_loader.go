@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func loadProjectConfig(cfgPath string) (*ProjectConfig, error) {
@@ -62,6 +63,18 @@ func parseProjectConfigFromTOML(content string, cfg *ProjectConfig) error {
 			}
 		case "auth":
 			if err := assignAuthField(cfg, key, value, lineNo); err != nil {
+				return err
+			}
+		case "mysql":
+			if err := assignMySQLField(cfg, key, value, lineNo); err != nil {
+				return err
+			}
+		case "redis":
+			if err := assignRedisField(cfg, key, value, lineNo); err != nil {
+				return err
+			}
+		case "etcd":
+			if err := assignEtcdField(cfg, key, value, lineNo); err != nil {
 				return err
 			}
 		}
@@ -147,6 +160,252 @@ func assignAuthField(cfg *ProjectConfig, key, value string, lineNo int) error {
 	return nil
 }
 
+func assignMySQLField(cfg *ProjectConfig, key, value string, lineNo int) error {
+	if cfg.MySQL == nil {
+		cfg.MySQL = &MySQLConfig{}
+	}
+
+	switch key {
+	case "dsn":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [mysql].dsn at line %d: %w", lineNo, err)
+		}
+		cfg.MySQL.DSN = parsed
+	case "dsns":
+		parsed, err := parseTOMLStringList(value)
+		if err != nil {
+			return fmt.Errorf("invalid [mysql].dsns at line %d: %w", lineNo, err)
+		}
+		cfg.MySQL.DSNs = parsed
+	case "max_open_conns":
+		parsed, err := parseTOMLInt(value)
+		if err != nil {
+			return fmt.Errorf("invalid [mysql].max_open_conns at line %d: %w", lineNo, err)
+		}
+		cfg.MySQL.MaxOpenConns = parsed
+	case "max_idle_conns":
+		parsed, err := parseTOMLInt(value)
+		if err != nil {
+			return fmt.Errorf("invalid [mysql].max_idle_conns at line %d: %w", lineNo, err)
+		}
+		cfg.MySQL.MaxIdleConns = parsed
+	case "conn_max_lifetime":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [mysql].conn_max_lifetime at line %d: %w", lineNo, err)
+		}
+		cfg.MySQL.ConnMaxLifetime = parsed
+	case "conn_max_idle_time":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [mysql].conn_max_idle_time at line %d: %w", lineNo, err)
+		}
+		cfg.MySQL.ConnMaxIdleTime = parsed
+	case "op_timeout":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [mysql].op_timeout at line %d: %w", lineNo, err)
+		}
+		cfg.MySQL.OpTimeout = parsed
+	default:
+		return fmt.Errorf("unsupported [mysql] key %q at line %d", key, lineNo)
+	}
+
+	return nil
+}
+
+func assignRedisField(cfg *ProjectConfig, key, value string, lineNo int) error {
+	if cfg.Redis == nil {
+		cfg.Redis = &RedisClientConfig{}
+	}
+
+	switch key {
+	case "mode":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].mode at line %d: %w", lineNo, err)
+		}
+		switch strings.ToLower(strings.TrimSpace(parsed)) {
+		case "", string(RedisModeStandalone):
+			cfg.Redis.Mode = RedisModeStandalone
+		case string(RedisModeSentinel):
+			cfg.Redis.Mode = RedisModeSentinel
+		case string(RedisModeCluster):
+			cfg.Redis.Mode = RedisModeCluster
+		default:
+			return fmt.Errorf("invalid [redis].mode at line %d: unsupported value %q", lineNo, parsed)
+		}
+	case "addr":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].addr at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.Addr = parsed
+	case "addrs":
+		parsed, err := parseTOMLStringList(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].addrs at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.Addrs = parsed
+	case "master_name":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].master_name at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.MasterName = parsed
+	case "username":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].username at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.Username = parsed
+	case "password":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].password at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.Password = parsed
+	case "sentinel_username":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].sentinel_username at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.SentinelUsername = parsed
+	case "sentinel_password":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].sentinel_password at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.SentinelPassword = parsed
+	case "db":
+		parsed, err := parseTOMLInt(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].db at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.DB = parsed
+	case "max_retries":
+		parsed, err := parseTOMLInt(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].max_retries at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.MaxRetries = parsed
+	case "pool_size":
+		parsed, err := parseTOMLInt(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].pool_size at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.PoolSize = parsed
+	case "min_idle_conns":
+		parsed, err := parseTOMLInt(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].min_idle_conns at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.MinIdleConns = parsed
+	case "dial_timeout":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].dial_timeout at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.DialTimeout = parsed
+	case "read_timeout":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].read_timeout at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.ReadTimeout = parsed
+	case "write_timeout":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].write_timeout at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.WriteTimeout = parsed
+	case "read_only":
+		parsed, err := parseTOMLBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].read_only at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.ReadOnly = parsed
+	case "route_by_latency":
+		parsed, err := parseTOMLBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].route_by_latency at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.RouteByLatency = parsed
+	case "route_randomly":
+		parsed, err := parseTOMLBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].route_randomly at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.RouteRandomly = parsed
+	case "op_timeout":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].op_timeout at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.OpTimeout = parsed
+	case "default_ttl":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [redis].default_ttl at line %d: %w", lineNo, err)
+		}
+		cfg.Redis.DefaultTTL = parsed
+	default:
+		return fmt.Errorf("unsupported [redis] key %q at line %d", key, lineNo)
+	}
+
+	return nil
+}
+
+func assignEtcdField(cfg *ProjectConfig, key, value string, lineNo int) error {
+	if cfg.Etcd == nil {
+		cfg.Etcd = &EtcdClientConfig{}
+	}
+
+	switch key {
+	case "endpoints":
+		parsed, err := parseTOMLStringList(value)
+		if err != nil {
+			return fmt.Errorf("invalid [etcd].endpoints at line %d: %w", lineNo, err)
+		}
+		cfg.Etcd.Endpoints = parsed
+	case "username":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [etcd].username at line %d: %w", lineNo, err)
+		}
+		cfg.Etcd.Username = parsed
+	case "password":
+		parsed, err := parseTOMLString(value)
+		if err != nil {
+			return fmt.Errorf("invalid [etcd].password at line %d: %w", lineNo, err)
+		}
+		cfg.Etcd.Password = parsed
+	case "dial_timeout":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [etcd].dial_timeout at line %d: %w", lineNo, err)
+		}
+		cfg.Etcd.DialTimeout = parsed
+	case "auto_sync_interval":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [etcd].auto_sync_interval at line %d: %w", lineNo, err)
+		}
+		cfg.Etcd.AutoSyncInterval = parsed
+	case "op_timeout":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return fmt.Errorf("invalid [etcd].op_timeout at line %d: %w", lineNo, err)
+		}
+		cfg.Etcd.OpTimeout = parsed
+	default:
+		return fmt.Errorf("unsupported [etcd] key %q at line %d", key, lineNo)
+	}
+
+	return nil
+}
+
 func splitTOMLKeyValue(line string) (string, string, bool) {
 	idx := strings.Index(line, "=")
 	if idx <= 0 {
@@ -210,4 +469,53 @@ func parseTOMLInt64(raw string) (int64, error) {
 		return 0, err
 	}
 	return strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+}
+
+func parseTOMLBool(raw string) (bool, error) {
+	value, err := parseTOMLString(raw)
+	if err != nil {
+		return false, err
+	}
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes", "on":
+		return true, nil
+	case "false", "0", "no", "off", "":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid boolean value %q", value)
+	}
+}
+
+func parseTOMLStringList(raw string) ([]string, error) {
+	value, err := parseTOMLString(raw)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func parseTOMLDuration(raw string) (time.Duration, error) {
+	value, err := parseTOMLString(raw)
+	if err != nil {
+		return 0, err
+	}
+	if strings.TrimSpace(value) == "" {
+		return 0, nil
+	}
+	return time.ParseDuration(strings.TrimSpace(value))
 }

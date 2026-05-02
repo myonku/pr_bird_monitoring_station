@@ -32,10 +32,11 @@ gateway 只按以下最小层级收敛，不展开实现细节：
 1. Inbound Adapter（HTTP）
 2. Traffic Station（统一流量站点）
 3. Routing + Payload Pipeline（通信下层）
-4. Forwarding Orchestrator（流程编排）
-5. Capability Modules
-6. Data Managers
-7. Outbound Adapter（gRPC client）
+4. Capability Modules
+5. Data Managers
+6. Outbound Adapter（gRPC client）
+
+说明：入站与出站调用不强制共享同一个编排模块；Traffic Station 只保留路由与策略协同语义，不作为所有调用的唯一强制入口。
 
 Capability Modules 最小集合：
 
@@ -54,7 +55,7 @@ Data Managers 最小集合：
 
 ## 4. 硬约束
 
-1. 所有入站/出站流量都必须先进入 Traffic Station。
+1. 入站流量应先进入 Traffic Station；出站流量可以由独立出站适配器或编排器发起，但必须保持路由与策略语义一致。
 2. 流量分类必须在通信下层完成，不允许在顶层按 auth/business 直接分叉实现。
 3. AuthControl 内聚认证决策与限流决策，不再单列独立 RateLimit 模块。
 4. Gateway AuthControl 负责远程认证调用结果消费和限流决策。
@@ -81,11 +82,11 @@ Data Managers 最小集合：
 运行链（最小）：
 
 1. HTTP 入站标准化。
-2. Traffic Station 接管。
+2. Traffic Station 完成入站路由与策略判定。
 3. 通信下层完成路由分类与策略决策。
 4. AuthControl（远程认证结果消费 + 限流）。
-5. 通信下层负责载荷处理与出站准备。
-6. gRPC client 出站转发。
+5. 业务处理模块负责载荷处理与出站准备。
+6. 独立 gRPC client 出站转发。
 
 no-auth 运行链在 HTTP 入站边界直接保留健康检查与业务转发，不开放认证入口。
 

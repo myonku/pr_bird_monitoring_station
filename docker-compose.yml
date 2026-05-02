@@ -10,7 +10,7 @@ services:
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: "YourRootPassword123!" # 连接MySQL 的 root 用户密码
-      MYSQL_DATABASE: "my_project_db" # 启动时自动创建的数据库名称
+      MYSQL_DATABASE: "bms_test" # 启动时自动创建的数据库名称
       MYSQL_USER: "project_user" # 连接MySQL 的普通用户
       MYSQL_PASSWORD: "YourUserPassword123!" # 连接MySQL 的普通用户密码
     ports:
@@ -30,6 +30,7 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: "mongoadmin" # 连接MongoDB 的管理员用户名
       MONGO_INITDB_ROOT_PASSWORD: "YourMongoPassword123!" # 连接MongoDB 的管理员密码
+      MONGO_INITDB_DATABASE: "bms_test" # 启动时默认初始化的数据库名称
     ports:
       - "27017:27017"
     volumes:
@@ -43,38 +44,134 @@ services:
   redis-node-1: &redis-template
     image: redis:8.6
     command: >
-      redis-server 
-      --cluster-enabled yes 
-      --cluster-config-file nodes.conf 
-      --cluster-node-timeout 5000 
-      --appendonly yes 
+      redis-server
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
       --requirepass "YourRedisPassword123!"
       --masterauth "YourRedisPassword123!"
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7001
+      --cluster-announce-bus-port 17001
+    ports:
+      - "7001:6379"
+      - "17001:16379"
     volumes:
       - D:/Docker/Volume/pr_bms/redis/node-1:/data
     networks:
       - project-network
-  
+
   redis-node-2:
     <<: *redis-template
+    command: >
+      redis-server
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass "YourRedisPassword123!"
+      --masterauth "YourRedisPassword123!"
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7002
+      --cluster-announce-bus-port 17002
+    ports:
+      - "7002:6379"
+      - "17002:16379"
     volumes:
       - D:/Docker/Volume/pr_bms/redis/node-2:/data
+    networks:
+      - project-network
+
   redis-node-3:
     <<: *redis-template
+    command: >
+      redis-server
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass "YourRedisPassword123!"
+      --masterauth "YourRedisPassword123!"
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7003
+      --cluster-announce-bus-port 17003
+    ports:
+      - "7003:6379"
+      - "17003:16379"
     volumes:
       - D:/Docker/Volume/pr_bms/redis/node-3:/data
+    networks:
+      - project-network
+
   redis-node-4:
     <<: *redis-template
+    command: >
+      redis-server
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass "YourRedisPassword123!"
+      --masterauth "YourRedisPassword123!"
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7004
+      --cluster-announce-bus-port 17004
+    ports:
+      - "7004:6379"
+      - "17004:16379"
     volumes:
       - D:/Docker/Volume/pr_bms/redis/node-4:/data
+    networks:
+      - project-network
+
   redis-node-5:
     <<: *redis-template
+    command: >
+      redis-server
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass "YourRedisPassword123!"
+      --masterauth "YourRedisPassword123!"
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7005
+      --cluster-announce-bus-port 17005
+    ports:
+      - "7005:6379"
+      - "17005:16379"
     volumes:
       - D:/Docker/Volume/pr_bms/redis/node-5:/data
+    networks:
+      - project-network
+
   redis-node-6:
     <<: *redis-template
+    command: >
+      redis-server
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass "YourRedisPassword123!"
+      --masterauth "YourRedisPassword123!"
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7006
+      --cluster-announce-bus-port 17006
+    ports:
+      - "7006:6379"
+      - "17006:16379"
     volumes:
       - D:/Docker/Volume/pr_bms/redis/node-6:/data
+    networks:
+      - project-network
 
   # 自动组建 Redis 集群的临时容器，在初始化后会自动退出
   redis-cluster-init:
@@ -91,16 +188,16 @@ services:
       - project-network
     # 需要确保 -a 参数中的密码与上方 redis-template 中的 requirepass 和 masterauth 保持一致
     command: >
-      sh -c "sleep 5 && echo 'yes' | redis-cli -a 'YourRedisPassword123!' --cluster create 
-      redis-node-1:6379 redis-node-2:6379 redis-node-3:6379 
-      redis-node-4:6379 redis-node-5:6379 redis-node-6:6379 
+      sh -c "sleep 5 && echo 'yes' | redis-cli -a 'YourRedisPassword123!' --cluster create \
+      host.docker.internal:7001 host.docker.internal:7002 host.docker.internal:7003 \
+      host.docker.internal:7004 host.docker.internal:7005 host.docker.internal:7006 \
       --cluster-replicas 1"
 
   # ==========================================
-  # etcd 3.6.0 集群 (3节点)
+  # etcd 3.6.0-0 集群 (3节点)
   # ==========================================
   etcd-1:
-    image: registry.k8s.io/etcd:3.6.0
+    image: registry.k8s.io/etcd:3.6.0-0
     container_name: etcd-1
     command:
       - etcd
@@ -114,14 +211,14 @@ services:
       - --initial-cluster-state=new
       - --data-dir=/etcd-data
     ports:
-      - "2379:2379"
+      - "23791:2379" # 更改为备用主机端口以避开宿主机 2379 访问受限情况
     volumes:
       - D:/Docker/Volume/pr_bms/etcd/node-1:/etcd-data
     networks:
       - project-network
 
   etcd-2:
-    image: registry.k8s.io/etcd:3.6.0
+    image: registry.k8s.io/etcd:3.6.0-0
     container_name: etcd-2
     command:
       - etcd
@@ -135,14 +232,14 @@ services:
       - --initial-cluster-state=new
       - --data-dir=/etcd-data
     ports:
-      - "2381:2379" # 映射到不同的宿主机端口防止冲突
+      - "23811:2379" # 映射到不同的宿主机端口防止冲突（已更改为备用端口）
     volumes:
       - D:/Docker/Volume/pr_bms/etcd/node-2:/etcd-data
     networks:
       - project-network
 
   etcd-3:
-    image: registry.k8s.io/etcd:3.6.0
+    image: registry.k8s.io/etcd:3.6.0-0
     container_name: etcd-3
     command:
       - etcd
@@ -156,7 +253,7 @@ services:
       - --initial-cluster-state=new
       - --data-dir=/etcd-data
     ports:
-      - "2383:2379"
+      - "23813:2379" # 更改为备用端口
     volumes:
       - D:/Docker/Volume/pr_bms/etcd/node-3:/etcd-data
     networks:
@@ -164,7 +261,7 @@ services:
 
   # 自动初始化 etcd 用户和权限的临时容器，在初始化后会自动退出
   etcd-init-auth:
-    image: registry.k8s.io/etcd:3.6.0
+    image: registry.k8s.io/etcd:3.6.0-0
     container_name: etcd-init-auth
     depends_on:
       - etcd-1

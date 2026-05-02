@@ -10,7 +10,6 @@ from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
-from src.iface.auth.authority_client import TokenRefreshRequest
 from src.iface.common.local_credential_manager import ModuleCredentialSnapshot
 from src.models.auth.auth import (
     IdentityContext,
@@ -30,7 +29,8 @@ from src.services.common.local_credential_svc import (
 from src.services.communication.rpc_client.auth_authority_bootstrap_rpc_client import (
     _normalize_challenge_request,
 )
-from src.services.orchestration.bootstrap_startup_orchestrator_svc import (
+from src.services.auth.bootstrap_coordinator_svc import (
+    BootstrapCoordinatorService,
     _build_bootstrap_challenge_request,
 )
 from src.services.orchestration.startup_security_svc import (
@@ -341,14 +341,19 @@ class CredentialFlowTests(unittest.IsolatedAsyncioTestCase):
         traffic_station = FakeTrafficStation()
         registry_service = FakeRegistryService()
         secret_key_service = FakeSecretKeyService(private_key_pem="-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----\n")
-        supervisor = CredentialDiscoverySupervisorService(
+        bootstrap_coordinator = BootstrapCoordinatorService(
             runtime_cfg=runtime_cfg,
             startup_params=startup_params,
             traffic_station=cast(Any, traffic_station),
             local_credential_manager=cast(Any, local_credential_manager),
-            registry_service=cast(Any, registry_service),
             secret_key_service=cast(Any, secret_key_service),
+        )
+        supervisor = CredentialDiscoverySupervisorService(
+            runtime_cfg=runtime_cfg,
+            local_credential_manager=cast(Any, local_credential_manager),
+            registry_service=cast(Any, registry_service),
             service_instance_factory=lambda active_key_id: build_worker_instance(runtime_cfg, active_key_id),
+            bootstrap_coordinator=cast(Any, bootstrap_coordinator),
         )
 
         from unittest.mock import AsyncMock, patch

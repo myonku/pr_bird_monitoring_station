@@ -10,6 +10,58 @@ grpc_listen_port = 50052
 secret_key_dir = "secret_keys"
 active_key_id = "cert-local-key"
 
+[etcd]
+HOSTS = ["127.0.0.1:23791", "127.0.0.1:23811", "127.0.0.1:23813"]
+USERNAME = "root"
+PASSWORD = "YourEtcdPassword123!"
+NAMESPACE = "/bms"
+
+[redis]
+MODE = "cluster"
+DIALECT = "redis"
+HOSTS = ["127.0.0.1:7001", "127.0.0.1:7002", "127.0.0.1:7003", "127.0.0.1:7004", "127.0.0.1:7005", "127.0.0.1:7006"]
+PASSWORD = "YourRedisPassword123!"
+DATABASE = 0
+
+[mysql]
+DIALECT = "mysql"
+HOST = "127.0.0.1"
+PORT = 3306
+USER = "project_user"
+PASSWORD = "YourUserPassword123!"
+DATABASE = "bms_test"
+
+[mysql.CIRCUITBREAKER]
+failure_threshold = 5
+recovery_timeout = 10.0
+half_open_max_calls = 1
+
+[mongo]
+DIALECT = "mongodb"
+HOST = "127.0.0.1"
+PORT = 27017
+USER = "mongoadmin"
+PASSWORD = "YourMongoPassword123!"
+DATABASE = "bms_test"
+AUTHSOURCE = "admin"
+DIRECTCONNECTION = true
+TLS = false
+
+[mongo.CIRCUITBREAKER]
+failure_threshold = 5
+recovery_timeout = 10.0
+half_open_max_calls = 1
+
+[redis.CIRCUITBREAKER]
+failure_threshold = 5
+recovery_timeout = 10.0
+half_open_max_calls = 1
+
+[etcd.CIRCUITBREAKER]
+failure_threshold = 5
+recovery_timeout = 10.0
+half_open_max_calls = 1
+
 [inference]
 required = true
 root_dir = "model_pack"

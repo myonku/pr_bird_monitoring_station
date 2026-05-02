@@ -10,3 +10,43 @@ http_listen_port = 8080
 secret_key_dir = "secret_keys"
 active_key_id = "gateway-local-key"
 
+[mysql]
+dsn = "project_user:YourUserPassword123!@tcp(127.0.0.1:3306)/bms_test?charset=utf8mb4&parseTime=true&loc=Local"
+dsns = "project_user:YourUserPassword123!@tcp(127.0.0.1:3306)/bms_test?charset=utf8mb4&parseTime=true&loc=Local"
+max_open_conns = 8
+max_idle_conns = 4
+conn_max_lifetime = "30m"
+conn_max_idle_time = "10m"
+op_timeout = "3s"
+circuit_breaker_failure_threshold = 5
+circuit_breaker_recovery_timeout = "10s"
+circuit_breaker_half_open_max_calls = 1
+
+[redis]
+mode = "cluster"
+addrs = "127.0.0.1:7001,127.0.0.1:7002,127.0.0.1:7003,127.0.0.1:7004,127.0.0.1:7005,127.0.0.1:7006"
+password = "YourRedisPassword123!"
+db = 0
+max_retries = 3
+pool_size = 10
+min_idle_conns = 2
+dial_timeout = "2s"
+read_timeout = "2s"
+write_timeout = "2s"
+op_timeout = "3s"
+default_ttl = "24h"
+circuit_breaker_failure_threshold = 5
+circuit_breaker_recovery_timeout = "10s"
+circuit_breaker_half_open_max_calls = 1
+
+[etcd]
+endpoints = "127.0.0.1:23791,127.0.0.1:23811,127.0.0.1:23813"
+username = "root"
+password = "YourEtcdPassword123!"
+dial_timeout = "5s"
+auto_sync_interval = "30s"
+op_timeout = "3s"
+circuit_breaker_failure_threshold = 5
+circuit_breaker_recovery_timeout = "10s"
+circuit_breaker_half_open_max_calls = 1
+

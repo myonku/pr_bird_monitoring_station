@@ -55,6 +55,19 @@ func Run() error {
 		}
 	}()
 
+	var mysqlClient *repo.MySQLClient
+	if cfg.MySQL != nil {
+		mysqlClient, err = repo.NewMySQLClient(cfg.MySQL)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if closeErr := mysqlClient.Close(); closeErr != nil {
+				log.Printf("gateway mysql close failed: %v", closeErr)
+			}
+		}()
+	}
+
 	var redisClient *repo.RedisClient
 	if cfg.Redis != nil {
 		redisClient, err = repo.NewRedisClient(cfg.Redis)
@@ -87,7 +100,7 @@ func Run() error {
 	if runtimeCfg.RunMode == modelsystem.RuntimeRunModeNoAuth {
 		log.Printf("stage=bootstrap_skipped_or_ready service=%s mode=no_auth", runtimeCfg.ServiceName)
 	} else {
-		secretKeySvc, resolvedStartupParams, err := commonsvc.NewSecretKeyServiceFromProjectConfig(cfg, nil, nil)
+		secretKeySvc, resolvedStartupParams, err := commonsvc.NewSecretKeyServiceFromProjectConfig(cfg, nil, mysqlClient)
 		if err != nil {
 			return err
 		}

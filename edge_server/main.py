@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 
 from src.ignitor.factory import build_capture_module
-from src.models.sys.func import load_edge_config
+from src.models.sys.config_loader import load_edge_config
 from src.models.sys.config import EdgeServerConfig
 from src.orchestration.decision_engine import DecisionEngine
 from src.orchestration.pipeline import EdgePipeline

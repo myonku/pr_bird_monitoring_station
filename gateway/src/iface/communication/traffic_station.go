@@ -42,7 +42,6 @@ type TrafficDispatchResult struct {
 // 下游接口调用：
 //   - communication.IRoutingPayloadPipeline.ResolveRouteProfile / BuildOutboundPayload
 //   - authcontrol.IGatewayAuthControl.Enforce
-//   - orchestration.IForwardingOrchestrator.HandleBusinessForward / HandleExternalAuthForward
 type ITrafficStation interface {
 	HandleInbound(ctx context.Context, req *InboundTrafficRequest) (*TrafficDecision, error)
 	SendOutbound(ctx context.Context, req *OutboundTrafficRequest) (*TrafficDispatchResult, error)

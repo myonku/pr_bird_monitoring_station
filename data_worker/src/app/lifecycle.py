@@ -7,20 +7,33 @@ import signal
 from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 import grpc
 
+from src.gen.business.v1 import business_forward_pb2_grpc
 from src.iface.common.local_credential_manager import (
     ILocalCredentialManager,
 )
+from src.iface.common.local_credential_manager import ModuleCredentialSnapshot
+from src.iface.auth.bootstrap_coordinator import IBootstrapCoordinator
 from src.iface.communication.traffic_station import ITrafficStation
 from src.models.common.instance import ServiceInstance
+from src.models.business.data import BUSINESS_DOCUMENT_MODELS
 from src.models.sys.config import (
     EtcdConfig,
     ProjectConfig,
     RuntimeConfig,
     SecretKeyStartupParams,
 )
-from src.models.sys.func import load_project_config_from_toml
+from src.models.sys.config_loader import load_project_config_from_toml
 from src.repo.etcd_client import EtcdAsyncClient
+from src.repo.mongo_client import MongoDBClient
+from src.repo.mysql_client import MySQLClient
 from src.repo.redis_store import RedisManager
+from src.services.business.data_worker_svc import DataWorkerService
+from src.services.business.envelope_svc import EnvelopeManager
+from src.services.business.monitoring_record_svc import MonitoringRecordManager
+from src.services.business.species_profile_svc import SpeciesProfileManager
+from src.services.communication.rpc_service.business_forward_servicer import (
+    BusinessForwardServicer,
+)
 from src.services.common.registry_svc import RegistryService
 from src.services.common.local_credential_svc import LocalCredentialService
 from src.iface.common.key_manager import ISecretKeyManager
@@ -32,9 +45,7 @@ from src.services.communication.traffic_station_svc import TrafficStationService
 from src.services.orchestration.credential_discovery_supervisor_svc import (
     CredentialDiscoverySupervisorService,
 )
-from src.services.orchestration.bootstrap_startup_orchestrator_svc import (
-    BootstrapStartupOrchestratorService,
-)
+from src.services.auth.bootstrap_coordinator_svc import BootstrapCoordinatorService
 from src.services.orchestration.startup_security_svc import (
     resolve_startup_security_materials,
 )
@@ -92,6 +103,10 @@ async def run_data_worker() -> None:
     local_credential_manager: ILocalCredentialManager | None = None
     secret_key_service: ISecretKeyManager | None = None
     startup_params: SecretKeyStartupParams | None = None
+    bootstrap_coordinator: IBootstrapCoordinator | None = None
+    mongo_client: MongoDBClient | None = None
+    mysql_client: MySQLClient | None = None
+    business_forward_servicer: BusinessForwardServicer | None = None
     registered_instance: ServiceInstance | None = None
     worker_server: grpc.aio.Server | None = None
     credential_supervisor: CredentialDiscoverySupervisorService | None = None
@@ -127,6 +142,35 @@ async def run_data_worker() -> None:
             "stage=dependencies_initialized service=%s", runtime_cfg.service_name
         )
 
+        if config.mongo is None or config.mysql is None:
+            logger.warning(
+                "stage=business_forward_skipped service=%s reason=missing_storage_config",
+                runtime_cfg.service_name,
+            )
+        else:
+            mongo_client = MongoDBClient(config)
+            await mongo_client.connect(document_models=BUSINESS_DOCUMENT_MODELS)
+
+            mysql_client = MySQLClient(config)
+            await mysql_client.connect()
+
+            business_forward_servicer = BusinessForwardServicer(
+                traffic_station=traffic_station,
+                data_worker_service=DataWorkerService(
+                    envelope_manager=EnvelopeManager(),
+                    monitoring_record_manager=MonitoringRecordManager(),
+                    species_profile_manager=SpeciesProfileManager(
+                        mysql_client=mysql_client
+                    ),
+                    inference_module=inference_module,
+                ),
+                expected_service_name=runtime_cfg.service_name,
+            )
+            logger.info(
+                "stage=business_forward_wired service=%s storage=mongo_mysql",
+                runtime_cfg.service_name,
+            )
+
         if runtime_cfg.run_mode == "no_auth":
             logger.info(
                 "stage=bootstrap_skipped_or_ready service=%s mode=no_auth",
@@ -138,23 +182,20 @@ async def run_data_worker() -> None:
                 raise RuntimeError("local credential manager dependencies are required")
             if secret_key_service is None or startup_params is None:
                 raise RuntimeError("secret key dependencies are required")
-            await ensure_worker_bootstrap_ready(
+            bootstrap_coordinator = BootstrapCoordinatorService(
                 runtime_cfg=runtime_cfg,
                 startup_params=startup_params,
                 traffic_station=traffic_station,
                 local_credential_manager=local_credential_manager,
                 secret_key_service=secret_key_service,
+                auth_authority_service=DEFAULT_AUTH_AUTHORITY_SERVICE,
             )
-
-            loaded_snapshot = await local_credential_manager.load_active_credential(
-                f"{runtime_cfg.entity_type}:{runtime_cfg.instance_id or runtime_cfg.service_name}"
+            bootstrap_snapshot = await ensure_worker_bootstrap_ready(
+                runtime_cfg=runtime_cfg,
+                bootstrap_coordinator=bootstrap_coordinator,
             )
             resolved_active_key_id = (
-                (
-                    loaded_snapshot.active_comm_key_id
-                    if loaded_snapshot is not None
-                    else ""
-                )
+                (bootstrap_snapshot.active_comm_key_id if bootstrap_snapshot is not None else "")
                 or startup_params.active_key_id
                 or (
                     startup_params.instance_id
@@ -183,22 +224,17 @@ async def run_data_worker() -> None:
         )
 
         if runtime_cfg.run_mode != "no_auth":
-            if local_credential_manager is None:
-                raise RuntimeError("local credential manager dependencies are required")
-            if secret_key_service is None or startup_params is None:
-                raise RuntimeError("secret key dependencies are required")
+            assert local_credential_manager is not None
+            assert bootstrap_coordinator is not None
             credential_supervisor = CredentialDiscoverySupervisorService(
                 runtime_cfg=runtime_cfg,
-                startup_params=startup_params,
-                traffic_station=traffic_station,
                 local_credential_manager=local_credential_manager,
                 registry_service=registry_service,
-                secret_key_service=secret_key_service,
                 service_instance_factory=lambda active_key_id: build_worker_instance(
                     runtime_cfg=runtime_cfg,
                     active_key_id=active_key_id,
                 ),
-                auth_authority_service=DEFAULT_AUTH_AUTHORITY_SERVICE,
+                bootstrap_coordinator=bootstrap_coordinator,
                 registry_ttl_sec=DEFAULT_REGISTRY_TTL_SEC,
             )
             credential_supervisor_task = asyncio.create_task(
@@ -220,6 +256,12 @@ async def run_data_worker() -> None:
         )
         if bound_port <= 0:
             raise RuntimeError("data_worker grpc listener bind failed")
+
+        if business_forward_servicer is not None:
+            business_forward_pb2_grpc.add_BusinessForwardServiceServicer_to_server(
+                business_forward_servicer,
+                worker_server,
+            )
         await worker_server.start()
 
         install_signal_handlers(stop_event)
@@ -234,12 +276,21 @@ async def run_data_worker() -> None:
             credential_supervisor_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await credential_supervisor_task
+        if bootstrap_coordinator is not None and runtime_cfg.run_mode != "no_auth":
+            with contextlib.suppress(Exception):
+                await bootstrap_coordinator.revoke_module_credential("shutdown")
         if worker_server is not None:
             with contextlib.suppress(Exception):
                 await worker_server.stop(grace=5)
         if registry_service is not None and registered_instance is not None:
             with contextlib.suppress(Exception):
                 await registry_service.unregister(registered_instance)
+        if mysql_client is not None:
+            with contextlib.suppress(Exception):
+                await mysql_client.disconnect()
+        if mongo_client is not None:
+            with contextlib.suppress(Exception):
+                await mongo_client.disconnect()
         if redis_manager is not None:
             with contextlib.suppress(Exception):
                 await redis_manager.disconnect()
@@ -293,34 +344,23 @@ def parse_or_create_uuid(raw: str) -> UUID:
 
 async def ensure_worker_bootstrap_ready(
     runtime_cfg: RuntimeConfig,
-    startup_params,
-    traffic_station: ITrafficStation,
-    local_credential_manager: ILocalCredentialManager | None,
-    secret_key_service: ISecretKeyManager,
-) -> None:
+    bootstrap_coordinator: IBootstrapCoordinator,
+) -> ModuleCredentialSnapshot:
     logger = logging.getLogger("startup")
-    if local_credential_manager is None:
-        raise RuntimeError("local credential manager dependencies are required")
-    startup_orchestrator = BootstrapStartupOrchestratorService(
-        traffic_station=traffic_station,
-        local_credential_manager=local_credential_manager,
-        secret_key_service=secret_key_service,
-        auth_authority_service=DEFAULT_AUTH_AUTHORITY_SERVICE,
-    )
-    result = await startup_orchestrator.ensure_ready(
-        runtime_cfg=runtime_cfg,
-        startup_params=startup_params,
-    )
+    snapshot = await bootstrap_coordinator.ensure_module_ready()
+    if snapshot is None:
+        raise RuntimeError("bootstrap credential snapshot is missing after bootstrap")
 
     logger.info(
-        "stage=bootstrap_skipped_or_ready service=%s mode=%s auth_authority=%s authority_endpoint=%s stage=%s credential_key=%s",
+        "stage=bootstrap_skipped_or_ready service=%s mode=%s auth_authority=%s authority_endpoint=%s stage=%s active_comm_key_id=%s",
         runtime_cfg.service_name,
         runtime_cfg.run_mode,
         DEFAULT_AUTH_AUTHORITY_SERVICE,
-        result.authority_endpoint,
-        result.stage,
-        result.credential_key,
+        snapshot.metadata.get("auth_authority_ep", ""),
+        snapshot.stage,
+        snapshot.active_comm_key_id,
     )
+    return snapshot
 
 
 def install_signal_handlers(stop_event: asyncio.Event) -> None:

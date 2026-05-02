@@ -1,18 +1,18 @@
 import asyncio
+import logging
 import random
 from collections.abc import Callable, Awaitable
-from typing import Any, cast
+from typing import Any
 
 import grpc
+from etcd3aio import Etcd3Client
 from msgspec import json
 
 from src.models.common.instance import ServiceInstance
 from src.models.sys.config import ProjectConfig
 from src.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
-from etcd3 import etcdrpc as _etcdrpc
 
-# 将 etcdrpc 标注为 Any，避免由缺失类型信息引起的静态检查误报
-etcdrpc: Any = cast(Any, _etcdrpc)
+_log = logging.getLogger(__name__)
 
 
 def _prefix_range_end(prefix: str) -> bytes:
@@ -30,7 +30,7 @@ def _prefix_range_end(prefix: str) -> bytes:
 
 
 class EtcdAsyncClient:
-    """原生异步 etcd v3 客户端（基于 grpc.aio）
+    """原生异步 etcd v3 客户端（基于 etcd3aio/grpc.aio）
 
     仅实现本项目需要的最小接口：
       - connect
@@ -40,7 +40,7 @@ class EtcdAsyncClient:
       - get_prefix
       - watch_prefix
 
-    依赖: grpcio, etcd3 (提供 etcdrpc 代码)。
+    依赖: grpcio, etcd3aio。
     """
 
     def __init__(self, cfg: ProjectConfig) -> None:
@@ -57,25 +57,26 @@ class EtcdAsyncClient:
         # 针对 Etcd 的 RPC 维护一个熔断器
         self._circuit = CircuitBreaker("etcd_client", cfg.etcd.CIRCUITBREAKER)
 
-        # 连接与 stub 相关状态
+        # 连接与 service 相关状态
         self._connected = False
-        self._channel: grpc.aio.Channel | None = None
-        self._kv_stub: Any | None = None
-        self._lease_stub: Any | None = None
-        self._watch_stub: Any | None = None
+        self._client: Etcd3Client | None = None
+        self._kv_svc: Any | None = None
+        self._lease_svc: Any | None = None
+        self._watch_svc: Any | None = None
         self._lease_id: int | None = None
 
     async def connect(self):
-        """建立 gRPC 连接并初始化 stubs。"""
+        """建立 gRPC 连接并初始化服务 facade。"""
         etcd_cfg = self.cfg.etcd
         assert etcd_cfg and etcd_cfg.HOSTS, "Etcd 配置缺失 HOSTS"
-        host_port = etcd_cfg.HOSTS[0]
-        if ":" in host_port:
-            host, port = host_port.split(":", 1)
-        else:
-            host, port = host_port, "2379"
+        endpoints: list[str] = []
+        for host_port in etcd_cfg.HOSTS:
+            if ":" in host_port:
+                endpoints.append(host_port)
+            else:
+                endpoints.append(f"{host_port}:2379")
 
-        target = f"{host}:{port}"
+        conn_args: dict[str, Any] = {}
         if etcd_cfg.TLS_ENABLED:
             root_bytes = None
             cert_chain_bytes = None
@@ -95,30 +96,31 @@ class EtcdAsyncClient:
                 except Exception:
                     cert_chain_bytes = None
                     key_bytes = None
-            creds = grpc.ssl_channel_credentials(
-                root_certificates=root_bytes,
-                private_key=key_bytes,
-                certificate_chain=cert_chain_bytes,
-            )
-            self._channel = grpc.aio.secure_channel(target, creds)
-        else:
-            self._channel = grpc.aio.insecure_channel(target)
+            conn_args = {
+                "ca_cert": root_bytes,
+                "cert_chain": cert_chain_bytes,
+                "cert_key": key_bytes,
+            }
 
-        # 初始化 stubs
-        self._kv_stub = etcdrpc.KVStub(self._channel)
-        self._lease_stub = etcdrpc.LeaseStub(self._channel)
-        self._watch_stub = etcdrpc.WatchStub(self._channel)
+        self._client = Etcd3Client(endpoints=endpoints, **conn_args)
+        await self._client.connect()
+        self._kv_svc = self._client.kv
+        self._lease_svc = self._client.lease
+        self._watch_svc = self._client.watch
+        assert self._kv_svc is not None
+        assert self._lease_svc is not None
+        assert self._watch_svc is not None
         self._connected = True
 
     async def _grant_or_reuse_lease(self, ttl: int) -> int:
         """创建或重用租约，返回租约 ID。"""
         if self._lease_id is not None:
             return self._lease_id
-        assert self._lease_stub, "Lease stub 未初始化"
+        assert self._lease_svc is not None, "Lease service 未初始化"
 
         async def _do_grant() -> Any:
-            assert self._lease_stub
-            return await self._lease_stub.LeaseGrant(etcdrpc.LeaseGrantRequest(TTL=ttl))
+            assert self._lease_svc is not None
+            return await self._lease_svc.grant(ttl=ttl)
 
         try:
             resp = await self._circuit.call(_do_grant)
@@ -132,14 +134,22 @@ class EtcdAsyncClient:
 
     async def put_with_lease(self, key: str, value_bytes: bytes, ttl: int) -> None:
         """写入 key 并绑定租约（如不存在则创建新租约）。"""
-        assert self._kv_stub, "KV stub 未初始化"
+        assert self._kv_svc is not None, "KV service 未初始化"
         lease_id = await self._grant_or_reuse_lease(ttl)
 
         async def _do_put() -> Any:
-            assert self._kv_stub
-            return await self._kv_stub.Put(
-                etcdrpc.PutRequest(key=key.encode(), value=value_bytes, lease=lease_id)
-            )
+            assert self._kv_svc is not None
+            return await self._kv_svc.put(key, value_bytes, lease=lease_id)
+
+        await self._circuit.call(_do_put)
+
+    async def put(self, key: str, value_bytes: bytes) -> None:
+        """写入 key，不绑定租约。"""
+        assert self._kv_svc is not None, "KV service 未初始化"
+
+        async def _do_put() -> Any:
+            assert self._kv_svc is not None
+            return await self._kv_svc.put(key, value_bytes)
 
         await self._circuit.call(_do_put)
 
@@ -147,45 +157,36 @@ class EtcdAsyncClient:
         """保持租约存活（流式 keepalive）。"""
         if self._lease_id is None:
             return
-
-        async def req_gen():
-            while not stop_event.is_set():
-                yield etcdrpc.LeaseKeepAliveRequest(ID=self._lease_id)
-                await asyncio.sleep(ttl / 2)
-
-        # 消费响应，忽略具体内容；若需要可记录 latency / remaining TTL
         try:
-            assert self._lease_stub, "Lease stub 未初始化"
-            call = self._lease_stub.LeaseKeepAlive(req_gen())
-            async for _ in call:  # noqa: F841
-                if stop_event.is_set():
-                    break
+            assert self._lease_svc is not None, "Lease service 未初始化"
+            async with self._lease_svc.keep_alive_context(self._lease_id, ttl):
+                await stop_event.wait()
         except Exception:
-            # 发生异常后退出，外层可重启 keepalive 任务
-            pass
+            _log.warning(
+                "etcd keepalive_forever: keepalive 异常退出 (lease_id=%s, ttl=%s)",
+                self._lease_id,
+                ttl,
+                exc_info=True,
+            )
 
     async def delete(self, key: str):
         """删除指定 key。"""
-        assert self._kv_stub, "KV stub 未初始化"
+        assert self._kv_svc is not None, "KV service 未初始化"
 
         async def _do_del() -> Any:
-            assert self._kv_stub
-            return await self._kv_stub.DeleteRange(
-                etcdrpc.DeleteRangeRequest(key=key.encode())
-            )
+            assert self._kv_svc is not None
+            return await self._kv_svc.delete(key)
 
         await self._circuit.call(_do_del)
 
     async def get_prefix(self, prefix: str) -> list[tuple[str, bytes]]:
         """列出前缀下所有 KV。"""
-        assert self._kv_stub, "KV stub 未初始化"
+        assert self._kv_svc is not None, "KV service 未初始化"
         range_end = _prefix_range_end(prefix)
 
         async def _do_range() -> Any:
-            assert self._kv_stub
-            return await self._kv_stub.Range(
-                etcdrpc.RangeRequest(key=prefix.encode(), range_end=range_end)
-            )
+            assert self._kv_svc is not None
+            return await self._kv_svc.get(prefix, range_end=range_end)
 
         resp = await self._circuit.call(_do_range)
         out: list[tuple[str, bytes]] = []
@@ -200,14 +201,12 @@ class EtcdAsyncClient:
         self, prefix: str
     ) -> tuple[int, list[tuple[str, bytes]]]:
         """返回 (etcd_revision, [(key,value_bytes)...])，用于避免加载与 watch 之间的竞态。"""
-        assert self._kv_stub, "KV stub 未初始化"
+        assert self._kv_svc is not None, "KV service 未初始化"
         range_end = _prefix_range_end(prefix)
 
         async def _do_range() -> Any:
-            assert self._kv_stub
-            return await self._kv_stub.Range(
-                etcdrpc.RangeRequest(key=prefix.encode(), range_end=range_end)
-            )
+            assert self._kv_svc is not None
+            return await self._kv_svc.get(prefix, range_end=range_end)
 
         resp = await self._circuit.call(_do_range)
         header = getattr(resp, "header", None)
@@ -231,7 +230,7 @@ class EtcdAsyncClient:
 
         start_revision: 指定起始修订（通常为 初始 Range 的 revision + 1）。
         """
-        assert self._watch_stub, "Watch stub 未初始化"
+        assert self._watch_svc is not None, "Watch service 未初始化"
         range_end = _prefix_range_end(prefix)
 
         next_revision: int = start_revision if start_revision > 0 else 0
@@ -239,22 +238,12 @@ class EtcdAsyncClient:
         backoff_max = 5.0
 
         while not stop_event.is_set():
-            create_req = etcdrpc.WatchRequest(
-                create_request=etcdrpc.WatchCreateRequest(
+            try:
+                stream = self._watch_svc.watch(
                     key=prefix.encode(),
                     range_end=range_end,
                     start_revision=next_revision if next_revision > 0 else 0,
-                    filters=[],
                 )
-            )
-
-            async def req_gen():
-                yield create_req
-                while not stop_event.is_set():
-                    await asyncio.sleep(1)
-
-            try:
-                stream = self._watch_stub.Watch(req_gen())
                 backoff = 0.2
                 async for resp in stream:
                     if stop_event.is_set():
@@ -290,10 +279,24 @@ class EtcdAsyncClient:
                         if mr >= next_revision:
                             next_revision = mr + 1
 
-            except grpc.aio.AioRpcError:
-                pass
+            except grpc.aio.AioRpcError as e:
+                code = e.code()
+                if code not in (
+                    grpc.StatusCode.UNAVAILABLE,
+                    grpc.StatusCode.DEADLINE_EXCEEDED,
+                    grpc.StatusCode.RESOURCE_EXHAUSTED,
+                ):
+                    _log.error(
+                        "etcd watch_prefix: 不可恢复的 gRPC 错误 (%s)，退出监听",
+                        code.name,
+                        exc_info=True,
+                    )
+                    return
             except Exception:
-                pass
+                _log.error(
+                    "etcd watch_prefix: 未预期的异常，退出监听", exc_info=True
+                )
+                return
 
             if stop_event.is_set():
                 break
@@ -302,13 +305,14 @@ class EtcdAsyncClient:
 
     async def close(self):
         """关闭连接，释放资源。"""
-        if self._channel:
-            await self._channel.close()
+        if self._client is not None:
+            await self._client.close()
         self._connected = False
         self._lease_id = None
-        self._kv_stub = None
-        self._lease_stub = None
-        self._watch_stub = None
+        self._client = None
+        self._kv_svc = None
+        self._lease_svc = None
+        self._watch_svc = None
 
 
 def build_service_key(ns: str, name: str, instance_id: str) -> str:
