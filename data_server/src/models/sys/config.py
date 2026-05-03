@@ -26,7 +26,6 @@ class ProjectConfig(Struct):
 
     redis: RedisConfig | None = None
     mysql: MySQLConfig | None = None
-    kafka: KafkaConfig | None = None
     mongo: MongoConfig | None = None
     etcd: EtcdConfig | None = None
     runtime: RuntimeConfig | None = None
@@ -329,18 +328,6 @@ class MySQLConfig(Struct, kw_only=True):
         """返回首个可用的 MySQL 连接字符串（若无则返回 None）。"""
         uris = self.mysql_uris()
         return uris[0] if uris else None
-
-
-class KafkaConfig(Struct, kw_only=True):
-    """Kafka 配置模型"""
-
-    BOOTSTRAP_SERVERS: list[str]
-    CLIENT_ID: str | None = None
-    SECURITY_PROTOCOL: str | None = None  # e.g. PLAINTEXT, SASL_SSL
-    SASL_MECHANISM: str | None = None
-    SASL_USERNAME: str | None = None
-    SASL_PASSWORD: str | None = None
-    TOPIC_PREFIX: str | None = None
 
 
 class MongoConfig(Struct, kw_only=True):

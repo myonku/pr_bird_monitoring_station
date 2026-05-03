@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -98,7 +99,7 @@ func NewSecretKeyServiceFromStartupParams(
 	if err != nil {
 		return nil, err
 	}
-	if err = ensurePKCS8PrivateKeyPEM(privatePEM); err != nil {
+	if err = ensurePrivateKeyPEM(privatePEM); err != nil {
 		return nil, err
 	}
 	if err = ensurePrivateKeyMatchesAlgorithm(privatePEM, detectedSignature); err != nil {
@@ -112,7 +113,6 @@ func NewSecretKeyServiceFromStartupParams(
 		InstanceID:   params.InstanceID,
 		InstanceName: params.InstanceName,
 	}.Normalized()
-
 	now := time.Now()
 	localPublic := commsecmodel.ServicePublicKeyRecord{
 		KeyID:        resolvedKeyID,
@@ -648,15 +648,24 @@ func ensureSPKIPublicKeyPEM(publicPEM []byte) error {
 	return nil
 }
 
-func ensurePKCS8PrivateKeyPEM(privatePEM []byte) error {
+func ensurePrivateKeyPEM(privatePEM []byte) error {
 	block, _ := pem.Decode(privatePEM)
 	if block == nil {
 		return &modelsystem.ErrInvalidPrivateKeyPEM
 	}
-	if _, err := x509.ParsePKCS8PrivateKey(block.Bytes); err != nil {
-		return err
+	if _, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		return nil
 	}
-	return nil
+	if _, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return nil
+	}
+	if ecKey, err := x509.ParseECPrivateKey(block.Bytes); err == nil {
+		if ecKey.Curve == nil {
+			ecKey.Curve = elliptic.P256()
+		}
+		return nil
+	}
+	return &modelsystem.ErrUnsupportedPrivateKeyFormat
 }
 
 func detectSignatureAlgorithm(publicPEM []byte) (commsecmodel.SignatureAlgorithm, error) {
@@ -692,7 +701,7 @@ func ensurePrivateKeyMatchesAlgorithm(
 	if block == nil {
 		return &modelsystem.ErrInvalidPrivateKeyPEM
 	}
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	parsed, err := parseCompatiblePrivateKey(block.Bytes)
 	if err != nil {
 		return err
 	}
@@ -720,6 +729,25 @@ func ensurePrivateKeyMatchesAlgorithm(
 	default:
 		return &modelsystem.ErrUnsupportedSignatureAlgorithm
 	}
+}
+
+func parseCompatiblePrivateKey(privateKeyDER []byte) (any, error) {
+	if keyAny, err := x509.ParsePKCS8PrivateKey(privateKeyDER); err == nil {
+		switch key := keyAny.(type) {
+		case *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey:
+			return key, nil
+		}
+	}
+	if rsaKey, err := x509.ParsePKCS1PrivateKey(privateKeyDER); err == nil {
+		return rsaKey, nil
+	}
+	if ecKey, err := x509.ParseECPrivateKey(privateKeyDER); err == nil {
+		if ecKey.Curve == nil {
+			ecKey.Curve = elliptic.P256()
+		}
+		return ecKey, nil
+	}
+	return nil, &modelsystem.ErrUnsupportedPrivateKeyFormat
 }
 
 func sha256Hex(raw []byte) string {

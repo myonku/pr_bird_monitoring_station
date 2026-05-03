@@ -316,12 +316,7 @@ func (c *CryptoUtils) DecryptWithPrivateKey(cipherText string, privateKey []byte
 		return "", err
 	}
 
-	block, _ := pem.Decode(privateKey)
-	if block == nil {
-		return "", &modelsystem.ErrInvalidPrivateKeyPEM
-	}
-
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	parsed, err := parsePrivateKey(privateKey)
 	if err != nil {
 		return "", err
 	}

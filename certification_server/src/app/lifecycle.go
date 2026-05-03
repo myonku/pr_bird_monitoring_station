@@ -111,6 +111,14 @@ func Run() error {
 	}
 	log.Printf("stage=registry_register_success service=%s instance=%s endpoint=%s", instance.Name, instance.ID.String(), instance.Endpoint)
 
+	heartbeatSvc := orchestrationsvc.NewRegistryHeartbeatService(
+		runtimeCfg,
+		registrySvc,
+		instance,
+		defaultCertificationRegistryTTL,
+	)
+	heartbeatSvc.MarkRegistered()
+
 	log.Printf("stage=server_start_attempt service=%s transport=grpc addr=%s", runtimeCfg.ServiceName, buildCertificationListenAddr(runtimeCfg))
 	listener, err := net.Listen("tcp", buildCertificationListenAddr(runtimeCfg))
 	if err != nil {
@@ -128,6 +136,9 @@ func Run() error {
 	defer stop()
 
 	serveErrCh := make(chan error, 1)
+	go heartbeatSvc.Run(ctx)
+	log.Printf("stage=registry_heartbeat_started service=%s instance=%s", runtimeCfg.ServiceName, instance.ID.String())
+
 	go func() {
 		if serveErr := grpcServer.Serve(listener); serveErr != nil {
 			serveErrCh <- serveErr

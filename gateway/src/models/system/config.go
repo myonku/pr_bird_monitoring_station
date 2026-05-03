@@ -4,8 +4,6 @@ import (
 	"crypto/tls"
 	"strings"
 	"time"
-
-	"github.com/segmentio/kafka-go"
 )
 
 type RedisMode string
@@ -38,7 +36,6 @@ type ProjectConfig struct {
 	MySQL *MySQLConfig
 	Redis *RedisClientConfig
 	Etcd  *EtcdClientConfig
-	Kafka *KafkaClientConfig
 
 	Runtime *RuntimeConfig
 	Auth    *AuthConfig
@@ -195,18 +192,6 @@ type EtcdClientConfig struct {
 	OpTimeout        time.Duration
 	TLSConfig        *tls.Config
 	CircuitBreaker   *CircuitBreakerConfig
-}
-
-// KafkaClientConfig 定义 KafkaClient 的连接参数。
-type KafkaClientConfig struct {
-	Brokers      []string
-	ClientID     string
-	DialTimeout  time.Duration
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-	BatchTimeout time.Duration
-	RequiredAcks kafka.RequiredAcks
-	OpTimeout    time.Duration
 }
 
 // RedisClientConfig 定义 RedisClient 的连接参数。

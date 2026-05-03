@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -92,7 +93,7 @@ func NewSecretKeyServiceFromStartupParams(
 	if err != nil {
 		return nil, err
 	}
-	if err = ensurePKCS8PrivateKeyPEM(privatePEM); err != nil {
+	if err = ensurePrivateKeyPEM(privatePEM); err != nil {
 		return nil, err
 	}
 	if err = ensurePrivateKeyMatchesAlgorithm(privatePEM, detectedSignature); err != nil {
@@ -424,7 +425,7 @@ func (s *SecretKeyService) loadActivePublicKeyByEntityIDFromDB(
 		ExpiresAt    time.Time `db:"expires_at"`
 	}
 	err := s.mysql.Get(ctx, &row, `
-SELECT key_id, entity_type, entity_id, entity_name, instance_id, instance_name,
+SELECT key_id, entity_type, entity_id, entity_name, COALESCE(instance_id, '') AS instance_id, COALESCE(instance_name, '') AS instance_name,
 	   public_key_pem, fingerprint,
        status, created_at, activated_at, expires_at
 FROM auth_entity_public_keys
@@ -477,7 +478,7 @@ func (s *SecretKeyService) loadPublicKeyByIDFromDB(
 		RevokedAtRaw []byte    `db:"revoked_at"`
 	}
 	err := s.mysql.Get(ctx, &row, `
-SELECT key_id, entity_type, entity_id, entity_name, instance_id, instance_name,
+SELECT key_id, entity_type, entity_id, entity_name, COALESCE(instance_id, '') AS instance_id, COALESCE(instance_name, '') AS instance_name,
 	   public_key_pem, fingerprint,
        status, created_at, activated_at, expires_at, revoked_at
 FROM auth_entity_public_keys
@@ -513,7 +514,7 @@ func (s *SecretKeyService) loadPublicKeysByOwnerFromDB(
 	owner = owner.Normalized()
 
 	query := `
-SELECT key_id, entity_type, entity_id, entity_name, instance_id, instance_name,
+SELECT key_id, entity_type, entity_id, entity_name, COALESCE(instance_id, '') AS instance_id, COALESCE(instance_name, '') AS instance_name,
        public_key_pem, fingerprint,
        status, created_at, activated_at, expires_at, revoked_at
 FROM auth_entity_public_keys WHERE 1=1`
@@ -663,15 +664,24 @@ func ensureSPKIPublicKeyPEM(publicPEM []byte) error {
 	return nil
 }
 
-func ensurePKCS8PrivateKeyPEM(privatePEM []byte) error {
+func ensurePrivateKeyPEM(privatePEM []byte) error {
 	block, _ := pem.Decode(privatePEM)
 	if block == nil {
 		return &modelsystem.ErrInvalidPrivateKeyPEM
 	}
-	if _, err := x509.ParsePKCS8PrivateKey(block.Bytes); err != nil {
-		return err
+	if _, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		return nil
 	}
-	return nil
+	if _, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return nil
+	}
+	if ecKey, err := x509.ParseECPrivateKey(block.Bytes); err == nil {
+		if ecKey.Curve == nil {
+			ecKey.Curve = elliptic.P256()
+		}
+		return nil
+	}
+	return &modelsystem.ErrUnsupportedPrivateKeyFormat
 }
 
 func detectSignatureAlgorithm(publicPEM []byte) (commsecmodel.SignatureAlgorithm, error) {
@@ -707,7 +717,7 @@ func ensurePrivateKeyMatchesAlgorithm(
 	if block == nil {
 		return &modelsystem.ErrInvalidPrivateKeyPEM
 	}
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	parsed, err := parseCompatiblePrivateKey(block.Bytes)
 	if err != nil {
 		return err
 	}
@@ -735,6 +745,25 @@ func ensurePrivateKeyMatchesAlgorithm(
 	default:
 		return &modelsystem.ErrUnsupportedSignatureAlgorithm
 	}
+}
+
+func parseCompatiblePrivateKey(privateKeyDER []byte) (any, error) {
+	if keyAny, err := x509.ParsePKCS8PrivateKey(privateKeyDER); err == nil {
+		switch key := keyAny.(type) {
+		case *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey:
+			return key, nil
+		}
+	}
+	if rsaKey, err := x509.ParsePKCS1PrivateKey(privateKeyDER); err == nil {
+		return rsaKey, nil
+	}
+	if ecKey, err := x509.ParseECPrivateKey(privateKeyDER); err == nil {
+		if ecKey.Curve == nil {
+			ecKey.Curve = elliptic.P256()
+		}
+		return ecKey, nil
+	}
+	return nil, &modelsystem.ErrUnsupportedPrivateKeyFormat
 }
 
 func sha256Hex(raw []byte) string {

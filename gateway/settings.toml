@@ -2,7 +2,7 @@
 entity_type = "service"
 service_name = "gateway"
 instance_id = "7a1e467a-9287-4ad3-947e-6e92ace9686c"
-run_mode = "no_auth"
+run_mode = "development"
 http_listen_host = "127.0.0.1"
 http_listen_port = 8080
 
@@ -49,4 +49,3 @@ op_timeout = "3s"
 circuit_breaker_failure_threshold = 5
 circuit_breaker_recovery_timeout = "10s"
 circuit_breaker_half_open_max_calls = 1
-

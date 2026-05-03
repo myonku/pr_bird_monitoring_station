@@ -138,9 +138,7 @@ class SecretKeyUtils(ISecretKeyManager):
 
     @staticmethod
     def _ensure_pkcs8_private_key_pem(private_key_pem: bytes) -> None:
-        text = private_key_pem.decode("utf-8", errors="ignore")
-        if "-----BEGIN PRIVATE KEY-----" not in text:
-            raise ValueError("private key must be unencrypted PKCS#8 PEM")
+        """验证私钥PEM格式，支持PKCS#8、PKCS#1和EC多种格式。"""
         serialization.load_pem_private_key(private_key_pem, password=None)
 
     @staticmethod
