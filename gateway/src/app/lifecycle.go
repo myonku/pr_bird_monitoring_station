@@ -42,8 +42,11 @@ func Run() error {
 	}
 
 	runtimeCfg := cfg.Runtime.Normalized("gateway")
-	log.Printf("stage=config_loaded service=%s run_mode=%s", runtimeCfg.ServiceName, runtimeCfg.RunMode)
+	log.Printf("stage=startup_banner service=%s run_mode=%s transport=http active_key=%s",
+		runtimeCfg.ServiceName, runtimeCfg.RunMode, cfg.Auth.ActiveKeyID)
 
+	log.Printf("stage=connecting_etcd service=%s endpoints=%s",
+		runtimeCfg.ServiceName, strings.Join(cfg.Etcd.Endpoints, ","))
 	etcdCfg := resolveGatewayEtcdConfig(cfg)
 	etcdClient, err := repo.NewEtcdClient(etcdCfg)
 	if err != nil {
@@ -57,6 +60,8 @@ func Run() error {
 
 	var mysqlClient *repo.MySQLClient
 	if cfg.MySQL != nil {
+		log.Printf("stage=connecting_mysql service=%s host=127.0.0.1:3306 database=%s",
+			runtimeCfg.ServiceName, "bms_test")
 		mysqlClient, err = repo.NewMySQLClient(cfg.MySQL)
 		if err != nil {
 			return err
@@ -70,6 +75,8 @@ func Run() error {
 
 	var redisClient *repo.RedisClient
 	if cfg.Redis != nil {
+		log.Printf("stage=connecting_redis service=%s mode=%s addrs=%s",
+			runtimeCfg.ServiceName, cfg.Redis.Mode, strings.Join(cfg.Redis.Addrs, ","))
 		redisClient, err = repo.NewRedisClient(cfg.Redis)
 		if err != nil {
 			return err
@@ -98,8 +105,13 @@ func Run() error {
 	var bootstrapCoordinator *authsvc.BootstrapCoordinatorService
 	resolvedActiveKeyID := ""
 	if runtimeCfg.RunMode == modelsystem.RuntimeRunModeNoAuth {
-		log.Printf("stage=bootstrap_skipped_or_ready service=%s mode=no_auth", runtimeCfg.ServiceName)
+		log.Printf("stage=bootstrap_skipped service=%s mode=no_auth "+
+			"message=no_auth模式下跳过bootstrap流程",
+			runtimeCfg.ServiceName)
 	} else {
+		log.Printf("stage=bootstrap_start service=%s auth_authority=%s "+
+			"message=发起bootstrap握手，初始化模块凭证",
+			runtimeCfg.ServiceName, defaultAuthAuthorityName)
 		secretKeySvc, resolvedStartupParams, err := commonsvc.NewSecretKeyServiceFromProjectConfig(cfg, nil, mysqlClient)
 		if err != nil {
 			return err
@@ -125,6 +137,8 @@ func Run() error {
 		}
 		if snapshot != nil {
 			resolvedActiveKeyID = snapshot.ActiveCommKeyID
+			log.Printf("stage=bootstrap_ready service=%s principal_id=%s stage=%s active_comm_key_id=%s",
+				runtimeCfg.ServiceName, snapshot.PrincipalID, snapshot.Stage, snapshot.ActiveCommKeyID)
 		}
 	}
 
@@ -164,7 +178,9 @@ func Run() error {
 		go credentialSupervisor.Run(ctx)
 		log.Printf("stage=credential_supervisor_started service=%s instance=%s", runtimeCfg.ServiceName, instance.ID.String())
 	}
-	log.Printf("stage=server_start_attempt service=%s transport=http addr=%s", runtimeCfg.ServiceName, server.Addr)
+	log.Printf("stage=server_start_attempt service=%s transport=http addr=%s "+
+		"run_mode=%s auth=%v",
+		runtimeCfg.ServiceName, server.Addr, runtimeCfg.RunMode, runtimeCfg.RunMode != modelsystem.RuntimeRunModeNoAuth)
 	go func() {
 		if serveErr := server.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			serveErrCh <- serveErr
@@ -172,6 +188,7 @@ func Run() error {
 	}()
 
 	log.Printf("stage=server_start_success service=%s transport=http addr=%s", runtimeCfg.ServiceName, server.Addr)
+	log.Printf("服务已启动。监听位置：%s", server.Addr)
 
 	select {
 	case <-ctx.Done():

@@ -39,14 +39,19 @@ func Run() error {
 
 	normalizedCfg := cfg.Normalized("certification_server")
 	runtimeCfg := *normalizedCfg.Runtime
-	log.Printf("stage=config_loaded service=%s run_mode=%s", runtimeCfg.ServiceName, runtimeCfg.RunMode)
+	log.Printf("stage=startup_banner service=%s run_mode=%s transport=grpc active_key=%s",
+		runtimeCfg.ServiceName, runtimeCfg.RunMode, normalizedCfg.Auth.ActiveKeyID)
 	if runtimeCfg.RunMode == modelsystem.RuntimeRunModeNoAuth {
-		log.Printf("stage=no_auth_self_stop service=%s reason=run_mode_no_auth", runtimeCfg.ServiceName)
+		log.Printf("stage=no_auth_refuse_to_start service=%s "+
+			"reason=run_mode_no_auth message=当前运行模式：no_auth，拒绝启动认证中心服务",
+			runtimeCfg.ServiceName)
 		return nil
 	}
 
 	var mysqlClient *repo.MySQLClient
 	if cfg.MySQL != nil {
+		log.Printf("stage=connecting_mysql service=%s host=127.0.0.1:3306 database=%s",
+			runtimeCfg.ServiceName, "bms_test")
 		mysqlClient, err = repo.NewMySQLClient(cfg.MySQL)
 		if err != nil {
 			return err
@@ -60,6 +65,8 @@ func Run() error {
 
 	var redisClient *repo.RedisClient
 	if cfg.Redis != nil {
+		log.Printf("stage=connecting_redis service=%s mode=%s addrs=%s",
+			runtimeCfg.ServiceName, cfg.Redis.Mode, strings.Join(cfg.Redis.Addrs, ","))
 		redisClient, err = repo.NewRedisClient(cfg.Redis)
 		if err != nil {
 			return err
@@ -72,6 +79,8 @@ func Run() error {
 	}
 
 	etcdCfg := resolveCertificationEtcdConfig(&normalizedCfg)
+	log.Printf("stage=connecting_etcd service=%s endpoints=%s",
+		runtimeCfg.ServiceName, strings.Join(etcdCfg.Endpoints, ","))
 	etcdClient, err := repo.NewEtcdClient(etcdCfg)
 	if err != nil {
 		return err
@@ -102,7 +111,9 @@ func Run() error {
 	)
 	log.Printf("stage=dependencies_initialized service=%s", runtimeCfg.ServiceName)
 
-	log.Printf("stage=bootstrap_skipped_or_ready service=%s mode=%s reason=authority_self_bootstrap_disabled", runtimeCfg.ServiceName, runtimeCfg.RunMode)
+	log.Printf("stage=bootstrap_skip_for_authority service=%s reason=authority_self_bootstrap_disabled "+
+		"message=已跳过bootstrap流程",
+		runtimeCfg.ServiceName)
 
 	instance := buildCertificationInstance(runtimeCfg, startupParams.ActiveKeyID)
 	log.Printf("stage=registry_register_attempt service=%s instance=%s", instance.Name, instance.ID.String())
@@ -119,7 +130,9 @@ func Run() error {
 	)
 	heartbeatSvc.MarkRegistered()
 
-	log.Printf("stage=server_start_attempt service=%s transport=grpc addr=%s", runtimeCfg.ServiceName, buildCertificationListenAddr(runtimeCfg))
+	log.Printf("stage=server_start_attempt service=%s transport=grpc addr=%s "+
+		"rpc_services=AuthAuthorityBootstrap,AuthAuthorityRemoteAuth,AuthAuthorityExternalAuth,AuthAuthorityTokenRefresh",
+		runtimeCfg.ServiceName, buildCertificationListenAddr(runtimeCfg))
 	listener, err := net.Listen("tcp", buildCertificationListenAddr(runtimeCfg))
 	if err != nil {
 		_ = registrySvc.UnRegister(instance)
@@ -146,6 +159,7 @@ func Run() error {
 	}()
 
 	log.Printf("stage=server_start_success service=%s transport=grpc addr=%s", runtimeCfg.ServiceName, listener.Addr().String())
+	log.Printf("服务已启动。监听位置：%s", listener.Addr().String())
 
 	select {
 	case <-ctx.Done():

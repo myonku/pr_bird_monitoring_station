@@ -82,21 +82,20 @@ async def run_data_worker() -> None:
         else RuntimeConfig().normalized("data_worker")
     )
     logger.info(
-        "stage=config_loaded service=%s run_mode=%s",
+        "stage=startup_banner service=%s run_mode=%s transport=grpc active_key=%s",
         runtime_cfg.service_name,
         runtime_cfg.run_mode,
+        (config.auth.active_key_id if config.auth else ""),
     )
     assert (
         config.inference is not None
     ), "inference config is required for data_worker startup"
     inference_module = build_standard_inference_module(config.inference)
     logger.info(
-        "stage=inference_initialized service=%s module=%s root_dir=%s detection_dir=%s classification_dir=%s",
+        "stage=inference_initialized service=%s module=%s root_dir=%s",
         runtime_cfg.service_name,
         inference_module.__class__.__name__,
         config.inference.root_dir,
-        config.inference.detection_dir,
-        config.inference.classification_dir,
     )
 
     etcd_client: EtcdAsyncClient | None = None
@@ -151,7 +150,8 @@ async def run_data_worker() -> None:
 
         if config.mongo is None or config.mysql is None:
             logger.warning(
-                "stage=business_forward_skipped service=%s reason=missing_storage_config",
+                "stage=business_forward_skipped service=%s reason=missing_storage_config "
+                "message=资源依赖配置缺失，拒绝启动",
                 runtime_cfg.service_name,
             )
         else:
@@ -180,11 +180,18 @@ async def run_data_worker() -> None:
 
         if runtime_cfg.run_mode == "no_auth":
             logger.info(
-                "stage=bootstrap_skipped_or_ready service=%s mode=no_auth",
+                "stage=bootstrap_skipped service=%s mode=no_auth "
+                "message=no_auth模式下跳过bootstrap流程",
                 runtime_cfg.service_name,
             )
             resolved_active_key_id = startup_params.active_key_id if startup_params else ""
         else:
+            logger.info(
+                "stage=bootstrap_start service=%s auth_authority=%s "
+                "message=发起bootstrap握手，初始化模块凭证",
+                runtime_cfg.service_name,
+                DEFAULT_AUTH_AUTHORITY_SERVICE,
+            )
             if local_credential_manager is None:
                 raise RuntimeError("local credential manager dependencies are required")
             if secret_key_service is None or startup_params is None:
@@ -252,9 +259,11 @@ async def run_data_worker() -> None:
             )
 
         logger.info(
-            "stage=server_start_attempt service=%s transport=grpc addr=%s",
+            "stage=server_start_attempt service=%s transport=grpc addr=%s "
+            "run_mode=%s rpc_service=BusinessForward",
             runtime_cfg.service_name,
             build_worker_listen_addr(runtime_cfg),
+            runtime_cfg.run_mode,
         )
 
         worker_server = grpc.aio.server()
@@ -273,7 +282,8 @@ async def run_data_worker() -> None:
 
         install_signal_handlers(stop_event)
         logger.info(
-            "stage=server_start_success service=%s transport=grpc addr=%s",
+            "stage=server_start_success service=%s transport=grpc addr=%s "
+            "message=gRPC服务已启动，等待请求",
             runtime_cfg.service_name,
             build_worker_listen_addr(runtime_cfg),
         )
