@@ -10,6 +10,19 @@ grpc_listen_port = 50053
 secret_key_dir = "secret_keys"
 active_key_id = "3b385136-d4da-418d-b92c-c4e226abf3e5"
 
+[auth_control]
+enabled = true
+rule_id = "data_server_local"
+scope = "auth"
+subject = "composite"
+algorithm = "fixed_window"
+limit = 600
+burst = 0
+window_sec = 60
+require_authenticated = false
+match_module = "data_server"
+match_methods = ["POST"]
+
 [mysql]
 DIALECT = "mysql"
 HOST = "127.0.0.1"

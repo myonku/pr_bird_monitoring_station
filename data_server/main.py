@@ -1,5 +1,8 @@
+from src.app.lifecycle import run
+
+
 def main():
-    print("Hello from data-server!")
+    run()
 
 
 if __name__ == "__main__":

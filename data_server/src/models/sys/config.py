@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-import tomllib
 from typing import Literal
 from urllib.parse import quote_plus, urlencode
 import msgspec
@@ -16,8 +14,8 @@ from src.models.auth.ratelimit import (
 from src.models.common.entry_type import EntityType
 
 
-DEFAULT_DATA_WORKER_GRPC_LISTEN_PORT = 50052
-DEFAULT_DATA_WORKER_GRPC_LISTEN_HOST = "127.0.0.1"
+DEFAULT_DATA_SERVER_GRPC_LISTEN_PORT = 50053
+DEFAULT_DATA_SERVER_GRPC_LISTEN_HOST = "127.0.0.1"
 RuntimeRunMode = Literal["development", "no_auth"]
 
 
@@ -30,6 +28,7 @@ class ProjectConfig(Struct):
     etcd: EtcdConfig | None = None
     runtime: RuntimeConfig | None = None
     auth: AuthConfig | None = None
+    auth_control: AuthControlConfig | None = None
 
     def build_secret_key_startup_params(
         self,
@@ -52,34 +51,6 @@ class ProjectConfig(Struct):
             instance_name=runtime_cfg.service_name,
         )
 
-
-def load_project_config(raw_settings: dict[str, object] | ProjectConfig | None) -> ProjectConfig:
-    """从已解析的配置映射构建 ProjectConfig。"""
-
-    if raw_settings is None:
-        return ProjectConfig()
-    if isinstance(raw_settings, ProjectConfig):
-        return raw_settings
-
-    cfg = msgspec.convert(raw_settings, type=ProjectConfig, strict=False)
-    if cfg.runtime is not None:
-        cfg.runtime = cfg.runtime.normalized()
-    if cfg.auth is not None:
-        cfg.auth = cfg.auth.normalized()
-    return cfg
-
-
-def load_project_config_from_toml(settings_path: str = "settings.toml") -> ProjectConfig:
-    """从 TOML 文件读取并构建 ProjectConfig。"""
-
-    path = Path(settings_path).expanduser()
-    if not path.exists():
-        return ProjectConfig()
-
-    with path.open("rb") as f:
-        raw = tomllib.load(f)
-    return load_project_config(raw)
-
 class RuntimeConfig(Struct, kw_only=True):
     """服务本体运行时标识配置。"""
 
@@ -87,8 +58,8 @@ class RuntimeConfig(Struct, kw_only=True):
     service_name: str = ""
     instance_id: str = ""
     run_mode: RuntimeRunMode = "development"
-    grpc_listen_host: str = DEFAULT_DATA_WORKER_GRPC_LISTEN_HOST
-    grpc_listen_port: int = DEFAULT_DATA_WORKER_GRPC_LISTEN_PORT
+    grpc_listen_host: str = DEFAULT_DATA_SERVER_GRPC_LISTEN_HOST
+    grpc_listen_port: int = DEFAULT_DATA_SERVER_GRPC_LISTEN_PORT
 
     def normalized(self, default_entity_id: str = "") -> "RuntimeConfig":
         entity_type = self.entity_type.strip().lower() or "service"
@@ -103,12 +74,12 @@ class RuntimeConfig(Struct, kw_only=True):
             grpc_listen_host=(
                 self.grpc_listen_host.strip()
                 if isinstance(self.grpc_listen_host, str) and self.grpc_listen_host.strip()
-                else DEFAULT_DATA_WORKER_GRPC_LISTEN_HOST
+                else DEFAULT_DATA_SERVER_GRPC_LISTEN_HOST
             ),
             grpc_listen_port=(
                 self.grpc_listen_port
                 if isinstance(self.grpc_listen_port, int) and self.grpc_listen_port > 0
-                else DEFAULT_DATA_WORKER_GRPC_LISTEN_PORT
+                else DEFAULT_DATA_SERVER_GRPC_LISTEN_PORT
             ),
         )
 

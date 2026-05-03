@@ -217,6 +217,9 @@ func resolveCertificationEtcdConfig(cfg *modelsystem.ProjectConfig) *modelsystem
 		if resolved.OpTimeout <= 0 {
 			resolved.OpTimeout = 3 * time.Second
 		}
+		// 宿主机无法解析 Docker 内部 DNS（etcd-1/2/3），
+		// 禁用自动同步以避免端点列表被内部地址污染。
+		resolved.AutoSyncInterval = 0
 		return &resolved
 	}
 

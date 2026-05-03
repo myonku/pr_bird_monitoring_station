@@ -46,6 +46,9 @@ from src.services.orchestration.credential_discovery_supervisor_svc import (
     CredentialDiscoverySupervisorService,
 )
 from src.services.auth.bootstrap_coordinator_svc import BootstrapCoordinatorService
+from src.services.authcontrol.inbound_auth_control_svc import (
+    InboundAuthControlService,
+)
 from src.services.orchestration.startup_security_svc import (
     resolve_startup_security_materials,
 )
@@ -122,7 +125,11 @@ async def run_data_worker() -> None:
             auth_authority_service=DEFAULT_AUTH_AUTHORITY_SERVICE,
             run_mode=runtime_cfg.run_mode,
         )
-        traffic_station = TrafficStationService(routing_pipeline=routing_pipeline)
+        auth_control_svc = InboundAuthControlService(cfg=config.auth_control)
+        traffic_station = TrafficStationService(
+            routing_pipeline=routing_pipeline,
+            auth_control=auth_control_svc,
+        )
         _ = WorkerOrchestratorService(traffic_station=traffic_station)
 
         startup_params, secret_key_service = resolve_startup_security_materials(

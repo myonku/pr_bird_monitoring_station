@@ -165,6 +165,10 @@ func assignMySQLField(cfg *ProjectConfig, key, value string, lineNo int) error {
 		cfg.MySQL = &MySQLConfig{}
 	}
 
+	if handled, err := assignCircuitBreakerField(&cfg.MySQL.CircuitBreaker, "[mysql]", key, value, lineNo); handled || err != nil {
+		return err
+	}
+
 	switch key {
 	case "dsn":
 		parsed, err := parseTOMLString(value)
@@ -218,6 +222,10 @@ func assignMySQLField(cfg *ProjectConfig, key, value string, lineNo int) error {
 func assignRedisField(cfg *ProjectConfig, key, value string, lineNo int) error {
 	if cfg.Redis == nil {
 		cfg.Redis = &RedisClientConfig{}
+	}
+
+	if handled, err := assignCircuitBreakerField(&cfg.Redis.CircuitBreaker, "[redis]", key, value, lineNo); handled || err != nil {
+		return err
 	}
 
 	switch key {
@@ -362,6 +370,10 @@ func assignEtcdField(cfg *ProjectConfig, key, value string, lineNo int) error {
 		cfg.Etcd = &EtcdClientConfig{}
 	}
 
+	if handled, err := assignCircuitBreakerField(&cfg.Etcd.CircuitBreaker, "[etcd]", key, value, lineNo); handled || err != nil {
+		return err
+	}
+
 	switch key {
 	case "endpoints":
 		parsed, err := parseTOMLStringList(value)
@@ -484,6 +496,43 @@ func parseTOMLBool(raw string) (bool, error) {
 	default:
 		return false, fmt.Errorf("invalid boolean value %q", value)
 	}
+}
+
+func assignCircuitBreakerField(target **CircuitBreakerConfig, sectionName, key, value string, lineNo int) (bool, error) {
+	if !strings.HasPrefix(key, "circuit_breaker_") {
+		return false, nil
+	}
+	if target == nil {
+		return true, fmt.Errorf("%s circuit breaker target is nil", sectionName)
+	}
+	if *target == nil {
+		*target = &CircuitBreakerConfig{}
+	}
+
+	switch key {
+	case "circuit_breaker_failure_threshold":
+		parsed, err := parseTOMLInt(value)
+		if err != nil {
+			return true, fmt.Errorf("invalid %s.circuit_breaker_failure_threshold at line %d: %w", sectionName, lineNo, err)
+		}
+		(*target).FailureThreshold = parsed
+	case "circuit_breaker_recovery_timeout":
+		parsed, err := parseTOMLDuration(value)
+		if err != nil {
+			return true, fmt.Errorf("invalid %s.circuit_breaker_recovery_timeout at line %d: %w", sectionName, lineNo, err)
+		}
+		(*target).RecoveryTimeout = parsed
+	case "circuit_breaker_half_open_max_calls":
+		parsed, err := parseTOMLInt(value)
+		if err != nil {
+			return true, fmt.Errorf("invalid %s.circuit_breaker_half_open_max_calls at line %d: %w", sectionName, lineNo, err)
+		}
+		(*target).HalfOpenMaxCalls = parsed
+	default:
+		return true, fmt.Errorf("unsupported %s key %q at line %d", sectionName, key, lineNo)
+	}
+
+	return true, nil
 }
 
 func parseTOMLStringList(raw string) ([]string, error) {

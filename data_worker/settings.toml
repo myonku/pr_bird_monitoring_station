@@ -10,6 +10,19 @@ grpc_listen_port = 50052
 secret_key_dir = "secret_keys"
 active_key_id = "8b48109b-17f2-4ca1-9a82-662b0143a0f0"
 
+[auth_control]
+enabled = true
+rule_id = "data_worker_local"
+scope = "auth"
+subject = "composite"
+algorithm = "fixed_window"
+limit = 600
+burst = 0
+window_sec = 60
+require_authenticated = false
+match_module = "data_worker"
+match_methods = ["POST"]
+
 [etcd]
 HOSTS = ["127.0.0.1:23791", "127.0.0.1:23811", "127.0.0.1:23813"]
 USERNAME = "root"

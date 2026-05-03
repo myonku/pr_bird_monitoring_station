@@ -31,6 +31,7 @@ class ProjectConfig(Struct):
     etcd: EtcdConfig | None = None
     runtime: RuntimeConfig | None = None
     auth: AuthConfig | None = None
+    auth_control: AuthControlConfig | None = None
     inference: InferenceConfig | None = None
 
     def build_secret_key_startup_params(

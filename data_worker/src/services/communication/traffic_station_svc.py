@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from src.iface.authcontrol.auth_control import (
+    IInboundAuthControl,
+    InboundControlRequest,
+    InboundRateLimitInput,
+)
 from src.iface.communication.routing_contract import FlowCategory
 from src.iface.communication.routing_payload_pipeline import (
     BuildOutboundPayloadRequest,
@@ -17,8 +22,14 @@ from src.iface.communication.traffic_station import (
 class TrafficStationService(ITrafficStation):
     """data_worker 统一流量站点（L2）。"""
 
-    def __init__(self, *, routing_pipeline: IRoutingPayloadPipeline | None) -> None:
+    def __init__(
+        self,
+        *,
+        routing_pipeline: IRoutingPayloadPipeline | None,
+        auth_control: IInboundAuthControl | None = None,
+    ) -> None:
         self._routing_pipeline = routing_pipeline
+        self._auth_control = auth_control
 
     async def handle_inbound(self, req: InboundTrafficRequest) -> TrafficDecision:
         if req is None or req.flow is None:
@@ -29,6 +40,33 @@ class TrafficStationService(ITrafficStation):
         profile = await self._routing_pipeline.resolve_route_profile(req.flow)
         accepted = True
         reason = "accepted"
+
+        if self._auth_control is not None:
+            flow = req.flow
+            control_result = await self._auth_control.enforce_inbound(
+                InboundControlRequest(
+                    rate_limit_input=InboundRateLimitInput(
+                        scope="auth",
+                        transport=flow.transport or "grpc",
+                        module=flow.source_service or "",
+                        action=flow.route_key or "",
+                        route=flow.path or "",
+                        method=flow.method or "",
+                        source_ip=req.headers.get("x-forwarded-for", ""),
+                        source_service=flow.source_service or "",
+                        target_service=profile.target_service_name if profile is not None else "",
+                        headers=dict(req.headers or {}),
+                    )
+                )
+            )
+            if control_result is not None and control_result.rate_limit_decision is not None:
+                if not control_result.rate_limit_decision.allowed:
+                    return TrafficDecision(
+                        accepted=False,
+                        reason="rate_limited",
+                        profile=profile,
+                        metadata={"rate_limit_reason": control_result.rate_limit_decision.reason or ""},
+                    )
 
         if _requires_target_endpoint(profile.flow_category):
             if not (profile.target_service_name or "").strip():
