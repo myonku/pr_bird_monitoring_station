@@ -6,6 +6,7 @@ FlowCategory = Literal[
     "bootstrap_call",
     "remote_auth_verify",
     "external_auth_forward",
+    "module_token_refresh",
     "business_forward",
 ]
 
