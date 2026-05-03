@@ -445,6 +445,9 @@ def _map_issued_token(
         return None
 
     normalized_token_type = _from_proto_token_type(proto_token.token_type)
+    if normalized_token_type is None:
+        # TOKEN_TYPE_UNSPECIFIED → 未颁发的 token，视为空
+        return None
     if normalized_token_type != token_type:
         token_type = normalized_token_type
 
@@ -517,7 +520,7 @@ def _from_proto_entity_type(value: int) -> EntityType:
     raise ValueError(f"unsupported bootstrap entity_type: {value}")
 
 
-def _from_proto_token_type(value: int) -> TokenType:
+def _from_proto_token_type(value: int) -> TokenType | None:
     if value == bootstrap_pb2.TOKEN_TYPE_ACCESS:
         return "access"
     if value == bootstrap_pb2.TOKEN_TYPE_REFRESH:
@@ -526,6 +529,8 @@ def _from_proto_token_type(value: int) -> TokenType:
         return "downstream"
     if value == bootstrap_pb2.TOKEN_TYPE_SERVICE:
         return "service"
+    if value == bootstrap_pb2.TOKEN_TYPE_UNSPECIFIED:
+        return None
     raise ValueError(f"unsupported bootstrap token_type: {value}")
 
 
@@ -543,7 +548,13 @@ def _from_proto_session_status(value: int) -> SessionStatus:
     raise ValueError(f"unsupported bootstrap session status: {value}")
 
 
-def _from_proto_auth_method(value: int) -> AuthMethod:
+def _from_proto_auth_method(value: int | str) -> AuthMethod:
+    if isinstance(value, str):
+        # proto enum 可能以字符串形式返回
+        normalized = value.strip().lower()
+        if normalized in ("password", "device_secret", "service_secret", "refresh_token", "token_exchange"):
+            return cast(AuthMethod, normalized)
+        return "service_secret"
     if value == bootstrap_pb2.AUTH_METHOD_PASSWORD:
         return "password"
     if value == bootstrap_pb2.AUTH_METHOD_DEVICE_SECRET:

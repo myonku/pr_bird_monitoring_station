@@ -40,7 +40,9 @@ func (s *AuthRequestOrchestratorService) HandleBootstrapChallenge(
 	if ttlSec <= 0 {
 		ttlSec = 60
 	}
-	now := time.Now().UTC()
+	// 仅保留毫秒精度以匹配 proto（UnixMilli）的精度契约，
+	// 避免网关签名 payload 与认证中心验签 payload 因纳秒差异导致不匹配。
+	now := time.Now().UTC().Truncate(time.Millisecond)
 
 	challenge := authmodel.ChallengePayload{
 		ChallengeID: uuid.New(),

@@ -157,8 +157,8 @@ async def run_data_server() -> None:
                 traffic_station=traffic_station,
                 data_server_service=DataServerService(
                     user_profile_manager=UserProfileManager(),
-                    user_entity_manager=UserEntityManager(),
-                    device_entity_manager=DeviceEntityManager(),
+                    user_entity_manager=UserEntityManager(mysql_client=mysql_client),
+                    device_entity_manager=DeviceEntityManager(mysql_client=mysql_client),
                     species_profile_manager=SpeciesProfileManager(
                         mysql_client=mysql_client
                     ),

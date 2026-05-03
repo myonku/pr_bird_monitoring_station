@@ -1,8 +1,8 @@
 [runtime]
 entity_type = "service"
 service_name = "data_server"
-instance_id = "d07e348-c73d-4497-b238-28d586deeab7"
-run_mode = "no_auth"
+instance_id = "0d07e348-c73d-4497-b238-28d586deeab7"
+run_mode = "development"
 grpc_listen_host = "127.0.0.1"
 grpc_listen_port = 50053
 

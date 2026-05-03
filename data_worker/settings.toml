@@ -2,7 +2,7 @@
 entity_type = "service"
 service_name = "data_worker"
 instance_id = "fcbc089e-7573-44c4-9a59-4b4c80074a11"
-run_mode = "no_auth"
+run_mode = "development"
 grpc_listen_host = "127.0.0.1"
 grpc_listen_port = 50052
 
