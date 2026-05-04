@@ -154,16 +154,12 @@ class CryptoUtils:
     def unix_ts_to_rfc3339nano(ts: float) -> str:
         """将 Unix 秒时间戳转换为 UTC 的 RFC3339Nano 字符串。
 
-        Go 校验器使用 time.RFC3339Nano 格式，本函数保持相同的小数纳秒裁剪行为。
+        为了避免 float 精度丢失（例如 1746255543.123 实际存储为 1746255543.122999907...），
+        先通过 round(ts * 1000) 恢复原始毫秒值再用整数运算计算秒与纳秒。
         """
-        sec = int(ts)
-        nanos = int(round((ts - sec) * 1_000_000_000))
-        if nanos >= 1_000_000_000:
-            sec += 1
-            nanos -= 1_000_000_000
-        if nanos < 0:
-            sec -= 1
-            nanos += 1_000_000_000
+        ms = round(ts * 1000.0)
+        sec = ms // 1000
+        nanos = (ms % 1000) * 1_000_000
 
         dt = datetime.fromtimestamp(sec, tz=UTC)
         base = dt.strftime("%Y-%m-%dT%H:%M:%S")

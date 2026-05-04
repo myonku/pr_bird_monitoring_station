@@ -5,8 +5,11 @@ import json
 import logging
 from typing import Any
 
+from msgspec import json as msgspec_json
+from msgspec import to_builtins
 from grpc import aio
 
+from src.models.business.client_resp_dto import ClientUserProfileResponse
 from src.gen.business.v1 import business_forward_pb2
 from src.gen.business.v1 import business_forward_pb2_grpc
 from src.iface.business.data_server_svc import IDataServerService
@@ -120,59 +123,88 @@ class BusinessForwardServicer(business_forward_pb2_grpc.BusinessForwardServiceSe
     async def _dispatch_operation(
         self,
         request: business_forward_pb2.BusinessForwardRequest,
-    ) -> dict[str, Any]:
-        """根据 operation 字段分发到 IDataServerService 对应方法。"""
+    ) -> Any:
+        """根据 operation 字段分发到 IDataServerService 对应方法。
+
+        返回原始的序列化结果（dict 或 list），不再包裹 status/data 层，
+        gRPC BusinessForwardResponse.payload 直接承载业务数据 JSON。
+        """
         operation = (request.operation or "").strip().lower()
 
-        if operation == "client.users.register":
-            req = ClientRegisterRequest.model_validate_json(request.payload)
+        if operation in ("client.users.register",):
+            req = self._decode_msgspec_payload(request.payload, ClientRegisterRequest)
             result = await self._data_server_service.register_user(req)
-            return {"status": "ok", "data": result.model_dump() if hasattr(result, "model_dump") else {}}
+            return self._serialize_result(result)
 
-        if operation == "client.users.profile":
-            payload_dict = json.loads(request.payload)
-            req = ClientUserProfileRequest(identifier=payload_dict.get("identifier", ""))
+        if operation in ("client.users.profile",):
+            req = self._decode_msgspec_payload(request.payload, ClientUserProfileRequest)
             result = await self._data_server_service.get_user_profile(req)
             if result is None:
-                return {"status": "not_found", "data": {}}
-            return {"status": "ok", "data": result.model_dump() if hasattr(result, "model_dump") else {}}
+                return self._serialize_result(
+                    ClientUserProfileResponse(
+                        user_id="",
+                        username="",
+                        display_name="",
+                        name="",
+                        role="",
+                        email="",
+                        phone="",
+                        avatar_b64="",
+                    )
+                )
+            return self._serialize_result(result)
 
-        if operation == "client.home.summary":
+        if operation in ("client.home.summary",):
             req = None
             if request.payload:
-                req = ClientHomeSnapshotRequest.model_validate_json(request.payload)
+                req = self._decode_msgspec_payload(request.payload, ClientHomeSnapshotRequest)
             result = await self._data_server_service.get_dashboard_snapshot(req)
-            return {"status": "ok", "data": result.model_dump() if hasattr(result, "model_dump") else {}}
+            return self._serialize_result(result)
 
-        if operation == "client.records.list":
-            req = ClientRecordsCursorRequest.model_validate_json(request.payload)
+        if operation in ("client.records.list", "client.records.cursor"):
+            req = self._decode_msgspec_payload(request.payload, ClientRecordsCursorRequest)
             result = await self._data_server_service.list_records_by_cursor(req)
-            return {"status": "ok", "data": result.model_dump() if hasattr(result, "model_dump") else {}}
+            return self._serialize_result(result)
 
-        if operation == "client.records.stations":
+        if operation in ("client.records.stations", "client.records.station_options"):
             req = None
             if request.payload:
-                req = ClientRecordStationOptionsRequest.model_validate_json(request.payload)
+                req = self._decode_msgspec_payload(
+                    request.payload,
+                    ClientRecordStationOptionsRequest,
+                )
             result = await self._data_server_service.list_record_station_options(req)
-            return {
-                "status": "ok",
-                "data": [
-                    item.model_dump() if hasattr(item, "model_dump") else {}
-                    for item in (result or [])
-                ],
-            }
+            return [
+                item.model_dump() if hasattr(item, "model_dump") else {}
+                for item in (result or [])
+            ]
 
-        if operation == "client.stats.weekly-trend":
-            req = ClientWeeklyTrendRequest.model_validate_json(request.payload)
+        if operation in ("client.stats.weekly-trend", "client.stats.weekly_trend"):
+            req = self._decode_msgspec_payload(request.payload, ClientWeeklyTrendRequest)
             result = await self._data_server_service.get_weekly_trend(req)
-            return {"status": "ok", "data": result.model_dump() if hasattr(result, "model_dump") else {}}
+            return self._serialize_result(result)
 
-        if operation == "client.stats.range-summary":
-            req = ClientRangeSummaryRequest.model_validate_json(request.payload)
+        if operation in ("client.stats.range-summary", "client.stats.range_summary"):
+            req = self._decode_msgspec_payload(request.payload, ClientRangeSummaryRequest)
             result = await self._data_server_service.get_range_summary(req)
-            return {"status": "ok", "data": result.model_dump() if hasattr(result, "model_dump") else {}}
+            return self._serialize_result(result)
 
         raise ValueError(f"unsupported business operation: {operation}")
+
+    @staticmethod
+    def _decode_msgspec_payload(payload: str, model_type: type[Any]) -> Any:
+        return msgspec_json.decode(payload.encode("utf-8"), type=model_type)
+
+    @staticmethod
+    def _serialize_result(result: Any) -> Any:
+        if result is None:
+            return {}
+
+        model_dump = getattr(result, "model_dump", None)
+        if callable(model_dump):
+            return model_dump()
+
+        return to_builtins(result)
 
     def _validate_request_envelope(
         self,
@@ -237,7 +269,7 @@ class BusinessForwardServicer(business_forward_pb2_grpc.BusinessForwardServiceSe
         *,
         request: business_forward_pb2.BusinessForwardRequest,
         route_profile: Any | None,
-        result_payload: dict[str, Any],
+        result_payload: Any,
     ) -> business_forward_pb2.BusinessForwardResponse:
         payload = json.dumps(result_payload, ensure_ascii=False, sort_keys=True, default=str)
         metadata = self._build_result_metadata(

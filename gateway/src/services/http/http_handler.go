@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -575,10 +576,13 @@ func encodeQueryPayload(values url.Values) (string, error) {
 			continue
 		}
 		if len(items) == 1 {
-			encoded[key] = items[0]
+			encoded[key] = coerceQueryValue(items[0])
 			continue
 		}
-		cloned := append([]string(nil), items...)
+		cloned := make([]any, len(items))
+		for i, item := range items {
+			cloned[i] = coerceQueryValue(item)
+		}
 		encoded[key] = cloned
 	}
 	if len(encoded) == 0 {
@@ -590,6 +594,48 @@ func encodeQueryPayload(values url.Values) (string, error) {
 		return "", err
 	}
 	return string(bytes), nil
+}
+
+// coerceQueryValue converts a query parameter string to the best JSON type.
+// "true"/"false" → bool, numeric strings → int64/float64, else → string.
+func coerceQueryValue(raw string) any {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return s
+	}
+	if s == "true" {
+		return true
+	}
+	if s == "false" {
+		return false
+	}
+	// Try integer first
+	if i, err := parseInt64(s); err == nil {
+		return i
+	}
+	// Try float
+	if f, err := parseFloat64(s); err == nil {
+		return f
+	}
+	return s
+}
+
+func parseInt64(s string) (int64, error) {
+	var i int64
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			if c == '-' || c == '+' {
+				continue
+			}
+			return 0, fmt.Errorf("not an integer")
+		}
+	}
+	i, err := strconv.ParseInt(s, 10, 64)
+	return i, err
+}
+
+func parseFloat64(s string) (float64, error) {
+	return strconv.ParseFloat(s, 64)
 }
 
 func buildAuthorizationInput(headers map[string]string, r *http.Request) (*authcontrolif.AuthorizationInput, bool, error) {
