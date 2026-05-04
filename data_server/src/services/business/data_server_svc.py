@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 from collections import Counter
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID, uuid4
 
 from src.iface.business.data_server_svc import IDataServerService
@@ -181,23 +182,11 @@ class DataServerService(IDataServerService):
 
     async def count_today_monitoring_records(self) -> int:
         """统计今天的监测记录数。"""
-        today = self._today_local()
-        records = await self._record_manager.list_all()
-        return sum(
-            1
-            for record in records
-            if self._is_same_local_day(record.captured_at_ms, today)
-        )
+        return await self._record_manager.count_today_monitoring_records()
 
     async def count_today_upload_records(self) -> int:
         """统计今天的上传记录数。"""
-        today = self._today_local()
-        envelopes = await self._envelope_manager.list_all()
-        return sum(
-            1
-            for envelope in envelopes
-            if self._is_same_local_day(envelope.received_at_ms, today)
-        )
+        return await self._envelope_manager.count_today_upload_records()
 
     async def count_online_stations(self) -> int:
         """统计在线的站点数。"""
@@ -206,43 +195,29 @@ class DataServerService(IDataServerService):
 
     async def get_today_top_upload_station(self) -> ClientUploadStationSummaryResponse:
         """获取今天上传最活跃的站点摘要。"""
-        today = self._today_local()
-        envelopes = await self._envelope_manager.list_all()
-        today_uploads = [
-            envelope
-            for envelope in envelopes
-            if self._is_same_local_day(envelope.received_at_ms, today)
-        ]
-        if not today_uploads:
+        summary = await self._envelope_manager.get_today_top_upload_site()
+        if summary is None:
             return ClientUploadStationSummaryResponse(
                 device_id="",
                 device_name="暂无数据",
                 upload_count=0,
             )
-
-        counts: Counter[str] = Counter()
-        names: dict[str, str] = {}
-        for envelope in today_uploads:
-            device_id = str(envelope.device_entity_id)
-            counts[device_id] += 1
-            names.setdefault(
-                device_id,
-                self._display_text(envelope.device_name, fallback=device_id),
-            )
-
-        top_device_id, top_count = max(
-            counts.items(), key=lambda item: (item[1], item[0])
+        device_id = str(summary.get("device_entity_id") or "").strip()
+        device_name = self._display_text(
+            str(summary.get("device_name") or "").strip(),
+            fallback=device_id,
         )
+        upload_count_raw = summary.get("upload_count")
         return ClientUploadStationSummaryResponse(
-            device_id=top_device_id,
-            device_name=names.get(top_device_id, top_device_id),
-            upload_count=top_count,
+            device_id=device_id,
+            device_name=device_name,
+            upload_count=int(upload_count_raw) if upload_count_raw is not None else 0,
         )
 
     async def get_latest_upload_summary(self) -> ClientLatestUploadSummaryResponse:
         """获取最近上传的站点和时间摘要。"""
-        envelopes = await self._envelope_manager.list_all()
-        if not envelopes:
+        summary = await self._envelope_manager.get_latest_upload_summary()
+        if summary is None:
             return ClientLatestUploadSummaryResponse(
                 device_id="",
                 device_name="-",
@@ -250,29 +225,39 @@ class DataServerService(IDataServerService):
                 uploaded_at_label="-",
             )
 
-        latest = max(envelopes, key=lambda item: (item.received_at_ms, str(item.id)))
+        uploaded_at_ms_raw = summary.get("received_at_ms")
+        device_id = str(summary.get("device_entity_id") or "").strip()
         device_name = self._display_text(
-            latest.device_name, fallback=str(latest.device_entity_id)
+            str(summary.get("device_name") or "").strip(), fallback=device_id
+        )
+        uploaded_at_ms = (
+            int(uploaded_at_ms_raw) if uploaded_at_ms_raw is not None else None
         )
         return ClientLatestUploadSummaryResponse(
-            device_id=str(latest.device_entity_id),
+            device_id=device_id,
             device_name=device_name,
-            uploaded_at_ms=latest.received_at_ms,
-            uploaded_at_label=self._format_local_ms(latest.received_at_ms),
+            uploaded_at_ms=uploaded_at_ms,
+            uploaded_at_label=self._format_local_ms(uploaded_at_ms)
+            if uploaded_at_ms is not None
+            else "-",
         )
 
     async def list_recent_records(
         self, limit: int = 3
     ) -> list[ClientBirdRecordResponse]:
         """获取首页最近的监测记录摘要列表。默认为最近 3 条记录。"""
+        normalized_limit = max(int(limit), 0)
+        if normalized_limit == 0:
+            return []
+
+        if normalized_limit <= 3:
+            records = await self._record_manager.list_latest_three()
+            return await self._records_to_client_responses(records[:normalized_limit])
+
         records = await self._record_manager.list_all()
-        sorted_records = sorted(
-            records,
-            key=self._record_sort_key,
-            reverse=True,
-        )
+        sorted_records = sorted(records, key=self._record_sort_key, reverse=True)
         return await self._records_to_client_responses(
-            sorted_records[: max(int(limit), 0)]
+            sorted_records[:normalized_limit]
         )
 
     async def get_dashboard_snapshot(
@@ -284,9 +269,11 @@ class DataServerService(IDataServerService):
         _ = (
             request.device_id if request is not None else None
         )  # 目前请求参数未使用，预留后续按站点过滤的能力
-        devices = await self._device_entity_manager.list_all()
-        records = await self._record_manager.list_all()
-        envelopes = await self._envelope_manager.list_all()
+        devices, records, envelopes = await asyncio.gather(
+            self._device_entity_manager.list_all(),
+            self._record_manager.list_all(),
+            self._envelope_manager.list_all(),
+        )
 
         today = self._today_local()
         today_monitoring_count = sum(
@@ -307,6 +294,57 @@ class DataServerService(IDataServerService):
             }
         )
 
+        today_uploads = [
+            envelope
+            for envelope in envelopes
+            if self._is_same_local_day(envelope.received_at_ms, today)
+        ]
+        if today_uploads:
+            counts: Counter[str] = Counter()
+            names: dict[str, str] = {}
+            for envelope in today_uploads:
+                device_id = str(envelope.device_entity_id)
+                counts[device_id] += 1
+                names.setdefault(
+                    device_id,
+                    self._display_text(envelope.device_name, fallback=device_id),
+                )
+            top_device_id, top_count = max(
+                counts.items(), key=lambda item: (item[1], item[0])
+            )
+            top_upload_station = ClientUploadStationSummaryResponse(
+                device_id=top_device_id,
+                device_name=names.get(top_device_id, top_device_id),
+                upload_count=top_count,
+            )
+        else:
+            top_upload_station = ClientUploadStationSummaryResponse(
+                device_id="",
+                device_name="暂无数据",
+                upload_count=0,
+            )
+
+        if envelopes:
+            latest_envelope = max(
+                envelopes, key=lambda item: (item.received_at_ms, str(item.id))
+            )
+            latest_upload = ClientLatestUploadSummaryResponse(
+                device_id=str(latest_envelope.device_entity_id),
+                device_name=self._display_text(
+                    latest_envelope.device_name,
+                    fallback=str(latest_envelope.device_entity_id),
+                ),
+                uploaded_at_ms=latest_envelope.received_at_ms,
+                uploaded_at_label=self._format_local_ms(latest_envelope.received_at_ms),
+            )
+        else:
+            latest_upload = ClientLatestUploadSummaryResponse(
+                device_id="",
+                device_name="-",
+                uploaded_at_ms=None,
+                uploaded_at_label="-",
+            )
+
         recent_records = await self._records_to_client_responses(
             sorted(records, key=self._record_sort_key, reverse=True)[:3]
         )
@@ -316,8 +354,8 @@ class DataServerService(IDataServerService):
             today_upload_count=today_upload_count,
             online_station_count=len(devices),
             active_station_count=active_station_count,
-            top_upload_station=await self.get_today_top_upload_station(),
-            latest_upload=await self.get_latest_upload_summary(),
+            top_upload_station=top_upload_station,
+            latest_upload=latest_upload,
             recent_records=recent_records,
         )
 
@@ -577,15 +615,25 @@ class DataServerService(IDataServerService):
 
     @staticmethod
     def _local_date_from_ms(milliseconds: int) -> date:
-        return datetime.fromtimestamp(max(int(milliseconds), 0) / 1000.0).date()
+        local_tz = DataServerService._local_timezone()
+        return datetime.fromtimestamp(
+            max(int(milliseconds), 0) / 1000.0,
+            tz=timezone.utc,
+        ).astimezone(local_tz).date()
 
     @staticmethod
     def _local_day_start_ms(day: date) -> int:
-        return int(datetime.combine(day, time.min).timestamp() * 1000)
+        local_tz = DataServerService._local_timezone()
+        day_start = datetime.combine(day, time.min, tzinfo=local_tz)
+        return int(day_start.timestamp() * 1000)
 
     @staticmethod
     def _format_local_ms(milliseconds: int) -> str:
-        value = datetime.fromtimestamp(max(int(milliseconds), 0) / 1000.0)
+        local_tz = DataServerService._local_timezone()
+        value = datetime.fromtimestamp(
+            max(int(milliseconds), 0) / 1000.0,
+            tz=timezone.utc,
+        ).astimezone(local_tz)
         return (
             f"{value.year:04d}-{value.month:02d}-{value.day:02d} "
             f"{value.hour:02d}:{value.minute:02d}"
@@ -630,6 +678,10 @@ class DataServerService(IDataServerService):
         palette = ("#0B7A75", "#125D98", "#C97C1D", "#6D597A", "#2A9D8F", "#E76F51")
         digest = hashlib.sha256(label.encode("utf-8")).digest()
         return palette[digest[0] % len(palette)]
+
+    @staticmethod
+    def _local_timezone():
+        return datetime.now().astimezone().tzinfo or timezone.utc
 
     @staticmethod
     def _safe_day_index(milliseconds: int | None) -> int:

@@ -199,12 +199,31 @@ class BootstrapCoordinatorService(IBootstrapCoordinator):
             )
         )
         if dispatch is None:
+            cached_endpoint = await self._load_cached_authority_endpoint()
+            if cached_endpoint:
+                return cached_endpoint
             raise RuntimeError("auth authority is not discoverable")
 
         target_endpoint = (dispatch.target_endpoint or "").strip()
         if not target_endpoint:
+            cached_endpoint = await self._load_cached_authority_endpoint()
+            if cached_endpoint:
+                return cached_endpoint
             raise RuntimeError("auth authority endpoint is empty")
         return target_endpoint
+
+    async def _load_cached_authority_endpoint(self) -> str:
+        try:
+            snapshot = await self._local_credential_manager.load_active_credential(
+                self.principal_id()
+            )
+        except Exception:
+            return ""
+
+        if snapshot is None:
+            return ""
+        metadata = dict(snapshot.metadata or {})
+        return str(metadata.get("auth_authority_ep") or "").strip()
 
     async def _refresh_snapshot(
         self,

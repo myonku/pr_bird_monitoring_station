@@ -17,7 +17,12 @@ from src.models.business.event_req_dto import (
     ImagePayloadRequest,
     TemperatureHumiditySnapshotRequest,
 )
-from src.models.inference.workflow import TwoStageInferenceResult
+from src.models.common.entities import SpeciesProfile
+from src.models.inference.workflow import (
+    ClassificationResult,
+    DetectionResult,
+    TwoStageInferenceResult,
+)
 from src.services.business.data_worker_svc import DataWorkerService
 from src.services.communication.rpc_service.business_forward_servicer import (
     BusinessForwardServicer,
@@ -95,11 +100,17 @@ class FakeMonitoringRecordManager:
 
 
 class FakeSpeciesProfileManager:
+    def __init__(self) -> None:
+        self.label_lookup: dict[str, SpeciesProfile] = {}
+
     async def get_by_id(self, species_entity_id: UUID):
         return None
 
     async def get_by_scientific_name(self, scientific_name: str):
         return None
+
+    async def get_by_label_name(self, label_name: str):
+        return self.label_lookup.get(label_name)
 
     async def get_by_display_name(self, display_name: str):
         return None
@@ -257,6 +268,54 @@ class DataWorkerBusinessForwardTests(IsolatedAsyncioTestCase):
         self.assertIs(result.monitoring_record, fake_record)
         self.assertEqual(len(envelope_manager.create_calls), 1)
         self.assertEqual(len(monitoring_record_manager.create_calls), 1)
+
+    async def test_handle_edge_upload_resolves_species_profile_by_label_name(self) -> None:
+        envelope_manager = FakeEnvelopeManager()
+        monitoring_record_manager = FakeMonitoringRecordManager()
+        species_profile_manager = FakeSpeciesProfileManager()
+        label_name = "Pycnonotus sinensis"
+        species_profile_manager.label_lookup[label_name] = SpeciesProfile(
+            species_entity_id=uuid4(),
+            scientific_name="Pycnonotus sinensis",
+            label_name=label_name,
+            display_name="白头鹎",
+            intro="",
+            habitat="",
+            protection_level="",
+            alias_names=[],
+            metadata={},
+        )
+        service = DataWorkerService(
+            envelope_manager=envelope_manager,
+            monitoring_record_manager=monitoring_record_manager,
+            species_profile_manager=species_profile_manager,
+            inference_module=None,
+        )
+
+        request = build_edge_event_request().model_copy(
+            update={
+                "local_inference": TwoStageInferenceResult(
+                    success=True,
+                    stage="classified",
+                    detection=DetectionResult(success=True),
+                    classification=ClassificationResult(
+                        success=True,
+                        top1_label=label_name,
+                        top1_confidence=0.92,
+                    ),
+                )
+            }
+        )
+
+        result = await service.handle_edge_upload(request)
+
+        self.assertTrue(result.stage_a_enter_stage_b)
+        self.assertEqual(len(monitoring_record_manager.create_calls), 1)
+        created_record = monitoring_record_manager.create_calls[0]
+        self.assertEqual(created_record.species_name, "白头鹎")
+        self.assertEqual(created_record.scientific_name, "Pycnonotus sinensis")
+        self.assertEqual(created_record.device_entity_id, UUID(request.context.device_id))
+        self.assertIs(result.monitoring_record, created_record)
 
     async def test_forward_business_maps_payload_and_merges_gateway_context(self) -> None:
         request = build_edge_event_request()

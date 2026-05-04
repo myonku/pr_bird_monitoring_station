@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from uuid import UUID
 
+from typing import Any
+
 from src.models.business.data import EdgeEventEnvelope
 
 
@@ -38,11 +40,11 @@ class IEnvelopeManager(ABC):
 		raise NotImplementedError
 
 	@abstractmethod
-	async def get_today_top_upload_site(self) -> dict[str, object] | None:
+	async def get_today_top_upload_site(self) -> dict[str, Any] | None:
 		"""获取当日上传记录最多的站点，返回设备 id、name 和数量。"""
 		raise NotImplementedError
 
 	@abstractmethod
-	async def get_latest_upload_summary(self) -> dict[str, object] | None:
+	async def get_latest_upload_summary(self) -> dict[str, Any] | None:
 		"""获取最新一条上传记录的时间和站点信息。"""
 		raise NotImplementedError

@@ -29,6 +29,15 @@ def _prefix_range_end(prefix: str) -> bytes:
     return b"\x00"
 
 
+def _is_lease_not_found_error(exc: Exception) -> bool:
+    if not isinstance(exc, grpc.aio.AioRpcError):
+        return False
+    if exc.code() != grpc.StatusCode.NOT_FOUND:
+        return False
+    details = (exc.details() or "").lower()
+    return "lease" in details and "not found" in details
+
+
 class EtcdAsyncClient:
     """原生异步 etcd v3 客户端（基于 etcd3aio/grpc.aio）
 
@@ -135,13 +144,26 @@ class EtcdAsyncClient:
     async def put_with_lease(self, key: str, value_bytes: bytes, ttl: int) -> None:
         """写入 key 并绑定租约（如不存在则创建新租约）。"""
         assert self._kv_svc is not None, "KV service 未初始化"
+
+        async def _put_with_lease_id(lease_id: int) -> None:
+            async def _do_put() -> Any:
+                assert self._kv_svc is not None
+                return await self._kv_svc.put(key, value_bytes, lease=lease_id)
+
+            await self._circuit.call(_do_put)
+
         lease_id = await self._grant_or_reuse_lease(ttl)
+        try:
+            await _put_with_lease_id(lease_id)
+        except grpc.aio.AioRpcError as exc:
+            if not _is_lease_not_found_error(exc):
+                raise
 
-        async def _do_put() -> Any:
-            assert self._kv_svc is not None
-            return await self._kv_svc.put(key, value_bytes, lease=lease_id)
-
-        await self._circuit.call(_do_put)
+            # etcd may evict the lease while this process still caches lease_id.
+            # Reset cached lease_id and grant a fresh lease for one retry.
+            self._lease_id = None
+            lease_id = await self._grant_or_reuse_lease(ttl)
+            await _put_with_lease_id(lease_id)
 
     async def put(self, key: str, value_bytes: bytes) -> None:
         """写入 key，不绑定租约。"""
@@ -161,7 +183,9 @@ class EtcdAsyncClient:
             assert self._lease_svc is not None, "Lease service 未初始化"
             async with self._lease_svc.keep_alive_context(self._lease_id, ttl):
                 await stop_event.wait()
-        except Exception:
+        except Exception as exc:
+            if _is_lease_not_found_error(exc):
+                self._lease_id = None
             _log.warning(
                 "etcd keepalive_forever: keepalive 异常退出 (lease_id=%s, ttl=%s)",
                 self._lease_id,

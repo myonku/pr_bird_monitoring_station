@@ -554,13 +554,15 @@ func buildBusinessPayload(r *http.Request, bodyBytes []byte) (string, error) {
 		if encoded, err := encodeQueryPayload(r.URL.Query()); err == nil && strings.TrimSpace(encoded) != "" {
 			return encoded, nil
 		}
+		return "{}", nil
 	}
 
 	payload := strings.TrimSpace(string(bodyBytes))
 	if payload == "" {
-		if encoded, err := encodeQueryPayload(r.URL.Query()); err == nil {
+		if encoded, err := encodeQueryPayload(r.URL.Query()); err == nil && strings.TrimSpace(encoded) != "" {
 			return encoded, nil
 		}
+		return "{}", nil
 	}
 	return payload, nil
 }
@@ -576,12 +578,12 @@ func encodeQueryPayload(values url.Values) (string, error) {
 			continue
 		}
 		if len(items) == 1 {
-			encoded[key] = coerceQueryValue(items[0])
+			encoded[key] = coerceQueryValue(key, items[0])
 			continue
 		}
 		cloned := make([]any, len(items))
 		for i, item := range items {
-			cloned[i] = coerceQueryValue(item)
+			cloned[i] = coerceQueryValue(key, item)
 		}
 		encoded[key] = cloned
 	}
@@ -598,9 +600,13 @@ func encodeQueryPayload(values url.Values) (string, error) {
 
 // coerceQueryValue converts a query parameter string to the best JSON type.
 // "true"/"false" → bool, numeric strings → int64/float64, else → string.
-func coerceQueryValue(raw string) any {
+// Some fields, like records cursor, must remain strings even if they are numeric.
+func coerceQueryValue(key string, raw string) any {
 	s := strings.TrimSpace(raw)
 	if s == "" {
+		return s
+	}
+	if shouldPreserveQueryString(key) {
 		return s
 	}
 	if s == "true" {
@@ -618,6 +624,15 @@ func coerceQueryValue(raw string) any {
 		return f
 	}
 	return s
+}
+
+func shouldPreserveQueryString(key string) bool {
+	switch strings.TrimSpace(strings.ToLower(key)) {
+	case "cursor":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseInt64(s string) (int64, error) {

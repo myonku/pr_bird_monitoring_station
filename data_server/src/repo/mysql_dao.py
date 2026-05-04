@@ -95,6 +95,7 @@ class EntitySpeciesProfilesDAO(MySQLBaseDAO):
                 "species_entity_id",
                 "species_name",
                 "scientific_name",
+                "label_name",
                 "alias_names",
                 "metadata",
                 "created_at",

@@ -52,10 +52,14 @@ class _RecordsPageState extends State<RecordsPage> {
         return;
       }
       setState(() {
-        _stations = [
-          const RecordStationOption(deviceId: '', deviceName: '全部站点'),
-          ...stations,
-        ];
+        _stations = _mergeStationOptions(stations);
+        final nonAllStations = _stations.where((station) => station.deviceId.isNotEmpty).toList();
+        if (!_stations.any((station) => station.deviceId == _selectedStationId)) {
+          _selectedStationId = '';
+        }
+        if (_selectedStationId.isEmpty && nonAllStations.length == 1) {
+          _selectedStationId = nonAllStations.first.deviceId;
+        }
       });
       await _resetAndLoadRecords();
     } catch (error) {
@@ -67,6 +71,22 @@ class _RecordsPageState extends State<RecordsPage> {
         _isInitialLoading = false;
       });
     }
+  }
+
+  List<RecordStationOption> _mergeStationOptions(
+    List<RecordStationOption> stations,
+  ) {
+    final uniqueStations = <String, RecordStationOption>{};
+    for (final station in stations) {
+      if (station.deviceId.isEmpty) {
+        continue;
+      }
+      uniqueStations.putIfAbsent(station.deviceId, () => station);
+    }
+    return [
+      const RecordStationOption(deviceId: '', deviceName: '全部站点'),
+      ...uniqueStations.values,
+    ];
   }
 
   void _onScroll() {

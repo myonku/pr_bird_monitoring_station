@@ -206,6 +206,46 @@ class SpeciesShare {
   final String? speciesEntityId;
 }
 
+class PeakDaySummary {
+  const PeakDaySummary({
+    required this.label,
+    required this.value,
+    this.dateMs,
+  });
+
+  final String label;
+  final int value;
+  final int? dateMs;
+}
+
+class PeakDeviceSummary {
+  const PeakDeviceSummary({
+    required this.deviceId,
+    required this.deviceName,
+    required this.recordCount,
+  });
+
+  final String deviceId;
+  final String deviceName;
+  final int recordCount;
+}
+
+class RangeSummary {
+  const RangeSummary({
+    required this.totalCount,
+    required this.dailyDistribution,
+    required this.speciesShares,
+    required this.peakDay,
+    required this.peakDevice,
+  });
+
+  final int totalCount;
+  final List<TrendPoint> dailyDistribution;
+  final List<SpeciesShare> speciesShares;
+  final PeakDaySummary peakDay;
+  final PeakDeviceSummary peakDevice;
+}
+
 class AppUser {
   const AppUser({
     required this.name,

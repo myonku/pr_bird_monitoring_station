@@ -255,6 +255,56 @@ func TestServeHTTP_RoutesBusinessRequestThroughAuthControlAndBusinessClient(t *t
 	}
 }
 
+func TestServeHTTP_RecordsCursorQueryKeepsCursorAsString(t *testing.T) {
+	pipe := &fakeRoutingPipeline{
+		profile: &commonif.RouteProfile{
+			TargetServiceName: "data_server",
+			TargetEndpoint:    "data.example:9000",
+			TargetServiceType: commonif.TargetServiceTypeInternal,
+			FlowCategory:      commonif.FlowCategoryBusinessForward,
+		},
+	}
+	authControl := &fakeAuthControl{
+		result: &authcontrolif.AuthControlResult{
+			RateLimitDecision: &authmodel.RateLimitDecision{Allowed: true},
+		},
+	}
+	businessClient := &fakeBusinessClient{response: &businessv1.BusinessForwardResponse{Accepted: true, Payload: `{"items":[],"has_more":false}`}}
+
+	handler := http_handler.NewGatewayHTTPHandler(
+		modelsystem.RuntimeConfig{ServiceName: "gateway", InstanceID: "gateway", RunMode: modelsystem.RuntimeRunModeDevelopment},
+		pipe,
+		authControl,
+		func(endpoint string) http_handler.BusinessForwardClient { return businessClient },
+		func(endpoint string) http_handler.ExternalAuthClient { return &fakeExternalAuthClient{} },
+		nil,
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/client/records?cursor=0&limit=20", nil)
+	req.Header.Set("Authorization", "Bearer raw-token")
+	req.Header.Set("X-Client-Id", "client-1")
+	req.Header.Set("X-Audience", "client-app")
+	req.Header.Set("X-Scopes", "read,write")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if businessClient.calls != 1 {
+		t.Fatalf("business forward calls = %d, want 1", businessClient.calls)
+	}
+	if businessClient.lastReq == nil {
+		t.Fatal("business request was not captured")
+	}
+	if !strings.Contains(businessClient.lastReq.Payload, `"cursor":"0"`) {
+		t.Fatalf("payload = %s, want cursor to remain a string", businessClient.lastReq.Payload)
+	}
+	if strings.Contains(businessClient.lastReq.Payload, `"cursor":0`) {
+		t.Fatalf("payload unexpectedly coerced cursor to number: %s", businessClient.lastReq.Payload)
+	}
+}
+
 func TestServeHTTP_NoAuthModeSkipsAuthControlForBusinessRoute(t *testing.T) {
 	pipe := &fakeRoutingPipeline{
 		profile: &commonif.RouteProfile{

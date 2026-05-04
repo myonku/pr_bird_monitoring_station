@@ -247,6 +247,22 @@ class MonitoringController extends ChangeNotifier {
     return points;
   }
 
+  Future<RangeSummary> fetchRangeSummary({
+    required DateTimeRange dateRange,
+    String? stationId,
+  }) async {
+    final response = await _client.getRangeSummary(
+      ClientRangeSummaryRequest(
+        startAtMs: dateRange.start.millisecondsSinceEpoch,
+        endAtMs: dateRange.end.millisecondsSinceEpoch,
+        deviceId: stationId,
+      ),
+      options: ClientRequestOptions(headers: await _authHeaders()),
+    );
+
+    return _toRangeSummary(response);
+  }
+
   Future<List<BirdRecord>> fetchRecords({
     DateTimeRange? dateRange,
     String? stationId,
@@ -448,6 +464,61 @@ class MonitoringController extends ChangeNotifier {
       ),
       mode: mode,
       signedInAt: signedInAt,
+    );
+  }
+
+  RangeSummary _toRangeSummary(ClientRangeSummaryResponse response) {
+    final palette = <Color>[
+      const Color(0xFF0B7A75),
+      const Color(0xFF125D98),
+      const Color(0xFFC97C1D),
+      const Color(0xFF6D597A),
+      const Color(0xFF2A9D8F),
+      const Color(0xFFE76F51),
+    ];
+
+    final speciesShares = response.speciesShares.map((share) {
+      final hash = share.label.hashCode.abs();
+      return SpeciesShare(
+        label: share.label,
+        value: share.value,
+        color: palette[hash % palette.length],
+        speciesEntityId: share.speciesEntityId.isEmpty
+            ? null
+            : share.speciesEntityId,
+      );
+    }).toList(growable: false);
+
+    return RangeSummary(
+      totalCount: response.totalCount,
+      dailyDistribution: response.dailyDistribution
+          .map(
+            (point) => TrendPoint(
+              label: point.label,
+              value: point.value,
+              dateMs: point.dateMs,
+            ),
+          )
+          .toList(growable: false),
+      speciesShares: speciesShares,
+      peakDay: _toPeakDay(response.peakDay),
+      peakDevice: _toPeakDevice(response.peakDevice),
+    );
+  }
+
+  PeakDaySummary _toPeakDay(ClientPeakDayResponse response) {
+    return PeakDaySummary(
+      label: response.label,
+      value: response.value,
+      dateMs: response.dateMs,
+    );
+  }
+
+  PeakDeviceSummary _toPeakDevice(ClientPeakDeviceSummaryResponse response) {
+    return PeakDeviceSummary(
+      deviceId: response.deviceId,
+      deviceName: response.deviceName,
+      recordCount: response.recordCount,
     );
   }
 

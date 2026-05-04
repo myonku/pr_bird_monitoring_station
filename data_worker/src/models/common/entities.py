@@ -28,6 +28,7 @@ class SpeciesProfile(Struct, frozen=True):
 
     species_entity_id: UUID
     scientific_name: str
+    label_name: str = ""
     display_name: str = ""
     intro: str = ""
     habitat: str = ""

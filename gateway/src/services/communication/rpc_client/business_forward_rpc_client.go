@@ -12,6 +12,13 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	defaultBusinessForwardDialTimeout = 3 * time.Second
+	defaultBusinessForwardCallTimeout = 5 * time.Second
+	defaultBusinessForwardMaxRecvSize = 16 * 1024 * 1024
+	defaultBusinessForwardMaxSendSize = 16 * 1024 * 1024
+)
+
 // BusinessForwardRPCClient 负责调用目标服务的统一业务转发 gRPC 入口。
 type BusinessForwardRPCClient struct {
 	endpoint    string
@@ -22,8 +29,8 @@ type BusinessForwardRPCClient struct {
 func NewBusinessForwardRPCClient(endpoint string) *BusinessForwardRPCClient {
 	return &BusinessForwardRPCClient{
 		endpoint:    strings.TrimSpace(endpoint),
-		dialTimeout: 3 * time.Second,
-		callTimeout: 5 * time.Second,
+		dialTimeout: defaultBusinessForwardDialTimeout,
+		callTimeout: defaultBusinessForwardCallTimeout,
 	}
 }
 
@@ -44,6 +51,10 @@ func (c *BusinessForwardRPCClient) ForwardBusiness(
 	conn, err := grpc.NewClient(
 		c.endpoint,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(defaultBusinessForwardMaxRecvSize),
+			grpc.MaxCallSendMsgSize(defaultBusinessForwardMaxSendSize),
+		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial target service failed: %w", err)

@@ -176,7 +176,11 @@ class _HomePageState extends State<HomePage> {
               ),
               _InfoTile(
                 title: '最近上传站点',
-                value: dashboard.latestUpload.deviceName,
+                value: switch (dashboard.latestUpload.deviceName) {
+                  '' => '暂无数据',
+                  '-' => '暂无数据',
+                  final name => name,
+                },
                 icon: Icons.spatial_audio_off_outlined,
               ),
               const SizedBox(height: 18),

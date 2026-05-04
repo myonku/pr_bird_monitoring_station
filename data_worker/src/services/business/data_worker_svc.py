@@ -242,6 +242,12 @@ class DataWorkerService(IDataWorkerService):
         if not species_hint:
             return None
 
+        by_label_name = await self._species_profile_manager.get_by_label_name(
+            species_hint
+        )
+        if by_label_name is not None:
+            return by_label_name
+
         by_scientific = await self._species_profile_manager.get_by_scientific_name(
             species_hint
         )
@@ -262,7 +268,7 @@ class DataWorkerService(IDataWorkerService):
                 return hint
 
         metadata = dict(stage_b.request.metadata or {})
-        for key in ("species_name", "scientific_name", "top1_label"):
+        for key in ("label_name", "species_name", "scientific_name", "top1_label"):
             hint = str(metadata.get(key, "") or "").strip()
             if hint:
                 return hint

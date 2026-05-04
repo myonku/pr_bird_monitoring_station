@@ -38,6 +38,15 @@ class SpeciesProfileManager(ISpeciesProfileManager):
         )
         return self._row_to_profile(row)
 
+    async def get_by_label_name(self, label_name: str) -> SpeciesProfile | None:
+        normalized = (label_name or "").strip()
+        if not normalized:
+            raise ValueError("label_name is required")
+        row = await self._species_dao.find_one(
+            filters={"label_name": normalized},
+        )
+        return self._row_to_profile(row)
+
     async def get_by_display_name(self, display_name: str) -> SpeciesProfile | None:
         normalized = (display_name or "").strip()
         if not normalized:
@@ -99,6 +108,7 @@ class SpeciesProfileManager(ISpeciesProfileManager):
         if not scientific_name:
             return None
 
+        label_name = str(row.get("label_name") or "").strip()
         display_name = str(row.get("species_name") or "").strip()
         alias_names = SpeciesProfileManager._decode_json_array(row.get("alias_names"))
         metadata_any = SpeciesProfileManager._decode_json_object(row.get("metadata"))
@@ -107,6 +117,7 @@ class SpeciesProfileManager(ISpeciesProfileManager):
         return SpeciesProfile(
             species_entity_id=species_entity_id,
             scientific_name=scientific_name,
+            label_name=label_name,
             display_name=display_name,
             intro=str(metadata.get("intro") or ""),
             habitat=str(metadata.get("habitat") or ""),
@@ -129,6 +140,11 @@ class SpeciesProfileManager(ISpeciesProfileManager):
             "species_entity_id": str(profile.species_entity_id),
             "species_name": profile.display_name.strip() or profile.scientific_name.strip(),
             "scientific_name": profile.scientific_name.strip(),
+            "label_name": (
+                profile.label_name.strip()
+                or profile.display_name.strip()
+                or profile.scientific_name.strip()
+            ),
             "alias_names": json.dumps(list(profile.alias_names or []), ensure_ascii=True),
             "metadata": json.dumps(metadata, ensure_ascii=True),
         }

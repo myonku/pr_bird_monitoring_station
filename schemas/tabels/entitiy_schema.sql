@@ -67,11 +67,13 @@ CREATE TABLE IF NOT EXISTS entitiy_species_profiles (
   species_entity_id CHAR(36) NOT NULL,
   species_name VARCHAR(128) NOT NULL,
   scientific_name VARCHAR(128) NOT NULL,
+  label_name VARCHAR(128) NOT NULL,
   alias_names JSON NOT NULL,
   metadata JSON NOT NULL,
   created_at DATETIME(3) NOT NULL,
   updated_at DATETIME(3) NOT NULL,
   PRIMARY KEY (species_entity_id),
   UNIQUE KEY uk_entitiy_species_name (species_name),
-  UNIQUE KEY uk_entitiy_scientific_name (scientific_name)
+  UNIQUE KEY uk_entitiy_scientific_name (scientific_name),
+  UNIQUE KEY uk_entitiy_label_name (label_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

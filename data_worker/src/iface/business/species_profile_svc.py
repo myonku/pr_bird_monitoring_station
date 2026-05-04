@@ -18,6 +18,11 @@ class ISpeciesProfileManager(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def get_by_label_name(self, label_name: str) -> SpeciesProfile | None:
+        """按训练标签查询。"""
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_by_display_name(self, display_name: str) -> SpeciesProfile | None:
         """按显示名查询。"""
         raise NotImplementedError

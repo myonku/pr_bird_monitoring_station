@@ -25,7 +25,7 @@ class _StatsPageState extends State<StatsPage> {
   List<RecordStationOption> _stations = const [
     RecordStationOption(deviceId: '', deviceName: '全部站点'),
   ];
-  List<BirdRecord> _rangeRecords = const [];
+  RangeSummary? _rangeSummary;
 
   @override
   void initState() {
@@ -50,12 +50,16 @@ class _StatsPageState extends State<StatsPage> {
         return;
       }
       setState(() {
-        _stations = [
-          const RecordStationOption(deviceId: '', deviceName: '全部站点'),
-          ...stations,
-        ];
+        _stations = _mergeStationOptions(stations);
+        final nonAllStations = _stations.where((station) => station.deviceId.isNotEmpty).toList();
+        if (!_stations.any((station) => station.deviceId == _selectedStationId)) {
+          _selectedStationId = '';
+        }
+        if (_selectedStationId.isEmpty && nonAllStations.length == 1) {
+          _selectedStationId = nonAllStations.first.deviceId;
+        }
       });
-      await _reloadRangeRecords();
+      await _loadRangeSummary();
     } catch (error) {
       if (!mounted) {
         return;
@@ -67,22 +71,47 @@ class _StatsPageState extends State<StatsPage> {
     }
   }
 
-  Future<void> _reloadRangeRecords() async {
+  List<RecordStationOption> _mergeStationOptions(
+    List<RecordStationOption> stations,
+  ) {
+    final uniqueStations = <String, RecordStationOption>{};
+    for (final station in stations) {
+      if (station.deviceId.isEmpty) {
+        continue;
+      }
+      uniqueStations.putIfAbsent(station.deviceId, () => station);
+    }
+    return [
+      const RecordStationOption(deviceId: '', deviceName: '全部站点'),
+      ...uniqueStations.values,
+    ];
+  }
+
+  Future<void> _loadRangeSummary() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final records = await widget.monitoringController.fetchRecords(
-        dateRange: _selectedRange,
+      final range = _selectedRange;
+      if (range == null) {
+        setState(() {
+          _rangeSummary = null;
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final summary = await widget.monitoringController.fetchRangeSummary(
+        dateRange: range,
         stationId: _selectedStationId.isEmpty ? null : _selectedStationId,
       );
       if (!mounted) {
         return;
       }
       setState(() {
-        _rangeRecords = records;
+        _rangeSummary = summary;
         _isLoading = false;
       });
     } catch (error) {
@@ -125,7 +154,7 @@ class _StatsPageState extends State<StatsPage> {
     setState(() {
       _selectedRange = DateTimeRange(start: start, end: end);
     });
-    await _reloadRangeRecords();
+    await _loadRangeSummary();
   }
 
   void _changeStation(String? value) {
@@ -136,7 +165,7 @@ class _StatsPageState extends State<StatsPage> {
     setState(() {
       _selectedStationId = value;
     });
-    _reloadRangeRecords();
+    _loadRangeSummary();
   }
 
   String get _selectedRangeLabel {
@@ -158,66 +187,9 @@ class _StatsPageState extends State<StatsPage> {
     return end.difference(start).inDays + 1;
   }
 
-  List<TrendPoint> get _dailyDistribution {
-    if (_selectedRange == null) {
-      return const [];
-    }
-
-    final start = DateUtils.dateOnly(_selectedRange!.start);
-    final end = DateUtils.dateOnly(_selectedRange!.end);
-    final countsByDay = <DateTime, int>{};
-    for (final record in _rangeRecords) {
-      final day = DateUtils.dateOnly(record.capturedAtTime);
-      countsByDay[day] = (countsByDay[day] ?? 0) + 1;
-    }
-
-    final points = <TrendPoint>[];
-    for (
-      var day = start;
-      !day.isAfter(end);
-      day = day.add(const Duration(days: 1))
-    ) {
-      points.add(
-        TrendPoint(
-          label: '${day.month}/${day.day}',
-          value: countsByDay[day] ?? 0,
-        ),
-      );
-    }
-    return points;
-  }
-
-  List<SpeciesShare> get _speciesShares {
-    if (_rangeRecords.isEmpty) {
-      return const [];
-    }
-
-    final countsBySpecies = <String, int>{};
-    final colorBySpecies = <String, Color>{};
-    for (final record in _rangeRecords) {
-      countsBySpecies[record.species] =
-          (countsBySpecies[record.species] ?? 0) + 1;
-      colorBySpecies.putIfAbsent(record.species, () => record.accent);
-    }
-
-    final entries = countsBySpecies.entries.toList()
-      ..sort((left, right) => right.value.compareTo(left.value));
-
-    return entries
-        .map(
-          (entry) => SpeciesShare(
-            label: entry.key,
-            value: entry.value,
-            color: colorBySpecies[entry.key] ?? const Color(0xFF0B7A75),
-          ),
-        )
-        .toList();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final dailyDistribution = _dailyDistribution;
-    final speciesShares = _speciesShares;
+    final summary = _rangeSummary;
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -250,6 +222,7 @@ class _StatsPageState extends State<StatsPage> {
           selectedRangeDays: _selectedRangeDays,
           onSelectRange: _isLoading ? null : _pickDateRange,
           onStationChanged: _isLoading ? null : _changeStation,
+          totalCount: summary?.totalCount ?? 0,
         ),
         const SizedBox(height: 18),
         Text('所选时间段识别数量分布', style: Theme.of(context).textTheme.titleLarge),
@@ -262,14 +235,14 @@ class _StatsPageState extends State<StatsPage> {
           )
         else if (_isLoading)
           const _LoadingPanel()
-        else if (dailyDistribution.isEmpty)
+        else if (summary == null || summary.dailyDistribution.isEmpty)
           const _MessagePanel(
             icon: Icons.search_off,
             title: '暂无识别记录',
             description: '所选时间段和站点下没有查询到记录。',
           )
         else
-          _DailyDistributionCard(points: dailyDistribution),
+          _DailyDistributionCard(points: summary.dailyDistribution),
         const SizedBox(height: 18),
         Text('物种占比', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 10),
@@ -281,17 +254,98 @@ class _StatsPageState extends State<StatsPage> {
           )
         else if (_isLoading)
           const _LoadingPanel()
-        else if (speciesShares.isEmpty)
+        else if (summary == null || summary.speciesShares.isEmpty)
           const _MessagePanel(
             icon: Icons.flutter_dash,
             title: '暂无物种分布',
             description: '所选时间段和站点下没有可统计的物种数据。',
           )
         else
-          _SpeciesShareCard(shares: speciesShares),
+          _SpeciesShareCard(shares: summary.speciesShares),
+        const SizedBox(height: 18),
+        Text('峰值信息', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 10),
+        if (_errorMessage != null)
+          _MessagePanel(
+            icon: Icons.error_outline,
+            title: '数据加载失败',
+            description: _errorMessage!,
+          )
+        else if (_isLoading)
+          const _LoadingPanel()
+        else if (summary == null || summary.totalCount == 0)
+          const _MessagePanel(
+            icon: Icons.trending_flat,
+            title: '暂无峰值数据',
+            description: '所选时间段内没有记录。',
+          )
+        else ...[
+          _PeakInfoTile(
+            icon: Icons.calendar_today_outlined,
+            label: '峰值日期',
+            value: '${summary.peakDay.label}（${summary.peakDay.value} 条）',
+          ),
+          const SizedBox(height: 10),
+          _PeakInfoTile(
+            icon: Icons.sensors_outlined,
+            label: '最活跃站点',
+            value: summary.peakDevice.deviceName.isNotEmpty
+                ? '${summary.peakDevice.deviceName}（${summary.peakDevice.recordCount} 条）'
+                : '暂无数据',
+          ),
+        ],
         const SizedBox(height: 18),
         const _StatsNoteCard(),
       ],
+    );
+  }
+}
+
+class _PeakInfoTile extends StatelessWidget {
+  const _PeakInfoTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: Theme.of(context)
+                .colorScheme
+                .primaryContainer,
+            child: Icon(icon, color: Theme.of(context).colorScheme.primary),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: Colors.black54),
+          ),
+          const Spacer(),
+          Flexible(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.end,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -304,6 +358,7 @@ class _StatsQueryPanel extends StatelessWidget {
     required this.selectedRangeDays,
     required this.onSelectRange,
     required this.onStationChanged,
+    this.totalCount = 0,
   });
 
   final List<RecordStationOption> stations;
@@ -312,6 +367,7 @@ class _StatsQueryPanel extends StatelessWidget {
   final int selectedRangeDays;
   final VoidCallback? onSelectRange;
   final ValueChanged<String?>? onStationChanged;
+  final int totalCount;
 
   @override
   Widget build(BuildContext context) {
@@ -368,6 +424,16 @@ class _StatsQueryPanel extends StatelessWidget {
               context,
             ).textTheme.bodySmall?.copyWith(color: Colors.black54),
           ),
+          if (totalCount > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              '共 $totalCount 条识别记录',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ],
         ],
       ),
     );
