@@ -5,6 +5,7 @@ import hashlib
 import re
 from collections import Counter
 from datetime import date, datetime, time, timedelta, timezone
+from typing import Any
 from uuid import UUID, uuid4
 
 from src.iface.business.data_server_svc import IDataServerService
@@ -53,26 +54,46 @@ class DataServerService(IDataServerService):
         self._record_manager = record_manager
         self._envelope_manager = envelope_manager
 
+    @staticmethod
+    def _observe_business_call(interface_name: str, status: str, detail: str = "") -> None:
+        message = f"[observe] service=data_server interface={interface_name} status={status}"
+        if detail:
+            message = f"{message} {detail}"
+        print(message, flush=True)
+
     async def get_user_profile(
         self,
         request: ClientUserProfileRequest,
     ) -> ClientUserProfileResponse | None:
         """查询用户资料。"""
+        interface_name = "client.users.profile"
         identifier = self._normalize_text(request.identifier)
         if not identifier:
             raise ValueError("identifier is required")
 
-        profiles = await self._user_profile_manager.list_all()
-        profile = self._find_profile_by_identifier(profiles, identifier)
-        if profile is None:
-            return None
-        return self._profile_to_response(profile)
+        try:
+            profiles = await self._user_profile_manager.list_all()
+            profile = self._find_profile_by_identifier(profiles, identifier)
+            if profile is None:
+                self._observe_business_call(interface_name, "success", "result=none")
+                return None
+            result = self._profile_to_response(profile)
+            self._observe_business_call(interface_name, "success", "result=found")
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def register_user(
         self,
         request: ClientRegisterRequest,
     ) -> ClientRegisterResponse:
         """注册新用户。"""
+        interface_name = "client.users.register"
         normalized_username = self._normalize_username(request.username)
         display_name = self._display_text(request.username)
         password = self._normalize_text(request.password)
@@ -81,20 +102,32 @@ class DataServerService(IDataServerService):
         normalized_phone = self._normalize_phone(raw_phone)
 
         if not normalized_username or len(password) < 6:
-            return ClientRegisterResponse(
+            result = ClientRegisterResponse(
                 ok=False,
                 error_code="invalid_data",
                 message="注册信息不完整",
             )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result=ok={result.ok} error_code={result.error_code}",
+            )
+            return result
 
         try:
             profiles = await self._user_profile_manager.list_all()
         except Exception:
-            return ClientRegisterResponse(
+            result = ClientRegisterResponse(
                 ok=False,
                 error_code="data_error",
                 message="注册数据异常，请稍后重试",
             )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result=ok={result.ok} error_code={result.error_code}",
+            )
+            return result
 
         duplicate_error = self._find_registration_conflict(
             profiles,
@@ -103,22 +136,39 @@ class DataServerService(IDataServerService):
             phone=normalized_phone,
         )
         if duplicate_error is not None:
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result=ok={duplicate_error.ok} error_code={duplicate_error.error_code}",
+            )
             return duplicate_error
 
         try:
             hash_algorithm, password_hash = CryptoUtils.hash_password(password)
         except ValueError:
-            return ClientRegisterResponse(
+            result = ClientRegisterResponse(
                 ok=False,
                 error_code="data_error",
                 message="注册数据异常，请稍后重试",
             )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result=ok={result.ok} error_code={result.error_code}",
+            )
+            return result
         except Exception:
-            return ClientRegisterResponse(
+            result = ClientRegisterResponse(
                 ok=False,
                 error_code="unknown_error",
                 message="注册失败，请稍后重试",
             )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result=ok={result.ok} error_code={result.error_code}",
+            )
+            return result
 
         now_ms = DataServerService._now_ms()
 
@@ -136,17 +186,29 @@ class DataServerService(IDataServerService):
         try:
             created_profile = await self._user_profile_manager.create(profile)
         except ValueError:
-            return ClientRegisterResponse(
+            result = ClientRegisterResponse(
                 ok=False,
                 error_code="invalid_data",
                 message="注册信息不完整",
             )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result=ok={result.ok} error_code={result.error_code}",
+            )
+            return result
         except Exception:
-            return ClientRegisterResponse(
+            result = ClientRegisterResponse(
                 ok=False,
                 error_code="data_error",
                 message="注册数据异常，请稍后重试",
             )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result=ok={result.ok} error_code={result.error_code}",
+            )
+            return result
 
         user_entity = UserEntity(
             user_entity_id=uuid4(),
@@ -172,227 +234,336 @@ class DataServerService(IDataServerService):
                 await self._user_profile_manager.delete(created_profile.id)
             except Exception:
                 pass
-            return ClientRegisterResponse(
+            result = ClientRegisterResponse(
                 ok=False,
                 error_code="data_error",
                 message="注册数据异常，请稍后重试",
             )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result=ok={result.ok} error_code={result.error_code}",
+            )
+            return result
 
-        return ClientRegisterResponse(ok=True, message="注册成功")
+        result = ClientRegisterResponse(ok=True, message="注册成功")
+        self._observe_business_call(interface_name, "success", f"result=ok={result.ok}")
+        return result
 
     async def count_today_monitoring_records(self) -> int:
         """统计今天的监测记录数。"""
-        return await self._record_manager.count_today_monitoring_records()
+        interface_name = "client.stats.today_monitoring_count"
+        try:
+            result = await self._record_manager.count_today_monitoring_records()
+            self._observe_business_call(interface_name, "success", f"result={result}")
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def count_today_upload_records(self) -> int:
         """统计今天的上传记录数。"""
-        return await self._envelope_manager.count_today_upload_records()
+        interface_name = "client.stats.today_upload_count"
+        try:
+            result = await self._envelope_manager.count_today_upload_records()
+            self._observe_business_call(interface_name, "success", f"result={result}")
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def count_online_stations(self) -> int:
         """统计在线的站点数。"""
-        devices = await self._device_entity_manager.list_all()
-        return len(devices)
+        interface_name = "client.stats.online_station_count"
+        try:
+            devices = await self._device_entity_manager.list_all()
+            result = len(devices)
+            self._observe_business_call(interface_name, "success", f"result={result}")
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def get_today_top_upload_station(self) -> ClientUploadStationSummaryResponse:
         """获取今天上传最活跃的站点摘要。"""
-        summary = await self._envelope_manager.get_today_top_upload_site()
-        if summary is None:
-            return ClientUploadStationSummaryResponse(
-                device_id="",
-                device_name="暂无数据",
-                upload_count=0,
+        interface_name = "client.stats.today_top_upload_station"
+        try:
+            summary = await self._envelope_manager.get_today_top_upload_site()
+            if summary is None:
+                result = ClientUploadStationSummaryResponse(
+                    device_id="",
+                    device_name="暂无数据",
+                    upload_count=0,
+                )
+                self._observe_business_call(interface_name, "success", "result=empty")
+                return result
+            device_id = str(summary.get("device_entity_id") or "").strip()
+            device_name = self._display_text(
+                str(summary.get("device_name") or "").strip(),
+                fallback=device_id,
             )
-        device_id = str(summary.get("device_entity_id") or "").strip()
-        device_name = self._display_text(
-            str(summary.get("device_name") or "").strip(),
-            fallback=device_id,
-        )
-        upload_count_raw = summary.get("upload_count")
-        return ClientUploadStationSummaryResponse(
-            device_id=device_id,
-            device_name=device_name,
-            upload_count=int(upload_count_raw) if upload_count_raw is not None else 0,
-        )
+            upload_count_raw = summary.get("upload_count")
+            result = ClientUploadStationSummaryResponse(
+                device_id=device_id,
+                device_name=device_name,
+                upload_count=int(upload_count_raw) if upload_count_raw is not None else 0,
+            )
+            self._observe_business_call(interface_name, "success", "result=ok")
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def get_latest_upload_summary(self) -> ClientLatestUploadSummaryResponse:
         """获取最近上传的站点和时间摘要。"""
-        summary = await self._envelope_manager.get_latest_upload_summary()
-        if summary is None:
-            return ClientLatestUploadSummaryResponse(
-                device_id="",
-                device_name="-",
-                uploaded_at_ms=None,
-                uploaded_at_label="-",
-            )
+        interface_name = "client.stats.latest_upload_summary"
+        try:
+            summary = await self._envelope_manager.get_latest_upload_summary()
+            if summary is None:
+                result = ClientLatestUploadSummaryResponse(
+                    device_id="",
+                    device_name="-",
+                    uploaded_at_ms=None,
+                    uploaded_at_label="-",
+                )
+                self._observe_business_call(interface_name, "success", "result=empty")
+                return result
 
-        uploaded_at_ms_raw = summary.get("received_at_ms")
-        device_id = str(summary.get("device_entity_id") or "").strip()
-        device_name = self._display_text(
-            str(summary.get("device_name") or "").strip(), fallback=device_id
-        )
-        uploaded_at_ms = (
-            int(uploaded_at_ms_raw) if uploaded_at_ms_raw is not None else None
-        )
-        return ClientLatestUploadSummaryResponse(
-            device_id=device_id,
-            device_name=device_name,
-            uploaded_at_ms=uploaded_at_ms,
-            uploaded_at_label=self._format_local_ms(uploaded_at_ms)
-            if uploaded_at_ms is not None
-            else "-",
-        )
+            uploaded_at_ms_raw = summary.get("received_at_ms")
+            device_id = str(summary.get("device_entity_id") or "").strip()
+            device_name = self._display_text(
+                str(summary.get("device_name") or "").strip(), fallback=device_id
+            )
+            uploaded_at_ms = (
+                int(uploaded_at_ms_raw) if uploaded_at_ms_raw is not None else None
+            )
+            result = ClientLatestUploadSummaryResponse(
+                device_id=device_id,
+                device_name=device_name,
+                uploaded_at_ms=uploaded_at_ms,
+                uploaded_at_label=self._format_local_ms(uploaded_at_ms)
+                if uploaded_at_ms is not None
+                else "-",
+            )
+            self._observe_business_call(interface_name, "success", "result=ok")
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def list_recent_records(
         self, limit: int = 3
     ) -> list[ClientBirdRecordResponse]:
         """获取首页最近的监测记录摘要列表。默认为最近 3 条记录。"""
+        interface_name = "client.records.latest"
         normalized_limit = max(int(limit), 0)
         if normalized_limit == 0:
+            self._observe_business_call(interface_name, "success", "result=empty")
             return []
 
-        if normalized_limit <= 3:
-            records = await self._record_manager.list_latest_three()
-            return await self._records_to_client_responses(records[:normalized_limit])
-
-        records = await self._record_manager.list_all()
-        sorted_records = sorted(records, key=self._record_sort_key, reverse=True)
-        return await self._records_to_client_responses(
-            sorted_records[:normalized_limit]
-        )
+        try:
+            if normalized_limit <= 3:
+                records = await self._record_manager.list_latest_three()
+                result = await self._records_to_client_responses(
+                    records[:normalized_limit]
+                )
+            else:
+                records = await self._record_manager.list_all()
+                sorted_records = sorted(records, key=self._record_sort_key, reverse=True)
+                result = await self._records_to_client_responses(
+                    sorted_records[:normalized_limit]
+                )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result_count={len(result)}",
+            )
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def get_dashboard_snapshot(
         self,
         request: ClientHomeSnapshotRequest | None = None,
     ) -> ClientDashboardSnapshotResponse:
         """获取首页概览数据。该接口为聚合接口，内部调用多个管理器方法组合得到结果，用于减少客户端并发请求数。"""
+        interface_name = "client.home.summary"
+        try:
+            _ = (
+                request.device_id if request is not None else None
+            )  # 目前请求参数未使用，预留后续按站点过滤的能力
+            devices, records, envelopes = await asyncio.gather(
+                self._device_entity_manager.list_all(),
+                self._record_manager.list_all(),
+                self._envelope_manager.list_all(),
+            )
 
-        _ = (
-            request.device_id if request is not None else None
-        )  # 目前请求参数未使用，预留后续按站点过滤的能力
-        devices, records, envelopes = await asyncio.gather(
-            self._device_entity_manager.list_all(),
-            self._record_manager.list_all(),
-            self._envelope_manager.list_all(),
-        )
-
-        today = self._today_local()
-        today_monitoring_count = sum(
-            1
-            for record in records
-            if self._is_same_local_day(record.captured_at_ms, today)
-        )
-        today_upload_count = sum(
-            1
-            for envelope in envelopes
-            if self._is_same_local_day(envelope.received_at_ms, today)
-        )
-        active_station_count = len(
-            {
-                str(record.device_entity_id)
+            today = self._today_local()
+            today_monitoring_count = sum(
+                1
                 for record in records
-                if str(record.device_entity_id).strip()
-            }
-        )
+                if self._is_same_local_day(record.captured_at_ms, today)
+            )
+            today_upload_count = sum(
+                1
+                for envelope in envelopes
+                if self._is_same_local_day(envelope.received_at_ms, today)
+            )
+            active_station_count = len(
+                {
+                    str(record.device_entity_id)
+                    for record in records
+                    if str(record.device_entity_id).strip()
+                }
+            )
 
-        today_uploads = [
-            envelope
-            for envelope in envelopes
-            if self._is_same_local_day(envelope.received_at_ms, today)
-        ]
-        if today_uploads:
-            counts: Counter[str] = Counter()
-            names: dict[str, str] = {}
-            for envelope in today_uploads:
-                device_id = str(envelope.device_entity_id)
-                counts[device_id] += 1
-                names.setdefault(
-                    device_id,
-                    self._display_text(envelope.device_name, fallback=device_id),
+            today_uploads = [
+                envelope
+                for envelope in envelopes
+                if self._is_same_local_day(envelope.received_at_ms, today)
+            ]
+            if today_uploads:
+                counts: Counter[str] = Counter()
+                names: dict[str, str] = {}
+                for envelope in today_uploads:
+                    device_id = str(envelope.device_entity_id)
+                    counts[device_id] += 1
+                    names.setdefault(
+                        device_id,
+                        self._display_text(envelope.device_name, fallback=device_id),
+                    )
+                top_device_id, top_count = max(
+                    counts.items(), key=lambda item: (item[1], item[0])
                 )
-            top_device_id, top_count = max(
-                counts.items(), key=lambda item: (item[1], item[0])
-            )
-            top_upload_station = ClientUploadStationSummaryResponse(
-                device_id=top_device_id,
-                device_name=names.get(top_device_id, top_device_id),
-                upload_count=top_count,
-            )
-        else:
-            top_upload_station = ClientUploadStationSummaryResponse(
-                device_id="",
-                device_name="暂无数据",
-                upload_count=0,
+                top_upload_station = ClientUploadStationSummaryResponse(
+                    device_id=top_device_id,
+                    device_name=names.get(top_device_id, top_device_id),
+                    upload_count=top_count,
+                )
+            else:
+                top_upload_station = ClientUploadStationSummaryResponse(
+                    device_id="",
+                    device_name="暂无数据",
+                    upload_count=0,
+                )
+
+            if envelopes:
+                latest_envelope = max(
+                    envelopes, key=lambda item: (item.received_at_ms, str(item.id))
+                )
+                latest_upload = ClientLatestUploadSummaryResponse(
+                    device_id=str(latest_envelope.device_entity_id),
+                    device_name=self._display_text(
+                        latest_envelope.device_name,
+                        fallback=str(latest_envelope.device_entity_id),
+                    ),
+                    uploaded_at_ms=latest_envelope.received_at_ms,
+                    uploaded_at_label=self._format_local_ms(latest_envelope.received_at_ms),
+                )
+            else:
+                latest_upload = ClientLatestUploadSummaryResponse(
+                    device_id="",
+                    device_name="-",
+                    uploaded_at_ms=None,
+                    uploaded_at_label="-",
+                )
+
+            recent_records = await self._records_to_client_responses(
+                sorted(records, key=self._record_sort_key, reverse=True)[:3]
             )
 
-        if envelopes:
-            latest_envelope = max(
-                envelopes, key=lambda item: (item.received_at_ms, str(item.id))
+            result = ClientDashboardSnapshotResponse(
+                today_recognition_count=today_monitoring_count,
+                today_upload_count=today_upload_count,
+                online_station_count=len(devices),
+                active_station_count=active_station_count,
+                top_upload_station=top_upload_station,
+                latest_upload=latest_upload,
+                recent_records=recent_records,
             )
-            latest_upload = ClientLatestUploadSummaryResponse(
-                device_id=str(latest_envelope.device_entity_id),
-                device_name=self._display_text(
-                    latest_envelope.device_name,
-                    fallback=str(latest_envelope.device_entity_id),
-                ),
-                uploaded_at_ms=latest_envelope.received_at_ms,
-                uploaded_at_label=self._format_local_ms(latest_envelope.received_at_ms),
+            self._observe_business_call(interface_name, "success", "result=ok")
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
             )
-        else:
-            latest_upload = ClientLatestUploadSummaryResponse(
-                device_id="",
-                device_name="-",
-                uploaded_at_ms=None,
-                uploaded_at_label="-",
-            )
-
-        recent_records = await self._records_to_client_responses(
-            sorted(records, key=self._record_sort_key, reverse=True)[:3]
-        )
-
-        return ClientDashboardSnapshotResponse(
-            today_recognition_count=today_monitoring_count,
-            today_upload_count=today_upload_count,
-            online_station_count=len(devices),
-            active_station_count=active_station_count,
-            top_upload_station=top_upload_station,
-            latest_upload=latest_upload,
-            recent_records=recent_records,
-        )
+            raise
 
     async def list_record_station_options(
         self,
         request: ClientRecordStationOptionsRequest | None = None,
     ) -> list[ClientRecordStationOptionResponse]:
         """列出记录页/统计页的站点筛选选项。返回可用于下拉框展示的站点 ID、站点名和在线状态。"""
-        devices = await self._device_entity_manager.list_all()
-        include_offline = None if request is None else request.include_offline
+        interface_name = "client.records.station_options"
+        try:
+            devices = await self._device_entity_manager.list_all()
+            include_offline = None if request is None else request.include_offline
 
-        sorted_devices = sorted(
-            devices,
-            key=lambda item: (
-                self._display_text(
-                    item.device_name, fallback=str(item.device_entity_id)
-                ).casefold(),
-                str(item.device_entity_id),
-            ),
-        )
-
-        result: list[ClientRecordStationOptionResponse] = []
-        for device in sorted_devices:
-            online = self._device_is_online(device)
-            if include_offline is False and not online:
-                continue
-            result.append(
-                ClientRecordStationOptionResponse(
-                    device_id=str(device.device_entity_id),
-                    device_name=self._display_text(
-                        device.device_name, fallback=str(device.device_entity_id)
-                    ),
-                    online=online,
-                    status=self._normalize_device_status(device.status),
-                )
+            sorted_devices = sorted(
+                devices,
+                key=lambda item: (
+                    self._display_text(
+                        item.device_name, fallback=str(item.device_entity_id)
+                    ).casefold(),
+                    str(item.device_entity_id),
+                ),
             )
-        return result
+
+            result: list[ClientRecordStationOptionResponse] = []
+            for device in sorted_devices:
+                online = self._device_is_online(device)
+                if include_offline is False and not online:
+                    continue
+                result.append(
+                    ClientRecordStationOptionResponse(
+                        device_id=str(device.device_entity_id),
+                        device_name=self._display_text(
+                            device.device_name, fallback=str(device.device_entity_id)
+                        ),
+                        online=online,
+                        status=self._normalize_device_status(device.status),
+                    )
+                )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result_count={len(result)}",
+            )
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def list_records_by_cursor(
         self,
@@ -400,176 +571,218 @@ class DataServerService(IDataServerService):
     ) -> ClientRecordsCursorResponse:
         """基于游标分页的监测记录查询接口。支持按时间范围、站点、关键词和置信度过滤。
         返回符合条件的记录列表，以及下一页的游标和是否有更多数据的标志。"""
+        interface_name = "client.records.cursor"
+        try:
+            start_day, end_day = self._resolve_day_range(
+                request.start_at_ms,
+                request.end_at_ms,
+                default_days=7,
+            )
+            records = await self._record_manager.list_all()
+            filtered = self._filter_records(
+                records,
+                start_day=start_day,
+                end_day=end_day,
+                device_id=request.device_id,
+                keyword=request.keyword,
+                confidence_min=request.confidence_min,
+            )
+            sorted_records = sorted(filtered, key=self._record_sort_key, reverse=True)
 
-        start_day, end_day = self._resolve_day_range(
-            request.start_at_ms,
-            request.end_at_ms,
-            default_days=7,
-        )
-        records = await self._record_manager.list_all()
-        filtered = self._filter_records(
-            records,
-            start_day=start_day,
-            end_day=end_day,
-            device_id=request.device_id,
-            keyword=request.keyword,
-            confidence_min=request.confidence_min,
-        )
-        sorted_records = sorted(filtered, key=self._record_sort_key, reverse=True)
+            cursor_index = self._parse_cursor(request.cursor)
+            limit = request.limit if request.limit > 0 else 20
+            if limit > 100:
+                limit = 100
+            page_items = sorted_records[cursor_index : cursor_index + limit]
+            next_cursor_index = cursor_index + len(page_items)
 
-        cursor_index = self._parse_cursor(request.cursor)
-        limit = request.limit if request.limit > 0 else 20
-        if limit > 100:
-            limit = 100
-        page_items = sorted_records[cursor_index : cursor_index + limit]
-        next_cursor_index = cursor_index + len(page_items)
-
-        items = await self._records_to_client_responses(page_items)
-        return ClientRecordsCursorResponse(
-            items=items,
-            next_cursor=(
-                str(next_cursor_index)
-                if next_cursor_index < len(sorted_records)
-                else ""
-            ),
-            has_more=next_cursor_index < len(sorted_records),
-        )
+            items = await self._records_to_client_responses(page_items)
+            result = ClientRecordsCursorResponse(
+                items=items,
+                next_cursor=(
+                    str(next_cursor_index)
+                    if next_cursor_index < len(sorted_records)
+                    else ""
+                ),
+                has_more=next_cursor_index < len(sorted_records),
+            )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result_count={len(items)} has_more={result.has_more}",
+            )
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def get_weekly_trend(
         self,
         request: ClientWeeklyTrendRequest,
     ) -> ClientWeeklyTrendResponse:
         """获取最近一周的监测记录趋势数据。返回每天的记录数量，以及总记录数。"""
+        interface_name = "client.stats.weekly_trend"
+        try:
+            days = request.days if request.days > 0 else 7
+            today = self._today_local()
+            start_day = today - timedelta(days=days - 1)
+            end_day = today
 
-        days = request.days if request.days > 0 else 7
-        today = self._today_local()
-        start_day = today - timedelta(days=days - 1)
-        end_day = today
-
-        records = await self._record_manager.list_all()
-        filtered_records = self._filter_records(
-            records,
-            start_day=start_day,
-            end_day=end_day,
-            device_id=request.device_id,
-            keyword=None,
-            confidence_min=None,
-        )
-
-        counts_by_day: dict[date, int] = {}
-        for record in filtered_records:
-            record_day = self._local_date_from_ms(record.captured_at_ms)
-            counts_by_day[record_day] = counts_by_day.get(record_day, 0) + 1
-
-        series: list[ClientTrendPointResponse] = []
-        current_day = start_day
-        while current_day <= end_day:
-            series.append(
-                ClientTrendPointResponse(
-                    label=self._weekday_label(current_day),
-                    value=counts_by_day.get(current_day, 0),
-                    date_ms=self._local_day_start_ms(current_day),
-                )
+            records = await self._record_manager.list_all()
+            filtered_records = self._filter_records(
+                records,
+                start_day=start_day,
+                end_day=end_day,
+                device_id=request.device_id,
+                keyword=None,
+                confidence_min=None,
             )
-            current_day = current_day + timedelta(days=1)
 
-        return ClientWeeklyTrendResponse(
-            series=series,
-            total=sum(point.value for point in series),
-        )
+            counts_by_day: dict[date, int] = {}
+            for record in filtered_records:
+                record_day = self._local_date_from_ms(record.captured_at_ms)
+                counts_by_day[record_day] = counts_by_day.get(record_day, 0) + 1
+
+            series: list[ClientTrendPointResponse] = []
+            current_day = start_day
+            while current_day <= end_day:
+                series.append(
+                    ClientTrendPointResponse(
+                        label=self._weekday_label(current_day),
+                        value=counts_by_day.get(current_day, 0),
+                        date_ms=self._local_day_start_ms(current_day),
+                    )
+                )
+                current_day = current_day + timedelta(days=1)
+
+            result = ClientWeeklyTrendResponse(
+                series=series,
+                total=sum(point.value for point in series),
+            )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result_count={len(series)} total={result.total}",
+            )
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def get_range_summary(
         self,
         request: ClientRangeSummaryRequest,
     ) -> ClientRangeSummaryResponse:
         """获取指定时间范围内的监测记录摘要数据。返回总记录数、每天的记录数量分布、物种占比、峰值日期和峰值站点等信息。"""
+        interface_name = "client.stats.range_summary"
+        try:
+            start_day, end_day = self._resolve_day_range(
+                request.start_at_ms,
+                request.end_at_ms,
+                default_days=7,
+            )
+            if end_day < start_day:
+                raise ValueError("end_at_ms must be greater than or equal to start_at_ms")
+            if (end_day - start_day).days + 1 > 30:
+                raise ValueError("time range cannot exceed 30 days")
 
-        start_day, end_day = self._resolve_day_range(
-            request.start_at_ms,
-            request.end_at_ms,
-            default_days=7,
-        )
-        if end_day < start_day:
-            raise ValueError("end_at_ms must be greater than or equal to start_at_ms")
-        if (end_day - start_day).days + 1 > 30:
-            raise ValueError("time range cannot exceed 30 days")
+            records = await self._record_manager.list_all()
+            filtered_records = self._filter_records(
+                records,
+                start_day=start_day,
+                end_day=end_day,
+                device_id=request.device_id,
+                keyword=None,
+                confidence_min=None,
+            )
 
-        records = await self._record_manager.list_all()
-        filtered_records = self._filter_records(
-            records,
-            start_day=start_day,
-            end_day=end_day,
-            device_id=request.device_id,
-            keyword=None,
-            confidence_min=None,
-        )
+            daily_distribution: list[ClientTrendPointResponse] = []
+            counts_by_day: dict[date, int] = {}
+            for record in filtered_records:
+                record_day = self._local_date_from_ms(record.captured_at_ms)
+                counts_by_day[record_day] = counts_by_day.get(record_day, 0) + 1
 
-        daily_distribution: list[ClientTrendPointResponse] = []
-        counts_by_day: dict[date, int] = {}
-        for record in filtered_records:
-            record_day = self._local_date_from_ms(record.captured_at_ms)
-            counts_by_day[record_day] = counts_by_day.get(record_day, 0) + 1
-
-        current_day = start_day
-        while current_day <= end_day:
-            daily_distribution.append(
-                ClientTrendPointResponse(
-                    label=f"{current_day.month}/{current_day.day}",
-                    value=counts_by_day.get(current_day, 0),
-                    date_ms=self._local_day_start_ms(current_day),
+            current_day = start_day
+            while current_day <= end_day:
+                daily_distribution.append(
+                    ClientTrendPointResponse(
+                        label=f"{current_day.month}/{current_day.day}",
+                        value=counts_by_day.get(current_day, 0),
+                        date_ms=self._local_day_start_ms(current_day),
+                    )
                 )
-            )
-            current_day = current_day + timedelta(days=1)
+                current_day = current_day + timedelta(days=1)
 
-        if daily_distribution:
-            peak_point = max(
-                daily_distribution,
-                key=lambda item: (item.value, -self._safe_day_index(item.date_ms)),
-            )
-            peak_day = ClientPeakDayResponse(
-                label=peak_point.label,
-                value=peak_point.value,
-                date_ms=peak_point.date_ms,
-            )
-        else:
-            peak_day = ClientPeakDayResponse(label="-", value=0, date_ms=None)
-
-        species_counts: Counter[str] = Counter()
-        species_entity_ids: dict[str, str] = {}
-        for record in filtered_records:
-            species_label = self._display_text(
-                record.species_name, fallback=record.scientific_name
-            )
-            if not species_label:
-                species_label = "-"
-            species_counts[species_label] += 1
-            if record.species_entity_id is not None:
-                species_entity_ids.setdefault(
-                    species_label, str(record.species_entity_id)
+            if daily_distribution:
+                peak_point = max(
+                    daily_distribution,
+                    key=lambda item: (item.value, -self._safe_day_index(item.date_ms)),
                 )
+                peak_day = ClientPeakDayResponse(
+                    label=peak_point.label,
+                    value=peak_point.value,
+                    date_ms=peak_point.date_ms,
+                )
+            else:
+                peak_day = ClientPeakDayResponse(label="-", value=0, date_ms=None)
 
-        species_shares = [
-            ClientSpeciesShareResponse(
-                label=species_label,
-                value=count,
-                ratio=(count / len(filtered_records)) if filtered_records else 0.0,
-                species_entity_id=species_entity_ids.get(species_label, ""),
-                color_hex=self._species_color_hex(species_label),
+            species_counts: Counter[str] = Counter()
+            species_entity_ids: dict[str, str] = {}
+            for record in filtered_records:
+                species_label = self._display_text(
+                    record.species_name, fallback=record.scientific_name
+                )
+                if not species_label:
+                    species_label = "-"
+                species_counts[species_label] += 1
+                if record.species_entity_id is not None:
+                    species_entity_ids.setdefault(
+                        species_label, str(record.species_entity_id)
+                    )
+
+            species_shares = [
+                ClientSpeciesShareResponse(
+                    label=species_label,
+                    value=count,
+                    ratio=(count / len(filtered_records)) if filtered_records else 0.0,
+                    species_entity_id=species_entity_ids.get(species_label, ""),
+                    color_hex=self._species_color_hex(species_label),
+                )
+                for species_label, count in sorted(
+                    species_counts.items(), key=lambda item: (-item[1], item[0])
+                )
+            ]
+
+            peak_device = self._build_peak_device_summary(filtered_records)
+
+            result = ClientRangeSummaryResponse(
+                total_count=len(filtered_records),
+                daily_distribution=daily_distribution,
+                species_shares=species_shares,
+                peak_day=peak_day,
+                peak_device=peak_device,
             )
-            for species_label, count in sorted(
-                species_counts.items(), key=lambda item: (-item[1], item[0])
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result_count={result.total_count}",
             )
-        ]
-
-        peak_device = self._build_peak_device_summary(filtered_records)
-
-        return ClientRangeSummaryResponse(
-            total_count=len(filtered_records),
-            daily_distribution=daily_distribution,
-            species_shares=species_shares,
-            peak_day=peak_day,
-            peak_device=peak_device,
-        )
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     @staticmethod
     def _record_sort_key(record: MonitoringRecord) -> tuple[int, str]:

@@ -189,8 +189,8 @@ services:
     # 需要确保 -a 参数中的密码与上方 redis-template 中的 requirepass 和 masterauth 保持一致
     command: >
       sh -c "sleep 5 && echo 'yes' | redis-cli -a 'YourRedisPassword123!' --cluster create \
-      host.docker.internal:7001 host.docker.internal:7002 host.docker.internal:7003 \
-      host.docker.internal:7004 host.docker.internal:7005 host.docker.internal:7006 \
+        host.docker.internal:7001 host.docker.internal:7002 host.docker.internal:7003 \
+        host.docker.internal:7004 host.docker.internal:7005 host.docker.internal:7006 \
       --cluster-replicas 1"
 
   # ==========================================

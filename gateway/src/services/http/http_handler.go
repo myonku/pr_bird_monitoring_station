@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -144,6 +145,7 @@ func (h *GatewayHTTPHandler) handleAuthRoute(
 	headers map[string]string,
 	bodyBytes []byte,
 ) {
+	logGatewayObservation(spec.operation, "received", fmt.Sprintf("kind=auth route=%s auth_route=%s", spec.routeKey, spec.AuthRoute))
 	profile, err := h.resolveRouteProfile(ctx, spec, headers)
 	if err != nil {
 		h.writeError(w, http.StatusBadGateway, err.Error())
@@ -188,6 +190,7 @@ func (h *GatewayHTTPHandler) handleBusinessRoute(
 	headers map[string]string,
 	bodyBytes []byte,
 ) {
+	logGatewayObservation(spec.operation, "received", fmt.Sprintf("kind=business route=%s", spec.routeKey))
 	payload, err := buildBusinessPayload(r, bodyBytes)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, err.Error())
@@ -209,17 +212,22 @@ func (h *GatewayHTTPHandler) handleBusinessRoute(
 	}
 
 	var authResult *authcontrolif.AuthControlResult
+	authMode := "no_auth"
 	if h.runtime.RunMode != modelsystem.RuntimeRunModeNoAuth && spec.authRequired {
+		authMode = "authcontrol"
 		authInput, ok, parseErr := buildAuthorizationInput(headers, r)
 		if parseErr != nil {
+			logGatewayObservation(spec.operation, "failure", fmt.Sprintf("auth_mode=%s error=%s", authMode, parseErr.Error()))
 			h.writeError(w, http.StatusBadRequest, parseErr.Error())
 			return
 		}
 		if !ok {
+			logGatewayObservation(spec.operation, "failure", fmt.Sprintf("auth_mode=%s error=authorization header is required", authMode))
 			h.writeError(w, http.StatusUnauthorized, "authorization header is required")
 			return
 		}
 		if h.authControl == nil {
+			logGatewayObservation(spec.operation, "failure", fmt.Sprintf("auth_mode=%s error=authcontrol is not configured", authMode))
 			h.writeError(w, http.StatusServiceUnavailable, "authcontrol is not configured")
 			return
 		}
@@ -231,21 +239,36 @@ func (h *GatewayHTTPHandler) handleBusinessRoute(
 			RateLimit:     rateLimitInput,
 		})
 		if err != nil {
+			logGatewayObservation(spec.operation, "failure", fmt.Sprintf("auth_mode=%s error=%s", authMode, err.Error()))
 			h.writeError(w, authErrorStatus(err), err.Error())
 			return
 		}
 		if authResult == nil || authResult.RateLimitDecision == nil {
+			logGatewayObservation(spec.operation, "failure", fmt.Sprintf("auth_mode=%s error=authcontrol returned empty decision", authMode))
 			h.writeError(w, http.StatusBadGateway, "authcontrol returned empty decision")
 			return
 		}
+		logGatewayObservation(
+			spec.operation,
+			"decision",
+			fmt.Sprintf(
+				"auth_mode=%s allowed=%t reason=%s",
+				authMode,
+				authResult.RateLimitDecision.Allowed,
+				strings.TrimSpace(authResult.RateLimitDecision.Reason),
+			),
+		)
 		if !authResult.RateLimitDecision.Allowed {
 			reason := strings.TrimSpace(authResult.RateLimitDecision.Reason)
 			if reason == "" {
 				reason = "request is rate limited"
 			}
+			logGatewayObservation(spec.operation, "failure", fmt.Sprintf("auth_mode=%s allowed=false reason=%s", authMode, reason))
 			h.writeError(w, http.StatusTooManyRequests, reason)
 			return
 		}
+	} else {
+		logGatewayObservation(spec.operation, "decision", "auth_mode=no_auth allowed=true")
 	}
 
 	businessClient := h.businessClientFactory(profile.TargetEndpoint)
@@ -273,10 +296,12 @@ func (h *GatewayHTTPHandler) handleBusinessRoute(
 
 	resp, err := businessClient.ForwardBusiness(ctx, businessRequest)
 	if err != nil {
+		logGatewayObservation(spec.operation, "failure", fmt.Sprintf("auth_mode=%s error=%s", authMode, err.Error()))
 		h.writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	if resp == nil {
+		logGatewayObservation(spec.operation, "failure", fmt.Sprintf("auth_mode=%s error=business forward response is empty", authMode))
 		h.writeError(w, http.StatusBadGateway, "business forward response is empty")
 		return
 	}
@@ -285,9 +310,11 @@ func (h *GatewayHTTPHandler) handleBusinessRoute(
 		if reason == "" {
 			reason = "business forward rejected"
 		}
+		logGatewayObservation(spec.operation, "failure", fmt.Sprintf("auth_mode=%s allowed=false reason=%s", authMode, reason))
 		h.writeError(w, http.StatusBadGateway, reason)
 		return
 	}
+	logGatewayObservation(spec.operation, "success", fmt.Sprintf("auth_mode=%s allowed=true target_service=%s", authMode, profile.TargetServiceName))
 
 	if strings.TrimSpace(resp.GetPayload()) == "" {
 		w.WriteHeader(http.StatusOK)
@@ -754,6 +781,14 @@ func buildBusinessAuthContext(result *authcontrolif.AuthControlResult) *business
 	}
 }
 
+func logGatewayObservation(interfaceName string, status string, detail string) {
+	message := fmt.Sprintf("[observe] service=gateway interface=%s status=%s", interfaceName, status)
+	if strings.TrimSpace(detail) != "" {
+		message = fmt.Sprintf("%s %s", message, strings.TrimSpace(detail))
+	}
+	log.Print(message)
+}
+
 func buildBusinessMetadata(
 	runtime modelsystem.RuntimeConfig,
 	r *http.Request,
@@ -793,6 +828,12 @@ func mapClientAuthCredentialsResponse(userResult *communicationif.UserPasswordAu
 		response.IssuedAtMs = userResult.IssuedAt.UnixMilli()
 		if !userResult.ExpiresAt.IsZero() {
 			response.AccessExpiresAtMs = userResult.ExpiresAt.UnixMilli()
+		}
+		if response.RefreshExpiresAtMs == 0 {
+			response.RefreshExpiresAtMs = expiresAtFromIssued(
+				userResult.IssuedAt,
+				userResult.Tokens.RefreshToken,
+			)
 		}
 		if identity := userResult.Identity; identity != nil {
 			response.SessionID = uuidToString(identity.SessionID)

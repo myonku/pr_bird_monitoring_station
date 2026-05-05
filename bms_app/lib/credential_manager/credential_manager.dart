@@ -15,11 +15,11 @@ class MonitoringCredentialManager {
   MonitoringCredentialManager._internal({
     required AppMode initialMode,
     required AuthSessionStore persistentSessionStore,
-  })  : _mode = initialMode,
-        _persistentSessionStore = persistentSessionStore,
-        _sessionStore = initialMode == AppMode.noAuth
-            ? _disabledSessionStore
-            : persistentSessionStore {
+  }) : _mode = initialMode,
+       _persistentSessionStore = persistentSessionStore,
+       _sessionStore = initialMode == AppMode.noAuth
+           ? _disabledSessionStore
+           : persistentSessionStore {
     _session = _sessionStore.read();
   }
 
@@ -115,9 +115,13 @@ class MonitoringCredentialManager {
     try {
       refreshed = await refreshSession(session);
     } catch (_) {
-      await clearSession();
-      throw StateError('登录信息已失效，请重新登录');
+      throw StateError('会话刷新失败，请稍后重试');
     }
+
+    refreshed = _mergeSessionForRefresh(
+      previous: session,
+      refreshed: refreshed,
+    );
 
     if (!refreshed.credentials.hasAccessToken ||
         !refreshed.credentials.hasRefreshToken) {
@@ -134,5 +138,77 @@ class MonitoringCredentialManager {
     _session = refreshed;
     await _sessionStore.write(refreshed);
     return refreshed;
+  }
+
+  AuthSession _mergeSessionForRefresh({
+    required AuthSession previous,
+    required AuthSession refreshed,
+  }) {
+    return refreshed.copyWith(
+      loginIdentifier: _preferString(
+        refreshed.loginIdentifier,
+        previous.loginIdentifier,
+      ),
+      mode: refreshed.mode,
+      signedInAt: refreshed.signedInAt,
+      credentials: _mergeCredentialsForRefresh(
+        previous: previous.credentials,
+        refreshed: refreshed.credentials,
+      ),
+    );
+  }
+
+  AuthCredentials _mergeCredentialsForRefresh({
+    required AuthCredentials previous,
+    required AuthCredentials refreshed,
+  }) {
+    return refreshed.copyWith(
+      accessToken: _preferString(refreshed.accessToken, previous.accessToken),
+      refreshToken: _preferString(
+        refreshed.refreshToken,
+        previous.refreshToken,
+      ),
+      downstreamToken: _preferString(
+        refreshed.downstreamToken,
+        previous.downstreamToken,
+      ),
+      tokenType: _preferString(refreshed.tokenType, previous.tokenType),
+      sessionId: _preferString(refreshed.sessionId, previous.sessionId),
+      tokenId: _preferString(refreshed.tokenId, previous.tokenId),
+      principalId: _preferString(refreshed.principalId, previous.principalId),
+      tokenFamilyId: _preferString(
+        refreshed.tokenFamilyId,
+        previous.tokenFamilyId,
+      ),
+      scopes: refreshed.scopes.isNotEmpty ? refreshed.scopes : previous.scopes,
+      issuedAtMs: _preferPositiveInt(refreshed.issuedAtMs, previous.issuedAtMs),
+      accessExpiresAtMs: _preferPositiveInt(
+        refreshed.accessExpiresAtMs,
+        previous.accessExpiresAtMs,
+      ),
+      refreshExpiresAtMs: _preferPositiveInt(
+        refreshed.refreshExpiresAtMs,
+        previous.refreshExpiresAtMs,
+      ),
+      persisted: refreshed.persisted || previous.persisted,
+    );
+  }
+
+  String _preferString(String? primary, String? fallback) {
+    final normalizedPrimary = primary?.trim() ?? '';
+    if (normalizedPrimary.isNotEmpty) {
+      return normalizedPrimary;
+    }
+    return (fallback ?? '').trim();
+  }
+
+  int? _preferPositiveInt(int? primary, int? fallback) {
+    if (primary != null && primary > 0) {
+      return primary;
+    }
+    if (fallback != null && fallback > 0) {
+      return fallback;
+    }
+    return null;
   }
 }

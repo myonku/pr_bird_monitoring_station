@@ -111,21 +111,25 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
         refreshed_bundle: EdgeTokenBundle,
         now_ts: float,
     ) -> EdgeAuthState:
+        merged_bundle = self._merge_token_bundle(
+            previous_state.tokens,
+            refreshed_bundle,
+        )
         session = previous_state.session
         if session is not None:
             updated_session_id = session.session_id
             if (
-                refreshed_bundle.access_token is not None
-                and refreshed_bundle.access_token.session_id
+                merged_bundle.access_token is not None
+                and merged_bundle.access_token.session_id
             ):
-                updated_session_id = refreshed_bundle.access_token.session_id
+                updated_session_id = merged_bundle.access_token.session_id
 
             updated_family_id = session.token_family_id
             if (
-                refreshed_bundle.refresh_token is not None
-                and refreshed_bundle.refresh_token.family_id
+                merged_bundle.refresh_token is not None
+                and merged_bundle.refresh_token.family_id
             ):
-                updated_family_id = refreshed_bundle.refresh_token.family_id
+                updated_family_id = merged_bundle.refresh_token.family_id
 
             session = EdgeSession(
                 session_id=updated_session_id,
@@ -141,8 +145,67 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
         return EdgeAuthState(
             stage="ready",
             session=session,
-            tokens=refreshed_bundle,
+            tokens=merged_bundle,
             failure_reason="",
+        )
+
+    @staticmethod
+    def _prefer_text(primary: str | None, fallback: str | None) -> str:
+        normalized_primary = (primary or "").strip()
+        if normalized_primary:
+            return normalized_primary
+        return (fallback or "").strip()
+
+    @staticmethod
+    def _prefer_positive_number(primary: float, fallback: float) -> float:
+        if primary > 0:
+            return primary
+        if fallback > 0:
+            return fallback
+        return 0.0
+
+    def _merge_token(
+        self,
+        previous: EdgeToken | None,
+        refreshed: EdgeToken | None,
+    ) -> EdgeToken | None:
+        if refreshed is None:
+            return previous
+        if previous is None:
+            return refreshed
+
+        return EdgeToken(
+            raw=self._prefer_text(refreshed.raw, previous.raw),
+            token_type=refreshed.token_type or previous.token_type,
+            token_id=self._prefer_text(refreshed.token_id, previous.token_id),
+            family_id=self._prefer_text(refreshed.family_id, previous.family_id),
+            session_id=self._prefer_text(refreshed.session_id, previous.session_id),
+            issued_at=self._prefer_positive_number(
+                refreshed.issued_at,
+                previous.issued_at,
+            ),
+            expires_at=self._prefer_positive_number(
+                refreshed.expires_at,
+                previous.expires_at,
+            ),
+            scopes=refreshed.scopes or previous.scopes,
+            role=self._prefer_text(refreshed.role, previous.role),
+        )
+
+    def _merge_token_bundle(
+        self,
+        previous_bundle: EdgeTokenBundle | None,
+        refreshed_bundle: EdgeTokenBundle,
+    ) -> EdgeTokenBundle:
+        previous_access = (
+            previous_bundle.access_token if previous_bundle is not None else None
+        )
+        previous_refresh = (
+            previous_bundle.refresh_token if previous_bundle is not None else None
+        )
+        return EdgeTokenBundle(
+            access_token=self._merge_token(previous_access, refreshed_bundle.access_token),
+            refresh_token=self._merge_token(previous_refresh, refreshed_bundle.refresh_token),
         )
 
     def _try_refresh(
@@ -311,7 +374,7 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
 
         ts = self._now(now_ts)
         state = self._state_store.load()
-        if self._is_long_lived_ready(state, ts):
+        if state is not None and self._is_long_lived_ready(state, ts):
             self._log("startup_gate_ready")
             return state
         self._log("startup_gate_bootstrap_required")

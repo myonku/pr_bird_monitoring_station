@@ -21,9 +21,9 @@ import (
 var _ iface.ITokenManager = (*TokenService)(nil)
 
 const (
-	defaultAccessTTLSeconds  int64 = 300
-	defaultRefreshTTLSeconds int64 = 86400
-	defaultServiceTTLSeconds int64 = 600
+	defaultAccessTTLSeconds  int64 = 6 * 60 * 60      // 默认访问令牌有效期为6小时
+	defaultRefreshTTLSeconds int64 = 7 * 24 * 60 * 60 // 默认刷新令牌有效期为7天
+	defaultServiceTTLSeconds int64 = 600              // 默认服务令牌有效期为10分钟
 	defaultGrantTTLSeconds   int64 = 120
 )
 

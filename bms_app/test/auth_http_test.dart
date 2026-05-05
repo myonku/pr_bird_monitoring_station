@@ -21,6 +21,7 @@ void main() {
     _expectSignedInCredentialBundle(signInResponse);
     expect(signInResponse.tokenType, 'access');
     expect(signInResponse.persisted, isFalse);
+    expect(signInResponse.refreshExpiresAtMs, greaterThan(signInResponse.accessExpiresAtMs));
 
     final refreshResponse = await client.refreshSession(
       ClientRefreshSessionRequest(

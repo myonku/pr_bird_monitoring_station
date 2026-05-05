@@ -174,6 +174,65 @@ func TestServeHTTP_RoutesAuthRequestToExternalAuthClient(t *testing.T) {
 	}
 }
 
+func TestServeHTTP_RoutesEdgeTokenRefreshWithExpiryMetadata(t *testing.T) {
+	pipe := &fakeRoutingPipeline{
+		profile: &commonif.RouteProfile{
+			TargetServiceName: "certification_server",
+			TargetEndpoint:    "certification.example:9443",
+			FlowCategory:      commonif.FlowCategoryExternalAuthRelay,
+		},
+	}
+	externalClient := &fakeExternalAuthClient{
+		refreshTokenBundleResult: &authmodel.TokenBundle{
+			AccessToken: &authmodel.IssuedToken{
+				Raw:    "edge-access-123",
+				Type:   authmodel.TokenAccess,
+				TTLSec: 300,
+			},
+			RefreshToken: &authmodel.IssuedToken{
+				Raw:    "edge-refresh-456",
+				Type:   authmodel.TokenRefresh,
+				TTLSec: 86400,
+			},
+		},
+	}
+
+	handler := http_handler.NewGatewayHTTPHandler(
+		modelsystem.RuntimeConfig{ServiceName: "gateway", InstanceID: "gateway", RunMode: modelsystem.RuntimeRunModeDevelopment},
+		pipe,
+		nil,
+		func(endpoint string) http_handler.BusinessForwardClient { return &fakeBusinessClient{} },
+		func(endpoint string) http_handler.ExternalAuthClient { return externalClient },
+		nil,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/edge/auth/token/refresh", strings.NewReader(`{"refresh_token":"refresh-abc","client_id":"edge-server","gateway_id":"gateway"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if externalClient.refreshTokenBundleCalls != 1 {
+		t.Fatalf("ForwardRefreshTokenBundle calls = %d, want 1", externalClient.refreshTokenBundleCalls)
+	}
+
+	var response map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	refreshToken, ok := response["refresh_token"].(map[string]any)
+	if !ok {
+		t.Fatalf("refresh_token = %#v, want object", response["refresh_token"])
+	}
+	if _, ok := refreshToken["expires_at_ms"]; !ok {
+		t.Fatalf("refresh_token response missing expires_at_ms: %#v", refreshToken)
+	}
+	if got := refreshToken["expires_at_ms"]; got == nil {
+		t.Fatalf("refresh_token expires_at_ms = nil, want timestamp")
+	}
+}
+
 func TestServeHTTP_RoutesBusinessRequestThroughAuthControlAndBusinessClient(t *testing.T) {
 	identity := &authmodel.IdentityContext{
 		Principal:     authmodel.Principal{EntityType: authmodel.EntityUser, EntityID: "alice"},
@@ -422,9 +481,11 @@ func (f *fakeAuthControl) Enforce(ctx context.Context, req *authcontrolif.AuthCo
 }
 
 type fakeExternalAuthClient struct {
-	userPasswordCalls  int
-	lastUserPassword   *communicationif.UserPasswordAuthRequest
-	userPasswordResult *communicationif.UserPasswordAuthResult
+	userPasswordCalls        int
+	refreshTokenBundleCalls  int
+	lastUserPassword         *communicationif.UserPasswordAuthRequest
+	userPasswordResult       *communicationif.UserPasswordAuthResult
+	refreshTokenBundleResult *authmodel.TokenBundle
 }
 
 func (f *fakeExternalAuthClient) AuthenticateUserPassword(ctx context.Context, req *communicationif.UserPasswordAuthRequest) (*communicationif.UserPasswordAuthResult, error) {
@@ -437,6 +498,10 @@ func (f *fakeExternalAuthClient) AuthenticateUserPassword(ctx context.Context, r
 }
 
 func (f *fakeExternalAuthClient) ForwardRefreshTokenBundle(ctx context.Context, req *authif.TokenRefreshRequest) (*authmodel.TokenBundle, error) {
+	f.refreshTokenBundleCalls++
+	if f.refreshTokenBundleResult != nil {
+		return f.refreshTokenBundleResult, nil
+	}
 	return nil, errors.New("unexpected ForwardRefreshTokenBundle call")
 }
 

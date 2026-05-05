@@ -14,7 +14,17 @@ import (
 
 func (s *AuthRequestOrchestratorService) HandleUserPasswordAuth(
 	ctx context.Context, req *orchestrationif.UserPasswordAuthRequest,
-) (*orchestrationif.UserPasswordAuthResult, error) {
+) (out *orchestrationif.UserPasswordAuthResult, err error) {
+	logAuthRequestObservation("auth.user_password")
+	defer func() {
+		if err != nil {
+			logAuthRequestResult("auth.user_password", false, err.Error())
+		} else if out != nil && out.Identity != nil {
+			logAuthRequestResult("auth.user_password", true, "token_id="+out.Identity.TokenID.String())
+		} else {
+			logAuthRequestResult("auth.user_password", true, "")
+		}
+	}()
 	if req == nil {
 		return nil, &modelsystem.ErrUserPasswordAuthRequestNil
 	}
@@ -137,7 +147,7 @@ func (s *AuthRequestOrchestratorService) HandleUserPasswordAuth(
 		ExpiresAt:     expiresAt,
 	}
 
-	out := &orchestrationif.UserPasswordAuthResult{
+	out = &orchestrationif.UserPasswordAuthResult{
 		Identity:  identity,
 		Session:   session,
 		IssuedAt:  issuedAt,

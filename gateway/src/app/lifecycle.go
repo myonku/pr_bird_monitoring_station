@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -60,8 +61,20 @@ func Run() error {
 
 	var mysqlClient *repo.MySQLClient
 	if cfg.MySQL != nil {
-		log.Printf("stage=connecting_mysql service=%s host=127.0.0.1:3306 database=%s",
-			runtimeCfg.ServiceName, "bms_test")
+		mysqlTargets := make([]string, 0, len(cfg.MySQL.DSNs)+1)
+		for _, dsn := range cfg.MySQL.DSNs {
+			if strings.TrimSpace(dsn) != "" {
+				mysqlTargets = append(mysqlTargets, dsn)
+			}
+		}
+		if strings.TrimSpace(cfg.MySQL.DSN) != "" {
+			mysqlTargets = append(mysqlTargets, cfg.MySQL.DSN)
+		}
+		log.Printf("stage=connecting_mysql service=%s candidates=%d target=%s",
+			runtimeCfg.ServiceName,
+			len(mysqlTargets),
+			formatConnectionTarget(mysqlTargets, 0),
+		)
 		mysqlClient, err = repo.NewMySQLClient(cfg.MySQL)
 		if err != nil {
 			return err
@@ -207,6 +220,20 @@ func Run() error {
 		}
 		return serveErr
 	}
+}
+
+func formatConnectionTarget(values []string, index int) string {
+	if len(values) == 0 {
+		return "unknown"
+	}
+	if index < 0 || index >= len(values) {
+		index = 0
+	}
+	trimmed := strings.TrimSpace(values[index])
+	if trimmed == "" {
+		return fmt.Sprintf("entry[%d]=empty", index)
+	}
+	return fmt.Sprintf("entry[%d]=%s", index, trimmed)
 }
 
 func buildGatewayListenAddr(runtime modelsystem.RuntimeConfig) string {

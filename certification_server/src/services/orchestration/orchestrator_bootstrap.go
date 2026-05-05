@@ -18,7 +18,17 @@ import (
 
 func (s *AuthRequestOrchestratorService) HandleBootstrapChallenge(
 	ctx context.Context, req *authmodel.ChallengeRequest,
-) (*authmodel.ChallengePayload, error) {
+) (out *authmodel.ChallengePayload, err error) {
+	logAuthRequestObservation("auth.bootstrap.challenge")
+	defer func() {
+		if err != nil {
+			logAuthRequestResult("auth.bootstrap.challenge", false, err.Error())
+		} else if out != nil {
+			logAuthRequestResult("auth.bootstrap.challenge", true, "challenge_id="+out.ChallengeID.String())
+		} else {
+			logAuthRequestResult("auth.bootstrap.challenge", true, "")
+		}
+	}()
 	_ = ctx
 	if req == nil {
 		return nil, &modelsystem.ErrChallengeRequestNil
@@ -60,13 +70,24 @@ func (s *AuthRequestOrchestratorService) HandleBootstrapChallenge(
 	s.bootstrapByID[challenge.ChallengeID] = challenge
 	s.mu.Unlock()
 
-	out := challenge
-	return &out, nil
+	tmp := challenge
+	out = &tmp
+	return out, nil
 }
 
 func (s *AuthRequestOrchestratorService) HandleBootstrapAuthenticate(
 	ctx context.Context, req *authmodel.BootstrapAuthRequest,
-) (*authmodel.BootstrapAuthResult, error) {
+) (out *authmodel.BootstrapAuthResult, err error) {
+	logAuthRequestObservation("auth.bootstrap.authenticate")
+	defer func() {
+		if err != nil {
+			logAuthRequestResult("auth.bootstrap.authenticate", false, err.Error())
+		} else if out != nil && out.Identity != nil {
+			logAuthRequestResult("auth.bootstrap.authenticate", true, "token_id="+out.Identity.TokenID.String())
+		} else {
+			logAuthRequestResult("auth.bootstrap.authenticate", true, "")
+		}
+	}()
 	if s.keyManager == nil || s.sessionManager == nil || s.tokenManager == nil {
 		return nil, &modelsystem.ErrBootstrapDepsNotReady
 	}

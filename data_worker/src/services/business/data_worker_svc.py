@@ -63,44 +63,72 @@ class DataWorkerService(IDataWorkerService):
             0.0, float(min_classification_confidence)
         )
 
+    @staticmethod
+    def _observe_business_call(interface_name: str, status: str, detail: str = "") -> None:
+        message = f"[observe] service=data_worker interface={interface_name} status={status}"
+        if detail:
+            message = f"{message} {detail}"
+        print(message, flush=True)
+
     async def handle_edge_upload(
         self,
         request: EdgeEventUploadRequest,
     ) -> EdgeEventProcessingResult:
+        interface_name = "edge.events.upload"
         if request is None:
             raise ValueError("edge event request is required")
 
-        envelope = request.to_document()
-        await self._upsert_envelope(envelope)
+        try:
+            envelope = request.to_document()
+            await self._upsert_envelope(envelope)
 
-        stage_a = await self._run_stage_a(request)
-        if not stage_a.enter_stage_b:
-            return EdgeEventProcessingResult(
+            stage_a = await self._run_stage_a(request)
+            if not stage_a.enter_stage_b:
+                result = EdgeEventProcessingResult(
+                    request=request,
+                    envelope=envelope,
+                    processing_source=stage_a.processing_source,
+                    stage_a_enter_stage_b=False,
+                    stage_a_reason=stage_a.reason,
+                    inference_result=stage_a.inference_result,
+                    monitoring_record=None,
+                )
+                self._observe_business_call(
+                    interface_name,
+                    "success",
+                    f"result=dropped source={result.processing_source} reason={result.stage_a_reason}",
+                )
+                return result
+
+            stage_b = self._build_stage_b_input(request, stage_a, envelope)
+
+            species_profile = await self._resolve_species_profile(stage_b)
+            monitoring_record = self._build_monitoring_record(stage_b, species_profile)
+            stored_monitoring_record = await self._monitoring_record_manager.create(
+                monitoring_record
+            )
+            result = EdgeEventProcessingResult(
                 request=request,
                 envelope=envelope,
-                processing_source=stage_a.processing_source,
-                stage_a_enter_stage_b=False,
-                stage_a_reason=stage_a.reason,
-                inference_result=stage_a.inference_result,
-                monitoring_record=None,
+                processing_source=stage_b.processing_source,
+                stage_a_enter_stage_b=True,
+                stage_a_reason=stage_b.stage_a_reason,
+                inference_result=stage_b.inference_result,
+                monitoring_record=stored_monitoring_record,
             )
-
-        stage_b = self._build_stage_b_input(request, stage_a, envelope)
-
-        species_profile = await self._resolve_species_profile(stage_b)
-        monitoring_record = self._build_monitoring_record(stage_b, species_profile)
-        stored_monitoring_record = await self._monitoring_record_manager.create(
-            monitoring_record
-        )
-        return EdgeEventProcessingResult(
-            request=request,
-            envelope=envelope,
-            processing_source=stage_b.processing_source,
-            stage_a_enter_stage_b=True,
-            stage_a_reason=stage_b.stage_a_reason,
-            inference_result=stage_b.inference_result,
-            monitoring_record=stored_monitoring_record,
-        )
+            self._observe_business_call(
+                interface_name,
+                "success",
+                f"result=stored source={result.processing_source}",
+            )
+            return result
+        except Exception as exc:
+            self._observe_business_call(
+                interface_name,
+                "failure",
+                f"error={type(exc).__name__}:{exc}",
+            )
+            raise
 
     async def _run_stage_a(self, request: EdgeEventUploadRequest) -> StageAResult:
         if not request.requires_server_assist:

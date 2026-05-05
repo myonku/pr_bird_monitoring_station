@@ -82,6 +82,12 @@ func TestTokenServiceLifecycle(t *testing.T) {
 	if bundle == nil || bundle.AccessToken == nil || bundle.RefreshToken == nil {
 		t.Fatalf("expected access and refresh tokens")
 	}
+	if bundle.AccessToken.TTLSec != 6*60*60 {
+		t.Fatalf("unexpected access token ttl: %d", bundle.AccessToken.TTLSec)
+	}
+	if bundle.RefreshToken.TTLSec != 7*24*60*60 {
+		t.Fatalf("unexpected refresh token ttl: %d", bundle.RefreshToken.TTLSec)
+	}
 
 	verified, err := tokenSvc.VerifyToken(context.Background(), &iface.TokenVerifyRequest{RawToken: bundle.AccessToken.Raw})
 	if err != nil {
@@ -106,6 +112,12 @@ func TestTokenServiceLifecycle(t *testing.T) {
 	}
 	if refreshBundle == nil || refreshBundle.AccessToken == nil || refreshBundle.RefreshToken == nil {
 		t.Fatalf("expected refreshed tokens")
+	}
+	if refreshBundle.AccessToken.TTLSec != 6*60*60 {
+		t.Fatalf("unexpected refreshed access token ttl: %d", refreshBundle.AccessToken.TTLSec)
+	}
+	if refreshBundle.RefreshToken.TTLSec != 7*24*60*60 {
+		t.Fatalf("unexpected refreshed refresh token ttl: %d", refreshBundle.RefreshToken.TTLSec)
 	}
 
 	refreshVerified, err := tokenSvc.VerifyToken(context.Background(), &iface.TokenVerifyRequest{RawToken: bundle.RefreshToken.Raw})

@@ -1,6 +1,8 @@
 package orchestration
 
 import (
+	"log"
+	"strings"
 	"sync"
 
 	commonif "certification_server/src/iface/common"
@@ -43,4 +45,20 @@ func NewAuthRequestOrchestratorServiceWithDeps(
 		bootstrapByID:   make(map[uuid.UUID]authmodel.ChallengePayload),
 		defaultAudience: "certification_server",
 	}
+}
+
+func logAuthRequestObservation(interfaceName string) {
+	log.Printf("[observe] service=certification_server interface=%s status=request", interfaceName)
+}
+
+func logAuthRequestResult(interfaceName string, success bool, detail string) {
+	status := "failure"
+	if success {
+		status = "success"
+	}
+	if strings.TrimSpace(detail) != "" {
+		log.Printf("[observe] service=certification_server interface=%s status=%s detail=%s", interfaceName, status, detail)
+		return
+	}
+	log.Printf("[observe] service=certification_server interface=%s status=%s", interfaceName, status)
 }

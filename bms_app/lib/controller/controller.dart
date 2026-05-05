@@ -190,7 +190,7 @@ class MonitoringController extends ChangeNotifier {
 
   Future<List<RecordStationOption>> fetchStationOptions() async {
     final response = await _client.listRecordStationOptions(
-      const ClientRecordStationOptionsRequest(),
+      const ClientRecordStationOptionsRequest(includeOffline: true),
       options: ClientRequestOptions(headers: await _authHeaders()),
     );
 

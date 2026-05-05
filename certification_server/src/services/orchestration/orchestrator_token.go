@@ -10,7 +10,17 @@ import (
 
 func (s *AuthRequestOrchestratorService) HandleTokenVerify(
 	ctx context.Context, req *commonif.TokenVerifyRequest,
-) (*authmodel.TokenVerificationResult, error) {
+) (out *authmodel.TokenVerificationResult, err error) {
+	logAuthRequestObservation("auth.token.verify")
+	defer func() {
+		if err != nil {
+			logAuthRequestResult("auth.token.verify", false, err.Error())
+		} else if out != nil {
+			logAuthRequestResult("auth.token.verify", true, "")
+		} else {
+			logAuthRequestResult("auth.token.verify", true, "")
+		}
+	}()
 	if req == nil {
 		return nil, &modelsystem.ErrRawTokenRequired
 	}
@@ -22,7 +32,17 @@ func (s *AuthRequestOrchestratorService) HandleTokenVerify(
 
 func (s *AuthRequestOrchestratorService) HandleSessionValidate(
 	ctx context.Context, req *commonif.SessionValidateRequest,
-) (*authmodel.Session, error) {
+) (out *authmodel.Session, err error) {
+	logAuthRequestObservation("auth.session.validate")
+	defer func() {
+		if err != nil {
+			logAuthRequestResult("auth.session.validate", false, err.Error())
+		} else if out != nil {
+			logAuthRequestResult("auth.session.validate", true, "session_id="+out.ID.String())
+		} else {
+			logAuthRequestResult("auth.session.validate", true, "")
+		}
+	}()
 	if req == nil {
 		return nil, &modelsystem.ErrSessionValidateRequestNil
 	}
@@ -34,7 +54,17 @@ func (s *AuthRequestOrchestratorService) HandleSessionValidate(
 
 func (s *AuthRequestOrchestratorService) HandleTokenRefresh(
 	ctx context.Context, req *commonif.TokenRefreshRequest,
-) (*authmodel.TokenBundle, error) {
+) (out *authmodel.TokenBundle, err error) {
+	logAuthRequestObservation("auth.token.refresh")
+	defer func() {
+		if err != nil {
+			logAuthRequestResult("auth.token.refresh", false, err.Error())
+		} else if out != nil {
+			logAuthRequestResult("auth.token.refresh", true, "")
+		} else {
+			logAuthRequestResult("auth.token.refresh", true, "")
+		}
+	}()
 	if req == nil {
 		return nil, &modelsystem.ErrRefreshTokenRequired
 	}
@@ -46,12 +76,21 @@ func (s *AuthRequestOrchestratorService) HandleTokenRefresh(
 
 func (s *AuthRequestOrchestratorService) HandleTokenRevoke(
 	ctx context.Context, req *commonif.TokenRevokeRequest,
-) error {
+) (err error) {
+	logAuthRequestObservation("auth.token.revoke")
+	defer func() {
+		if err != nil {
+			logAuthRequestResult("auth.token.revoke", false, err.Error())
+		} else {
+			logAuthRequestResult("auth.token.revoke", true, "")
+		}
+	}()
 	if req == nil {
 		return &modelsystem.ErrTokenRevokeRequestNil
 	}
 	if s.tokenManager == nil {
 		return &modelsystem.ErrBootstrapDepsNotReady
 	}
-	return s.tokenManager.RevokeToken(ctx, req)
+	err = s.tokenManager.RevokeToken(ctx, req)
+	return
 }

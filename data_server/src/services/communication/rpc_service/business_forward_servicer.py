@@ -174,10 +174,7 @@ class BusinessForwardServicer(business_forward_pb2_grpc.BusinessForwardServiceSe
                     ClientRecordStationOptionsRequest,
                 )
             result = await self._data_server_service.list_record_station_options(req)
-            return [
-                item.model_dump() if hasattr(item, "model_dump") else {}
-                for item in (result or [])
-            ]
+            return self._serialize_result(result)
 
         if operation in ("client.stats.weekly-trend", "client.stats.weekly_trend"):
             req = self._decode_msgspec_payload(request.payload, ClientWeeklyTrendRequest)
