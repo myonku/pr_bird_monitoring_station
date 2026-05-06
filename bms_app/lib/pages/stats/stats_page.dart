@@ -283,7 +283,7 @@ class _StatsPageState extends State<StatsPage> {
           _PeakInfoTile(
             icon: Icons.calendar_today_outlined,
             label: '峰值日期',
-            value: '${summary.peakDay.label}（${summary.peakDay.value} 条）',
+            value: '${_formatPeakDate(summary.peakDay)}（${summary.peakDay.value} 条）',
           ),
           const SizedBox(height: 10),
           _PeakInfoTile(
@@ -336,12 +336,14 @@ class _PeakInfoTile extends StatelessWidget {
                 .bodyMedium
                 ?.copyWith(color: Colors.black54),
           ),
-          const Spacer(),
-          Flexible(
+          const SizedBox(width: 8),
+          Expanded(
             child: Text(
               value,
               style: Theme.of(context).textTheme.titleMedium,
               textAlign: TextAlign.end,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -841,6 +843,14 @@ class _SpeciesShareCard extends StatelessWidget {
       (current, share) => current + share.value,
     );
 
+    // sort descending by ratio (占比)。如果 total 为 0 则按数量降序退回。
+    final sorted = List.of(shares);
+    if (total > 0) {
+      sorted.sort((a, b) => (b.value / total).compareTo(a.value / total));
+    } else {
+      sorted.sort((a, b) => b.value.compareTo(a.value));
+    }
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -849,10 +859,9 @@ class _SpeciesShareCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          ...shares.map((share) {
-            final percent = total == 0
-                ? 0
-                : (share.value / total * 100).round();
+          ...sorted.map((share) {
+            final percent = total == 0 ? 0.0 : (share.value / total);
+            final percentLabel = (percent * 100).round();
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: Row(
@@ -866,10 +875,54 @@ class _SpeciesShareCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(share.label)),
-                  Text('${share.value} 条'),
-                  const SizedBox(width: 10),
-                  Text('$percent%'),
+                  // label area (flexible) + fixed right area for bar and numbers (aligns bars)
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            share.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 160,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE9EEF5),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: FractionallySizedBox(
+                                    alignment: Alignment.centerLeft,
+                                    widthFactor: percent.clamp(0.0, 1.0),
+                                    child: Container(color: share.color),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text('${share.value} 条'),
+                              const SizedBox(width: 10),
+                              SizedBox(
+                                width: 44,
+                                child: Text(
+                                  '${percentLabel}%',
+                                  textAlign: TextAlign.end,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             );
@@ -912,6 +965,17 @@ class _LoadingPanel extends StatelessWidget {
       child: const CircularProgressIndicator(),
     );
   }
+}
+
+String _formatPeakDate(PeakDaySummary peak) {
+  if (peak.dateMs != null && peak.dateMs! > 0) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(peak.dateMs!).toLocal();
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+  return peak.label;
 }
 
 class _MessagePanel extends StatelessWidget {

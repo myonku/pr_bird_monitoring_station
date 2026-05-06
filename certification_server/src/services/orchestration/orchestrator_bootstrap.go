@@ -140,7 +140,7 @@ func (s *AuthRequestOrchestratorService) HandleBootstrapAuthenticate(
 			Role:       role,
 			Scopes:     scopes,
 			AuthMethod: authmodel.AuthMethodServiceSecret,
-			ExpiresAt:  now.Add(15 * time.Minute),
+			ExpiresAt:  now.Add(defaultSessionTTL),
 		},
 	)
 	if err != nil {

@@ -8,6 +8,8 @@ import json
 import sys
 import time
 import uuid
+from datetime import date as date_cls
+from datetime import datetime, time as dt_time, timedelta, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -117,7 +119,7 @@ SITE_SOURCES = (
         name="A",
         device_id="6a9d6b92-fe06-44ee-a607-7284e783f738",
         key_id="626efa4f-0cd0-4e81-af6e-447b41bac8fc",
-        device_name="测试设备A",
+        device_name="测试站点 A",
         location_name="测试 Location A",
         private_key_pem=b"",
     ),
@@ -130,6 +132,19 @@ SITE_SOURCES = (
         private_key_pem=b"",
     ),
 )
+
+
+def build_upload_days() -> list[date_cls]:
+    """构造最近七天中去掉昨天后的 6 个日期。"""
+    today = datetime.now().astimezone().date()
+    return [today - timedelta(days=offset) for offset in (6, 5, 4, 3, 2, 0)]
+
+
+def day_to_capture_ms(day: date_cls) -> int:
+    """把日期转换成当天中午的本地时间戳，避免跨时区偏移到前后一天。"""
+    local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+    capture_dt = datetime.combine(day, dt_time(12, 0), tzinfo=local_tz)
+    return int(capture_dt.timestamp() * 1000)
 
 
 def bootstrap(site: SiteSource) -> dict[str, str]:
@@ -211,10 +226,11 @@ def upload_photo(
     *,
     site: SiteSource,
     is_edge_processed: bool,
+    captured_at_ms: int,
+    capture_day: date_cls,
 ):
     """上传单张图片。"""
     img = photo_path.read_bytes()
-    now_ms = int(time.time() * 1000)
     body = {
         "event_id": str(uuid.uuid4()),
         "trace_id": str(uuid.uuid4()),
@@ -228,9 +244,9 @@ def upload_photo(
             "environment_snapshot": {
                 "temperature_c": 25.3, "humidity_pct": 68,
                 "source": "pseudo_mock", "sensor_snapshot": {},
-                "captured_at_ms": now_ms,
+                "captured_at_ms": captured_at_ms,
             },
-            "captured_at_ms": now_ms,
+            "captured_at_ms": captured_at_ms,
         },
         "image": {
             "image_id": str(uuid.uuid4()), "format": "jpg",
@@ -244,6 +260,7 @@ def upload_photo(
             "source_species": species,
             "source_station": site.name,
             "source_device_id": site.device_id,
+            "simulated_capture_date": capture_day.isoformat(),
         },
         "image_b64": base64.b64encode(img).decode(),
     }
@@ -307,6 +324,9 @@ def main():
     to_upload = [p for p in photos if p.name.split("-")[0] not in SKIP_CLASS_IDS]
     print(f"\n[2] 待上传: {len(to_upload)} 张 (已跳过 {len(photos) - len(to_upload)} 张)")
 
+    upload_days = build_upload_days()
+    print("  日期分布: " + ", ".join(day.isoformat() for day in upload_days))
+
     site_groups = {
         SITE_SOURCES[0].name: to_upload[::2],
         SITE_SOURCES[1].name: to_upload[1::2],
@@ -327,6 +347,8 @@ def main():
             cid = ph.name.split("-")[0]
             species = labels.get(cid, f"unknown_{cid}")
             is_edge = (i % 2 == 0)
+            capture_day = upload_days[i % len(upload_days)]
+            capture_ms = day_to_capture_ms(capture_day)
             label = "边缘处理" if is_edge else "后端辅助"
             try:
                 status, _ = upload_photo(
@@ -335,15 +357,17 @@ def main():
                     species,
                     site=site,
                     is_edge_processed=is_edge,
+                    captured_at_ms=capture_ms,
+                    capture_day=capture_day,
                 )
                 if status == 200:
-                    print(f"  [{site.name}] [{ph.name}] {species:30s} {label}  OK")
+                    print(f"  [{site.name}] [{ph.name}] {species:30s} {capture_day.isoformat()} {label}  OK")
                     ok += 1
                 else:
-                    print(f"  [{site.name}] [{ph.name}] {species:30s} {label}  HTTP {status}")
+                    print(f"  [{site.name}] [{ph.name}] {species:30s} {capture_day.isoformat()} {label}  HTTP {status}")
                     fail += 1
             except Exception as e:
-                print(f"  [{site.name}] [{ph.name}] {species:30s} {label}  FAIL {e}")
+                print(f"  [{site.name}] [{ph.name}] {species:30s} {capture_day.isoformat()} {label}  FAIL {e}")
                 fail += 1
 
     # 汇总

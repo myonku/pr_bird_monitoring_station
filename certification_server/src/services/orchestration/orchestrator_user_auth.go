@@ -85,7 +85,7 @@ func (s *AuthRequestOrchestratorService) HandleUserPasswordAuth(
 			GatewayID:  strings.TrimSpace(req.GatewayID),
 			SourceIP:   strings.TrimSpace(req.SourceIP),
 			UserAgent:  strings.TrimSpace(req.UserAgent),
-			ExpiresAt:  now.Add(15 * time.Minute),
+			ExpiresAt:  now.Add(defaultSessionTTL),
 		},
 	)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	commonif "certification_server/src/iface/common"
 	iface "certification_server/src/iface/orchestration"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/google/uuid"
 )
+
+const defaultSessionTTL = 7 * 24 * time.Hour
 
 var _ iface.IAuthRequestOrchestrator = (*AuthRequestOrchestratorService)(nil)
 
