@@ -912,7 +912,7 @@ class _SpeciesShareCard extends StatelessWidget {
                               SizedBox(
                                 width: 44,
                                 child: Text(
-                                  '${percentLabel}%',
+                                  '$percentLabel%',
                                   textAlign: TextAlign.end,
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
