@@ -11,8 +11,8 @@ secret_key_dir = "secret_keys"
 active_key_id = "e52c4caf-d4bc-49b1-8f37-9ea71eff3134"
 
 [mysql]
-dsn = "project_user:YourUserPassword123!@tcp(host.docker.internal:3306)/bms_test?charset=utf8mb4&parseTime=true&loc=Local"
-dsns = "project_user:YourUserPassword123!@tcp(host.docker.internal:3306)/bms_test?charset=utf8mb4&parseTime=true&loc=Local"
+dsn = "project_user:YourUserPassword123!@tcp(127.0.0.1:3306)/bms_test?charset=utf8mb4&parseTime=true&loc=Local"
+dsns = "project_user:YourUserPassword123!@tcp(127.0.0.1:3306)/bms_test?charset=utf8mb4&parseTime=true&loc=Local"
 max_open_conns = 8
 max_idle_conns = 4
 conn_max_lifetime = "30m"
@@ -24,7 +24,7 @@ circuit_breaker_half_open_max_calls = 1
 
 [redis]
 mode = "cluster"
-addrs = "host.docker.internal:7001,host.docker.internal:7002,host.docker.internal:7003,host.docker.internal:7004,host.docker.internal:7005,host.docker.internal:7006"
+addrs = "127.0.0.1:7001,127.0.0.1:7002,127.0.0.1:7003,127.0.0.1:7004,127.0.0.1:7005,127.0.0.1:7006"
 password = "YourRedisPassword123!"
 db = 0
 max_retries = 3
@@ -43,7 +43,7 @@ circuit_breaker_recovery_timeout = "10s"
 circuit_breaker_half_open_max_calls = 1
 
 [etcd]
-endpoints = "host.docker.internal:23791,host.docker.internal:23811,host.docker.internal:23813"
+endpoints = "127.0.0.1:23791,127.0.0.1:23811,127.0.0.1:23813"
 username = "root"
 password = "YourEtcdPassword123!"
 dial_timeout = "5s"
