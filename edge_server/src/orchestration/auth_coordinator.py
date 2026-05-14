@@ -14,7 +14,10 @@ from src.models.auth.auth_contract import (
     EdgeAuthState,
     RefreshTokenRequest,
 )
-from src.models.auth.bootstrap import SignedBootstrapProof
+from src.models.auth.bootstrap import (
+    BootstrapAuthenticateRequest,
+    SignedBootstrapProof,
+)
 from src.utils.crypto_utils import CryptoUtils
 from src.utils.runtime_logger import RuntimeEventLogger
 
@@ -260,7 +263,15 @@ class EdgeAuthCoordinator(IEdgeAuthCoordinator):
             now_ts=now_ts,
         )
 
-        state = self._gateway_auth_client.submit_bootstrap_proof(proof)
+        auth_request = BootstrapAuthenticateRequest(
+            challenge=challenge,
+            signed=proof,
+            scopes=[],
+            role="device",
+            require_downstream_token=False,
+        )
+
+        state = self._gateway_auth_client.submit_bootstrap_proof(auth_request)
 
         normalized = self._normalize_bootstrap_state(state)
         self._state_store.save(normalized)

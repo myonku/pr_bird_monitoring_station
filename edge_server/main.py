@@ -273,5 +273,12 @@ def main() -> None:
             time.sleep(min(remaining_sec, 0.05))
 
 
+def run() -> None:
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("edge pipeline interrupted by ctrl+c, exiting")
+
+
 if __name__ == "__main__":
-    main()
+    run()

@@ -1,5 +1,5 @@
-import json
 from dataclasses import asdict
+import json
 from typing import cast
 from urllib import request
 from urllib.error import HTTPError, URLError
@@ -15,7 +15,10 @@ from src.models.auth.auth import (
     TokenType,
 )
 from src.models.auth.auth_contract import EdgeAuthState, RefreshTokenRequest
-from src.models.auth.bootstrap import BootstrapChallenge, SignedBootstrapProof
+from src.models.auth.bootstrap import (
+    BootstrapAuthenticateRequest,
+    BootstrapChallenge,
+)
 from src.orchestration.auth_coordinator import EdgeAuthCoordinator
 
 
@@ -78,8 +81,10 @@ class EdgeGatewayAuthHttpClient(IEdgeGatewayAuthClient):
         )
         return self._parse_bootstrap_challenge(data)
 
-    def submit_bootstrap_proof(self, proof: SignedBootstrapProof) -> EdgeAuthState:
-        payload = asdict(proof)
+    def submit_bootstrap_proof(
+        self, request: BootstrapAuthenticateRequest
+    ) -> EdgeAuthState:
+        payload = self._build_bootstrap_auth_payload(request)
         data = self._request_json(
             "POST",
             self._build_auth_path("bootstrap/authenticate"),
@@ -149,17 +154,53 @@ class EdgeGatewayAuthHttpClient(IEdgeGatewayAuthClient):
 
     @staticmethod
     def _parse_bootstrap_challenge(payload: dict) -> BootstrapChallenge:
+        issued_at_ms = payload.get("issued_at_ms", payload.get("issued_at", 0.0))
+        expires_at_ms = payload.get("expires_at_ms", payload.get("expires_at", 0.0))
+        issued_at = float(issued_at_ms) / 1000.0 if "issued_at_ms" in payload else float(issued_at_ms)
+        expires_at = float(expires_at_ms) / 1000.0 if "expires_at_ms" in payload else float(expires_at_ms)
+
         return BootstrapChallenge(
             challenge_id=str(payload.get("challenge_id", "")),
             nonce=str(payload.get("nonce", "")),
             issuer=str(payload.get("issuer", "")),
             audience=str(payload.get("audience", "gateway")),
-            issued_at=float(payload.get("issued_at", 0.0)),
-            expires_at=float(payload.get("expires_at", 0.0)),
+            issued_at=issued_at,
+            expires_at=expires_at,
             entity_type=str(payload.get("entity_type", "device")),
             entity_id=str(payload.get("entity_id", "")),
             key_id=str(payload.get("key_id", "")),
         )
+
+    @staticmethod
+    def _build_bootstrap_auth_payload(
+        request: BootstrapAuthenticateRequest,
+    ) -> dict[str, object]:
+        challenge = request.challenge
+        signed = request.signed
+        return {
+            "challenge": {
+                "challenge_id": challenge.challenge_id,
+                "nonce": challenge.nonce,
+                "issuer": challenge.issuer,
+                "audience": challenge.audience,
+                "issued_at_ms": int(round(challenge.issued_at * 1000.0)),
+                "expires_at_ms": int(round(challenge.expires_at * 1000.0)),
+                "entity_type": challenge.entity_type,
+                "entity_id": challenge.entity_id,
+                "key_id": challenge.key_id,
+            },
+            "signed": {
+                "challenge_id": signed.challenge_id,
+                "device_id": signed.device_id,
+                "key_id": signed.key_id,
+                "signature": signed.signature,
+                "signature_algorithm": signed.signature_algorithm,
+                "signed_at_ms": int(round(signed.signed_at * 1000.0)),
+            },
+            "scopes": list(request.scopes),
+            "role": (request.role or "device").strip() or "device",
+            "require_downstream_token": bool(request.require_downstream_token),
+        }
 
     @staticmethod
     def _parse_edge_session(payload: dict | None) -> EdgeSession | None:
@@ -170,15 +211,25 @@ class EdgeGatewayAuthHttpClient(IEdgeGatewayAuthClient):
         if status_raw not in {"active", "expired", "revoked"}:
             status_raw = "active"
 
+        issued_at_ms = payload.get("issued_at_ms", payload.get("issued_at", 0.0))
+        expires_at_ms = payload.get("expires_at_ms", payload.get("expires_at", 0.0))
+        last_verified_at_ms = payload.get(
+            "last_verified_at_ms", payload.get("last_verified_at", 0.0)
+        )
+
         return EdgeSession(
             session_id=str(payload.get("session_id", "")),
             principal_id=str(payload.get("principal_id", "")),
             device_id=str(payload.get("device_id", "")),
             status=cast(SessionStatus, status_raw),
-            issued_at=float(payload.get("issued_at", 0.0)),
-            expires_at=float(payload.get("expires_at", 0.0)),
+            issued_at=(float(issued_at_ms) / 1000.0 if "issued_at_ms" in payload else float(issued_at_ms)),
+            expires_at=(float(expires_at_ms) / 1000.0 if "expires_at_ms" in payload else float(expires_at_ms)),
             token_family_id=str(payload.get("token_family_id", "")),
-            last_verified_at=float(payload.get("last_verified_at", 0.0)),
+            last_verified_at=(
+                float(last_verified_at_ms) / 1000.0
+                if "last_verified_at_ms" in payload
+                else float(last_verified_at_ms)
+            ),
         )
 
     @staticmethod
@@ -190,6 +241,9 @@ class EdgeGatewayAuthHttpClient(IEdgeGatewayAuthClient):
         if token_type_raw not in {"access", "refresh"}:
             token_type_raw = fallback_type if fallback_type in {"access", "refresh"} else "access"
 
+        issued_at_ms = payload.get("issued_at_ms", payload.get("issued_at", 0.0))
+        expires_at_ms = payload.get("expires_at_ms", payload.get("expires_at", 0.0))
+
         scopes = payload.get("scopes")
         if not isinstance(scopes, list):
             scopes = []
@@ -199,8 +253,8 @@ class EdgeGatewayAuthHttpClient(IEdgeGatewayAuthClient):
             token_id=str(payload.get("token_id", "")),
             family_id=str(payload.get("family_id", "")),
             session_id=str(payload.get("session_id", "")),
-            issued_at=float(payload.get("issued_at", 0.0)),
-            expires_at=float(payload.get("expires_at", 0.0)),
+            issued_at=(float(issued_at_ms) / 1000.0 if "issued_at_ms" in payload else float(issued_at_ms)),
+            expires_at=(float(expires_at_ms) / 1000.0 if "expires_at_ms" in payload else float(expires_at_ms)),
             scopes=[str(item) for item in scopes],
             role=str(payload.get("role", "")),
         )

@@ -195,6 +195,21 @@ class _MePageState extends State<MePage> {
             ),
             const SizedBox(height: 18),
             InfoCard(
+              title: '用户信息',
+              children: [
+                InfoRow(label: '用户名', value: username),
+                InfoRow(label: '邮箱', value: email.isEmpty ? '-' : email),
+                InfoRow(label: '手机号', value: user.phone),
+                InfoRow(
+                  label: '登录时间',
+                  value: _formatSignedInAt(
+                    widget.monitoringController.signedInAt,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            InfoCard(
               title: '认证信息',
               children: [
                 InfoRow(
@@ -210,21 +225,6 @@ class _MePageState extends State<MePage> {
                   label: '凭证存储',
                   value: widget.monitoringController.credentialStorageLabel,
                 ),
-                InfoRow(
-                  label: '登录时间',
-                  value: widget.monitoringController.signedInAt == null
-                      ? '-'
-                      : '${widget.monitoringController.signedInAt!.year}-${widget.monitoringController.signedInAt!.month.toString().padLeft(2, '0')}-${widget.monitoringController.signedInAt!.day.toString().padLeft(2, '0')}',
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            InfoCard(
-              title: '用户信息',
-              children: [
-                InfoRow(label: '用户名', value: username),
-                InfoRow(label: '邮箱', value: email.isEmpty ? '-' : email),
-                InfoRow(label: '手机号', value: user.phone),
               ],
             ),
             const SizedBox(height: 18),
@@ -282,5 +282,19 @@ class _MePageState extends State<MePage> {
     } on FormatException {
       return null;
     }
+  }
+
+  String _formatSignedInAt(DateTime? signedInAt) {
+    if (signedInAt == null) {
+      return '-';
+    }
+
+    final local = signedInAt.toLocal();
+    final year = local.year.toString().padLeft(4, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$year-$month-$day $hour:$minute';
   }
 }

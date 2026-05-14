@@ -51,7 +51,7 @@ class _FakeGatewayAuthClient(IEdgeGatewayAuthClient):
     def request_bootstrap_challenge(self, device_id: str, key_id: str, audience: str = "gateway"):
         raise AssertionError("unexpected bootstrap path")
 
-    def submit_bootstrap_proof(self, proof):
+    def submit_bootstrap_proof(self, request):
         raise AssertionError("unexpected bootstrap path")
 
     def refresh_token_bundle(self, req: RefreshTokenRequest) -> EdgeTokenBundle | None:

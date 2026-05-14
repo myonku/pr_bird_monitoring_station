@@ -14,7 +14,8 @@ dependencies = [
 	"torchvision>=0.21.0",
 	"ultralytics>=8.3.0",
 	"gpiozero; sys_platform == 'linux'",
-	"picamera2; sys_platform == 'linux' and (platform_machine == 'armv7l' or platform_machine == 'aarch64')",
+	"lgpio; sys_platform == 'linux' and platform_machine == 'aarch64'",
+	"picamera2; sys_platform == 'linux' and platform_machine == 'aarch64'",
 ]
 
 [tool.uv.sources]
@@ -26,6 +27,11 @@ torchvision = [
 ]
 
 [tool.uv]
+environments = [
+	"sys_platform == 'linux' and platform_machine == 'aarch64'",
+	"sys_platform == 'linux' and platform_machine == 'x86_64'",
+	"sys_platform == 'win32'",
+]
 required-environments = [
 	"sys_platform == 'linux' and platform_machine == 'aarch64'",
 	"sys_platform == 'linux' and platform_machine == 'x86_64'",

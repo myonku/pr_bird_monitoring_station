@@ -29,7 +29,14 @@ class PIRMotionSensor(IMotionSensor):
                 "PIR capture mode requires gpiozero on Raspberry Pi"
             ) from exc
 
-        self._sensor: Any = button_cls(self.pir_gpio_pin, pull_up=False)
+        try:
+            self._sensor: Any = button_cls(self.pir_gpio_pin, pull_up=False)
+        except Exception as exc:
+            raise RuntimeError(
+                f"failed to initialize PIR sensor on GPIO {self.pir_gpio_pin}"
+            ) from exc
+        
+        print(f"[edge] PIR motion sensor initialized on GPIO {self.pir_gpio_pin}", flush=True)
 
     def wait_for_motion(self, timeout_sec: float | None = None) -> bool:
         deadline = None

@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import json
 
 from src.iface.workflow_interface import (
     ICaptureModule,
@@ -69,6 +70,8 @@ class EdgePipeline:
                 "event_id": event.event_id,
                 "image_id": image.image_id,
                 "trigger": ctx.trigger_type,
+                "capture_mode": ctx.sensor_snapshot.get("capture_mode"),
+                "pir_gpio_pin": ctx.sensor_snapshot.get("pir_gpio_pin"),
                 "width": image.width,
                 "height": image.height,
             },
@@ -83,6 +86,10 @@ class EdgePipeline:
             "network_reason": runtime_status.network_reason,
             "load_reason": runtime_status.load_reason,
         }
+        event.metadata["runtime_status"] = json.dumps(
+            event.metadata["runtime_status"],
+            ensure_ascii=False,
+        )
 
         decision = self.decision_engine.decide_before_infer(runtime_status)
         event.metadata["decision_before_infer_reason"] = decision.reason
@@ -106,13 +113,33 @@ class EdgePipeline:
             event.metadata["edge_model_package_version"] = contract.package_version
             decision = self.decision_engine.decide_after_infer(result, decision)
             event.metadata["decision_after_infer_reason"] = decision.reason
+            best_box = (
+                max(result.detection.boxes, key=lambda item: item.confidence)
+                if result.detection.boxes
+                else None
+            )
             self._log(
                 stage="inference",
                 event="local_inference_finished",
                 details={
                     "event_id": event.event_id,
+                    "bird_detected": bool(result.detection.boxes),
+                    "detection_label": best_box.label if best_box else None,
+                    "detection_confidence": (
+                        best_box.confidence if best_box else None
+                    ),
                     "success": result.success,
                     "stage": result.stage,
+                    "classification_label": (
+                        result.classification.top1_label
+                        if result.classification is not None
+                        else None
+                    ),
+                    "classification_confidence": (
+                        result.classification.top1_confidence
+                        if result.classification is not None
+                        else None
+                    ),
                     "reason": result.reason,
                     "server_assist": decision.mark_server_assist,
                 },
@@ -125,6 +152,7 @@ class EdgePipeline:
                 details={
                     "event_id": event.event_id,
                     "reason": decision.reason,
+                    "server_assist": decision.mark_server_assist,
                 },
             )
 
@@ -137,7 +165,9 @@ class EdgePipeline:
                 event="upload_attempt",
                 details={
                     "event_id": event.event_id,
+                    "upload_event": decision.upload_event,
                     "server_assist": event.requires_server_assist,
+                    "delivery_result": event.metadata["delivery_result"],
                 },
             )
             ok = self.upload_coordinator.upload_event(event)
@@ -150,6 +180,8 @@ class EdgePipeline:
                     details={
                         "event_id": event.event_id,
                         "record_id": record_id,
+                        "server_assist": event.requires_server_assist,
+                        "delivery_result": event.metadata["delivery_result"],
                     },
                 )
             else:
@@ -159,6 +191,8 @@ class EdgePipeline:
                     event="upload_succeeded",
                     details={
                         "event_id": event.event_id,
+                        "server_assist": event.requires_server_assist,
+                        "delivery_result": event.metadata["delivery_result"],
                     },
                 )
         else:
@@ -171,6 +205,8 @@ class EdgePipeline:
                     "event_id": event.event_id,
                     "record_id": record_id,
                     "reason": decision.reason,
+                    "server_assist": event.requires_server_assist,
+                    "delivery_result": event.metadata["delivery_result"],
                 },
             )
 

@@ -77,6 +77,8 @@ def _to_local_issued_token(
         return None
 
     token_type = _from_proto_token_type(token.token_type)
+    if token_type is None:
+        return None
     return IssuedToken(
         raw=(token.raw or "").strip(),
         type=token_type,
@@ -84,7 +86,7 @@ def _to_local_issued_token(
     )
 
 
-def _from_proto_token_type(value: int) -> TokenType:
+def _from_proto_token_type(value: int) -> TokenType | None:
     if value == bootstrap_pb2.TOKEN_TYPE_ACCESS:
         return "access"
     if value == bootstrap_pb2.TOKEN_TYPE_REFRESH:
@@ -93,4 +95,6 @@ def _from_proto_token_type(value: int) -> TokenType:
         return "downstream"
     if value == bootstrap_pb2.TOKEN_TYPE_SERVICE:
         return "service"
+    if value == bootstrap_pb2.TOKEN_TYPE_UNSPECIFIED:
+        return None
     raise ValueError(f"unsupported refresh token_type: {value}")

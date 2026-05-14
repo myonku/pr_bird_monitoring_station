@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.models.auth.auth import SignatureAlgorithm
 
@@ -27,3 +27,14 @@ class SignedBootstrapProof:
     signature: str
     signature_algorithm: SignatureAlgorithm
     signed_at: float
+
+
+@dataclass(slots=True)
+class BootstrapAuthenticateRequest:
+    """边缘端提交 bootstrap authenticate 时发送给网关的完整请求载荷。"""
+
+    challenge: BootstrapChallenge
+    signed: SignedBootstrapProof
+    scopes: list[str] = field(default_factory=list)
+    role: str = "device"
+    require_downstream_token: bool = False

@@ -94,7 +94,13 @@ class SensorCameraCaptureModule(ICaptureModule):
         )
 
     def close(self) -> None:
-        for component in (self._camera, self._sensor, self._environment_sensor):
+        for component in (
+            getattr(self, "_camera", None),
+            getattr(self, "_sensor", None),
+            getattr(self, "_environment_sensor", None),
+        ):
+            if component is None:
+                continue
             close_fn = getattr(component, "close", None)
             if callable(close_fn):
                 try:
@@ -103,7 +109,10 @@ class SensorCameraCaptureModule(ICaptureModule):
                     pass
 
     def __del__(self) -> None:
-        self.close()
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def wait_and_capture(
         self,

@@ -6,7 +6,10 @@ from src.models.auth.auth_contract import (
     EdgeAuthState,
     RefreshTokenRequest,
 )
-from src.models.auth.bootstrap import BootstrapChallenge, SignedBootstrapProof
+from src.models.auth.bootstrap import (
+    BootstrapAuthenticateRequest,
+    BootstrapChallenge,
+)
 
 
 class ISecretKeyManager(ABC):
@@ -41,7 +44,9 @@ class IEdgeGatewayAuthClient(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def submit_bootstrap_proof(self, proof: SignedBootstrapProof) -> EdgeAuthState:
+    def submit_bootstrap_proof(
+        self, request: BootstrapAuthenticateRequest
+    ) -> EdgeAuthState:
         raise NotImplementedError
 
     @abstractmethod

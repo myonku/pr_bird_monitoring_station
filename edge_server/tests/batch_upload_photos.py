@@ -1,10 +1,11 @@
 """
-批量上传剩余测试图片到 data_worker。
-已上传的 001、002 自动跳过。
+批量上传测试图片到 data_worker。
+从本地 PHOTO_DIR 图片库随机抽样 350 张，已上传的 001、002 自动跳过。
 """
 import base64
 import hashlib
 import json
+import random
 import sys
 import time
 import uuid
@@ -24,9 +25,12 @@ from src.models.auth.bootstrap import BootstrapChallenge
 GATEWAY_URL = "http://127.0.0.1:8080"
 SKIP_CLASS_IDS = {"001", "002"}
 
-PHOTO_DIR = EDGE_SERVER_ROOT / "tests" / "photos"
+PHOTO_DIR = Path("E:/photos")
 LABEL_FILE = EDGE_SERVER_ROOT / "model_pack" / "labels.txt"
 SITE_A_PRIVATE_KEY_FILE = EDGE_SERVER_ROOT / "secret_keys" / "private.pem"
+UPLOAD_SAMPLE_SIZE = 350
+UPLOAD_INTERVAL_SEC = 0.2
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 
 # 用于临时切换上传源的相关信息
 EDGE_SERVER_B_ID = "e488be34-8672-4afb-bdb0-f8dc6af0cbc8"
@@ -134,17 +138,47 @@ SITE_SOURCES = (
 )
 
 
-def build_upload_days() -> list[date_cls]:
-    """构造最近七天中去掉昨天后的 6 个日期。"""
-    today = datetime.now().astimezone().date()
-    return [today - timedelta(days=offset) for offset in (6, 5, 4, 3, 2, 0)]
-
-
 def day_to_capture_ms(day: date_cls) -> int:
     """把日期转换成当天中午的本地时间戳，避免跨时区偏移到前后一天。"""
     local_tz = datetime.now().astimezone().tzinfo or timezone.utc
     capture_dt = datetime.combine(day, dt_time(12, 0), tzinfo=local_tz)
     return int(capture_dt.timestamp() * 1000)
+
+
+def load_photo_pool(photo_dir: Path) -> list[Path]:
+    if not photo_dir.exists():
+        raise FileNotFoundError(f"PHOTO_DIR does not exist: {photo_dir}")
+
+    photos = [
+        path
+        for path in photo_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+    ]
+    photos = [path for path in photos if extract_class_id(path) not in SKIP_CLASS_IDS]
+    if len(photos) < UPLOAD_SAMPLE_SIZE:
+        raise ValueError(
+            f"PHOTO_DIR only contains {len(photos)} eligible images, need at least {UPLOAD_SAMPLE_SIZE}"
+        )
+    return photos
+
+
+def extract_class_id(photo_path: Path) -> str:
+    parent_name = photo_path.parent.name.strip()
+    if len(parent_name) == 3 and parent_name.isdigit():
+        return parent_name
+
+    stem = photo_path.stem.strip()
+    if "-" in stem:
+        return stem.split("-", 1)[0]
+    return parent_name or stem
+
+
+def build_recent_capture_datetimes(count: int) -> list[datetime]:
+    local_now = datetime.now().astimezone()
+    return [
+        local_now - timedelta(days=random.randint(0, 29), seconds=random.randint(0, 86399))
+        for _ in range(count)
+    ]
 
 
 def bootstrap(site: SiteSource) -> dict[str, str]:
@@ -256,7 +290,7 @@ def upload_photo(
         "local_inference": None,
         "metadata": {
             "test_scenario": "batch_upload",
-            "source_class_id": photo_path.name.split("-")[0],
+            "source_class_id": extract_class_id(photo_path),
             "source_species": species,
             "source_station": site.name,
             "source_device_id": site.device_id,
@@ -320,16 +354,26 @@ def main():
     print(f"  加载 {len(labels)} 个物种标签")
 
     # 收集图片
-    photos = sorted(PHOTO_DIR.glob("*.jpg"))
-    to_upload = [p for p in photos if p.name.split("-")[0] not in SKIP_CLASS_IDS]
-    print(f"\n[2] 待上传: {len(to_upload)} 张 (已跳过 {len(photos) - len(to_upload)} 张)")
+    photo_pool = load_photo_pool(PHOTO_DIR)
+    to_upload = random.sample(photo_pool, UPLOAD_SAMPLE_SIZE)
+    capture_times = build_recent_capture_datetimes(len(to_upload))
+    print(
+        f"\n[2] 待上传: {len(to_upload)} 张 "
+        f"(图片库可用 {len(photo_pool)} 张, 已跳过 {len(photo_pool) - len(to_upload)} 张)"
+    )
 
-    upload_days = build_upload_days()
-    print("  日期分布: " + ", ".join(day.isoformat() for day in upload_days))
+    unique_days = sorted({capture_dt.date() for capture_dt in capture_times})
+    print("  日期分布: " + ", ".join(day.isoformat() for day in unique_days[:12]))
+    if len(unique_days) > 12:
+        print(f"  ... 另有 {len(unique_days) - 12} 个日期")
 
     site_groups = {
         SITE_SOURCES[0].name: to_upload[::2],
         SITE_SOURCES[1].name: to_upload[1::2],
+    }
+    site_capture_times = {
+        SITE_SOURCES[0].name: capture_times[::2],
+        SITE_SOURCES[1].name: capture_times[1::2],
     }
     for site in SITE_SOURCES:
         group = site_groups[site.name]
@@ -341,14 +385,16 @@ def main():
     ok = fail = 0
     for site in SITE_SOURCES:
         site_photos = site_groups[site.name]
+        site_capture_schedule = site_capture_times[site.name]
         headers = site_headers[site.name]
         print(f"\n[3] 开始上传站点 {site.name} 的 {len(site_photos)} 张图片...")
         for i, ph in enumerate(site_photos):
-            cid = ph.name.split("-")[0]
+            cid = extract_class_id(ph)
             species = labels.get(cid, f"unknown_{cid}")
             is_edge = (i % 2 == 0)
-            capture_day = upload_days[i % len(upload_days)]
-            capture_ms = day_to_capture_ms(capture_day)
+            capture_dt = site_capture_schedule[i]
+            capture_day = capture_dt.date()
+            capture_ms = int(capture_dt.timestamp() * 1000)
             label = "边缘处理" if is_edge else "后端辅助"
             try:
                 status, _ = upload_photo(
@@ -369,6 +415,8 @@ def main():
             except Exception as e:
                 print(f"  [{site.name}] [{ph.name}] {species:30s} {capture_day.isoformat()} {label}  FAIL {e}")
                 fail += 1
+            finally:
+                time.sleep(UPLOAD_INTERVAL_SEC)
 
     # 汇总
     print(f"\n{'=' * 60}")
