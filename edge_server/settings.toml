@@ -26,7 +26,12 @@ mode = "mock"
 pir_gpio_pin = 17
 pir_wait_timeout_sec = 10.0
 capture_cooldown_sec = 0.1
+# 最短触发间隔（秒）：代码层最小值为 1.0，优先于窗口限频
+capture_min_trigger_interval_sec = 1.0
 # 窗口限频：每 10 秒最多放行 3 次抓拍（设为 0 表示关闭）
+# 当窗口限频开启时，会自动调整到：
+# 1) capture_rate_window_sec >= capture_min_trigger_interval_sec
+# 2) capture_rate_window_sec / capture_rate_max_images >= capture_min_trigger_interval_sec
 capture_rate_window_sec = 10.0
 capture_rate_max_images = 3
 image_format = "jpg"

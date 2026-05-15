@@ -22,6 +22,7 @@ def build_capture_module(
             image_height=capture_cfg.image_height,
             capture_cooldown_sec=capture_cfg.capture_cooldown_sec,
             pir_wait_timeout_sec=capture_cfg.pir_wait_timeout_sec,
+            capture_min_trigger_interval_sec=capture_cfg.capture_min_trigger_interval_sec,
             capture_rate_window_sec=capture_cfg.capture_rate_window_sec,
             capture_rate_max_images=capture_cfg.capture_rate_max_images,
         )
@@ -33,6 +34,7 @@ def build_capture_module(
         image_format=capture_cfg.image_format,
         image_width=capture_cfg.image_width,
         image_height=capture_cfg.image_height,
+        capture_min_trigger_interval_sec=capture_cfg.capture_min_trigger_interval_sec,
         capture_rate_window_sec=capture_cfg.capture_rate_window_sec,
         capture_rate_max_images=capture_cfg.capture_rate_max_images,
     )

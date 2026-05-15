@@ -7,9 +7,9 @@ from src.iface.workflow_interface import (
     ISpoolStorage,
 )
 from src.iface.upload_interface import IEdgeEventUploadCoordinator
-from src.models.workflow.workflow import EdgeEvent
+from src.models.workflow.workflow import EdgeEvent, TwoStageInferenceResult
+from src.models.workflow.runtime import Decision, RuntimeStatus
 from src.orchestration.decision_engine import DecisionEngine
-from src.models.workflow.runtime import RuntimeStatus
 from src.utils.runtime_logger import RuntimeEventLogger
 
 class EdgePipeline:
@@ -41,6 +41,85 @@ class EdgePipeline:
         if self.event_logger is not None:
             self.event_logger.emit(stage=stage, event=event, details=details)
 
+    def _emit_separator(self) -> None:
+        if self.event_logger is not None:
+            self.event_logger.emit_separator()
+
+    @staticmethod
+    def _best_detection_box(result: TwoStageInferenceResult):
+        if not result.detection.boxes:
+            return None
+        return max(result.detection.boxes, key=lambda item: item.confidence)
+
+    def _log_trigger_started(self, event: EdgeEvent) -> None:
+        self._log(
+            stage="capture",
+            event="trigger_started",
+            details={
+                "event_id": event.event_id,
+                "trigger": event.context.trigger_type,
+            },
+        )
+
+    def _log_inference_summary(
+        self,
+        event: EdgeEvent,
+        decision: Decision,
+        result: TwoStageInferenceResult | None,
+    ) -> None:
+        if result is None:
+            details = {
+                "event_id": event.event_id,
+                "executed": False,
+                "success": None,
+                "stage": "skipped",
+                "detection_label": None,
+                "detection_confidence": None,
+                "classification_label": None,
+                "classification_confidence": None,
+                "server_assist": decision.mark_server_assist,
+                "reason": decision.reason,
+            }
+        else:
+            best_box = self._best_detection_box(result)
+            classification = (
+                result.classification
+                if result.classification is not None and result.classification.success
+                else None
+            )
+            details = {
+                "event_id": event.event_id,
+                "executed": True,
+                "success": result.success,
+                "stage": result.stage,
+                "detection_label": best_box.label if best_box else None,
+                "detection_confidence": best_box.confidence if best_box else None,
+                "classification_label": (
+                    classification.top1_label if classification is not None else None
+                ),
+                "classification_confidence": (
+                    classification.top1_confidence if classification is not None else None
+                ),
+                "server_assist": decision.mark_server_assist,
+                "reason": result.reason or decision.reason,
+            }
+
+        self._log(stage="inference", event="inference_summary", details=details)
+
+    def _log_trigger_finished(self, event: EdgeEvent, decision: Decision) -> None:
+        delivery_result = str(event.metadata.get("delivery_result", "unknown"))
+        self._log(
+            stage="delivery",
+            event="trigger_finished",
+            details={
+                "event_id": event.event_id,
+                "final_result": delivery_result,
+                "stored_locally": delivery_result != "uploaded",
+                "server_assist": event.requires_server_assist,
+                "reason": decision.reason,
+            },
+        )
+
     def run_once(self, capture_timeout_sec: float | None = None) -> bool:
         """执行一次完整的边缘事件处理流程。
 
@@ -53,29 +132,11 @@ class EdgePipeline:
         except TimeoutError as exc:
             if str(exc) != "capture_wait_timeout":
                 raise
-            self._log(
-                stage="capture",
-                event="capture_wait_timeout",
-                details={
-                    "timeout_sec": capture_timeout_sec,
-                },
-            )
             return False
 
         event = EdgeEvent.new(ctx, image)
-        self._log(
-            stage="capture",
-            event="captured",
-            details={
-                "event_id": event.event_id,
-                "image_id": image.image_id,
-                "trigger": ctx.trigger_type,
-                "capture_mode": ctx.sensor_snapshot.get("capture_mode"),
-                "pir_gpio_pin": ctx.sensor_snapshot.get("pir_gpio_pin"),
-                "width": image.width,
-                "height": image.height,
-            },
-        )
+        self._emit_separator()
+        self._log_trigger_started(event)
 
         runtime_status = self.runtime_status_provider()
         event.metadata["runtime_status"] = {
@@ -93,121 +154,37 @@ class EdgePipeline:
 
         decision = self.decision_engine.decide_before_infer(runtime_status)
         event.metadata["decision_before_infer_reason"] = decision.reason
-        self._log(
-            stage="decision",
-            event="before_infer_decision",
-            details={
-                "event_id": event.event_id,
-                "do_local_infer": decision.do_local_infer,
-                "upload_event": decision.upload_event,
-                "server_assist": decision.mark_server_assist,
-                "reason": decision.reason,
-            },
-        )
+        inference_result: TwoStageInferenceResult | None = None
 
         if decision.do_local_infer:
             contract = self.infer.current_contract()
-            result = self.infer.infer_two_stage(image=image)
-            event.local_inference = result
+            inference_result = self.infer.infer_two_stage(image=image)
+            event.local_inference = inference_result
             event.metadata["edge_model_contract_version"] = contract.contract_version
             event.metadata["edge_model_package_version"] = contract.package_version
-            decision = self.decision_engine.decide_after_infer(result, decision)
+            decision = self.decision_engine.decide_after_infer(
+                inference_result,
+                decision,
+            )
             event.metadata["decision_after_infer_reason"] = decision.reason
-            best_box = (
-                max(result.detection.boxes, key=lambda item: item.confidence)
-                if result.detection.boxes
-                else None
-            )
-            self._log(
-                stage="inference",
-                event="local_inference_finished",
-                details={
-                    "event_id": event.event_id,
-                    "bird_detected": bool(result.detection.boxes),
-                    "detection_label": best_box.label if best_box else None,
-                    "detection_confidence": (
-                        best_box.confidence if best_box else None
-                    ),
-                    "success": result.success,
-                    "stage": result.stage,
-                    "classification_label": (
-                        result.classification.top1_label
-                        if result.classification is not None
-                        else None
-                    ),
-                    "classification_confidence": (
-                        result.classification.top1_confidence
-                        if result.classification is not None
-                        else None
-                    ),
-                    "reason": result.reason,
-                    "server_assist": decision.mark_server_assist,
-                },
-            )
         else:
             event.metadata["decision_after_infer_reason"] = "local_inference_skipped"
-            self._log(
-                stage="inference",
-                event="local_inference_skipped",
-                details={
-                    "event_id": event.event_id,
-                    "reason": decision.reason,
-                    "server_assist": decision.mark_server_assist,
-                },
-            )
 
         event.requires_server_assist = decision.mark_server_assist
+        self._log_inference_summary(event, decision, inference_result)
 
         if decision.upload_event:
             event.metadata["delivery_result"] = "upload_attempted"
-            self._log(
-                stage="delivery",
-                event="upload_attempt",
-                details={
-                    "event_id": event.event_id,
-                    "upload_event": decision.upload_event,
-                    "server_assist": event.requires_server_assist,
-                    "delivery_result": event.metadata["delivery_result"],
-                },
-            )
             ok = self.upload_coordinator.upload_event(event)
             if not ok:
                 event.metadata["delivery_result"] = "upload_failed_spooled"
-                record_id = self.spool.put(event)
-                self._log(
-                    stage="delivery",
-                    event="upload_failed_spooled",
-                    details={
-                        "event_id": event.event_id,
-                        "record_id": record_id,
-                        "server_assist": event.requires_server_assist,
-                        "delivery_result": event.metadata["delivery_result"],
-                    },
-                )
+                self.spool.put(event)
             else:
                 event.metadata["delivery_result"] = "uploaded"
-                self._log(
-                    stage="delivery",
-                    event="upload_succeeded",
-                    details={
-                        "event_id": event.event_id,
-                        "server_assist": event.requires_server_assist,
-                        "delivery_result": event.metadata["delivery_result"],
-                    },
-                )
         else:
             event.metadata["delivery_result"] = "spooled_by_policy"
-            record_id = self.spool.put(event)
-            self._log(
-                stage="delivery",
-                event="spooled_by_policy",
-                details={
-                    "event_id": event.event_id,
-                    "record_id": record_id,
-                    "reason": decision.reason,
-                    "server_assist": event.requires_server_assist,
-                    "delivery_result": event.metadata["delivery_result"],
-                },
-            )
+            self.spool.put(event)
+
+        self._log_trigger_finished(event, decision)
 
         return True

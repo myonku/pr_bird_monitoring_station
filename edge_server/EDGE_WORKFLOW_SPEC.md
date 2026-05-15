@@ -24,7 +24,9 @@
 
 - 触发源由 `capture.mode` 决定（mock/pir），与 `run_mode` 解耦。
 - 抓拍编排在 `SensorCameraCaptureModule` 中完成：先等待 sensor 触发，再调用 camera 抓拍。
-- 抓拍进入主流程前应用窗口限频（每窗口最多 N 张），超限时阻塞等待下个窗口。
+- 抓拍进入主流程前先应用最短触发间隔限制，再应用窗口限频（每窗口最多 N 张），超限时阻塞等待。
+- 最短触发间隔配置项 `capture_min_trigger_interval_sec` 在代码层最小为 1 秒。
+- 窗口限频启用时自适应满足：`capture_rate_window_sec >= capture_min_trigger_interval_sec` 且 `capture_rate_window_sec / capture_rate_max_images >= capture_min_trigger_interval_sec`。
 - 采集模块输出 `CaptureContext` 与 `ImagePayload`。
 
 2. 推理前决策阶段：
@@ -107,7 +109,7 @@
 - `[runtime]`
 - `runtime.run_mode`: `development` / `no_auth` / `full_development`
 - `[capture]`
-- `capture_rate_window_sec`, `capture_rate_max_images`
+- `capture_min_trigger_interval_sec`, `capture_rate_window_sec`, `capture_rate_max_images`
 - `[decision_policy]`
 - `[upload_http]`
 - `[runtime_log]`

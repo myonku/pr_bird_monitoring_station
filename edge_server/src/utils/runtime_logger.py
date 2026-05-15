@@ -38,6 +38,16 @@ class RuntimeEventLogger:
             return json.dumps(value, ensure_ascii=False)
         return str(value)
 
+    @staticmethod
+    def _print_line(text: str) -> None:
+        print(text, flush=True)
+
+    def emit_separator(self) -> None:
+        if not self._enabled:
+            return
+
+        self._print_line("=" * 70)
+
     def emit(
         self,
         stage: str,
@@ -57,4 +67,4 @@ class RuntimeEventLogger:
             for key, value in details.items():
                 parts.append(f"{key}={self._format_value(value)}")
 
-        print(" ".join(parts))
+        self._print_line(" ".join(parts))

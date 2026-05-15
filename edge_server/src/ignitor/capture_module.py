@@ -19,12 +19,24 @@ from src.models.workflow.workflow import CaptureContext, ImagePayload
 
 
 class CaptureRateLimiter:
-    """固定窗口限频：每个窗口期最多放行指定数量的抓拍。"""
+    """抓拍频率限制器：先应用最短触发间隔，再应用窗口限频。"""
 
-    def __init__(self, window_sec: float, max_images: int) -> None:
-        self.window_sec = max(float(window_sec), 0.0)
+    def __init__(
+        self,
+        window_sec: float,
+        max_images: int,
+        min_trigger_interval_sec: float = 1.0,
+    ) -> None:
+        self.min_trigger_interval_sec = max(float(min_trigger_interval_sec), 1.0)
         self.max_images = int(max_images)
+        self.window_sec = max(float(window_sec), 0.0)
+        if self.max_images > 0 and self.window_sec > 0:
+            self.window_sec = max(
+                self.window_sec,
+                self.min_trigger_interval_sec * self.max_images,
+            )
         self._history: deque[float] = deque()
+        self._last_capture_at: float | None = None
 
     @property
     def enabled(self) -> bool:
@@ -38,15 +50,26 @@ class CaptureRateLimiter:
             self._history.popleft()
 
     def acquire(self) -> None:
-        if not self.enabled:
-            return
-
         while True:
             now = time.monotonic()
+
+            if self._last_capture_at is not None:
+                interval_wait_sec = self.min_trigger_interval_sec - (
+                    now - self._last_capture_at
+                )
+                if interval_wait_sec > 0:
+                    time.sleep(interval_wait_sec)
+                    continue
+
+            if not self.enabled:
+                self._last_capture_at = now
+                return
+
             self._evict_expired(now)
 
             if len(self._history) < self.max_images:
                 self._history.append(now)
+                self._last_capture_at = now
                 return
 
             wait_sec = self.window_sec - (now - self._history[0])
@@ -59,6 +82,7 @@ class CaptureRateLimiter:
             "enabled": self.enabled,
             "window_sec": self.window_sec,
             "max_images": self.max_images if self.enabled else 0,
+            "min_trigger_interval_sec": self.min_trigger_interval_sec,
         }
 
 
@@ -75,6 +99,7 @@ class SensorCameraCaptureModule(ICaptureModule):
         image_format: str = "jpg",
         capture_cooldown_sec: float = 0.0,
         sensor_wait_timeout_sec: float | None = None,
+        capture_min_trigger_interval_sec: float = 1.0,
         capture_rate_window_sec: float = 0.0,
         capture_rate_max_images: int = 0,
         environment_sensor: ITemperatureHumiditySensor | None = None,
@@ -91,6 +116,7 @@ class SensorCameraCaptureModule(ICaptureModule):
         self._rate_limiter = CaptureRateLimiter(
             window_sec=capture_rate_window_sec,
             max_images=capture_rate_max_images,
+            min_trigger_interval_sec=capture_min_trigger_interval_sec,
         )
 
     def close(self) -> None:
@@ -166,6 +192,7 @@ class MockCaptureModule(SensorCameraCaptureModule):
         image_format: str = "jpg",
         image_width: int = 1920,
         image_height: int = 1080,
+        capture_min_trigger_interval_sec: float = 1.0,
         capture_rate_window_sec: float = 0.0,
         capture_rate_max_images: int = 0,
     ) -> None:
@@ -181,6 +208,7 @@ class MockCaptureModule(SensorCameraCaptureModule):
             image_format=image_format,
             capture_cooldown_sec=0.0,
             sensor_wait_timeout_sec=None,
+            capture_min_trigger_interval_sec=capture_min_trigger_interval_sec,
             capture_rate_window_sec=capture_rate_window_sec,
             capture_rate_max_images=capture_rate_max_images,
         )
@@ -200,6 +228,7 @@ class PIRCameraCaptureModule(SensorCameraCaptureModule):
         image_height: int = 1080,
         capture_cooldown_sec: float = 0.1,
         pir_wait_timeout_sec: float | None = None,
+        capture_min_trigger_interval_sec: float = 1.0,
         capture_rate_window_sec: float = 0.0,
         capture_rate_max_images: int = 0,
     ) -> None:
@@ -215,6 +244,7 @@ class PIRCameraCaptureModule(SensorCameraCaptureModule):
             image_format=image_format,
             capture_cooldown_sec=capture_cooldown_sec,
             sensor_wait_timeout_sec=pir_wait_timeout_sec,
+            capture_min_trigger_interval_sec=capture_min_trigger_interval_sec,
             capture_rate_window_sec=capture_rate_window_sec,
             capture_rate_max_images=capture_rate_max_images,
         )

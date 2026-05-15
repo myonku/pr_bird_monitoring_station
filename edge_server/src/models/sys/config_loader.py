@@ -174,6 +174,31 @@ def _parse_runtime_log_stages(payload: Any) -> list[RuntimeLogStage]:
     return stages
 
 
+def _normalize_capture_rate_limits(
+    *,
+    min_trigger_interval_sec: float,
+    capture_rate_window_sec: float,
+    capture_rate_max_images: int,
+) -> tuple[float, float, int]:
+    effective_min_interval_sec = max(float(min_trigger_interval_sec), 1.0)
+    effective_window_sec = float(capture_rate_window_sec)
+    effective_max_images = int(capture_rate_max_images)
+
+    if effective_window_sec < 0:
+        raise ValueError("capture_rate_window_sec must be >= 0")
+    if effective_max_images < 0:
+        raise ValueError("capture_rate_max_images must be >= 0")
+
+    # 窗口限频开启时，窗口参数自适应到不弱于最短触发间隔约束。
+    if effective_window_sec > 0 and effective_max_images > 0:
+        effective_window_sec = max(
+            effective_window_sec,
+            effective_min_interval_sec * effective_max_images,
+        )
+
+    return effective_min_interval_sec, effective_window_sec, effective_max_images
+
+
 def load_edge_config(
     config_data: dict[str, Any],
     *,
@@ -254,12 +279,17 @@ def load_edge_config(
         raise ValueError(f"unsupported capture mode: {capture_mode}")
 
     pir_wait_timeout_raw = capture_tbl.get("pir_wait_timeout_sec")
-    capture_rate_window_sec = float(capture_tbl.get("capture_rate_window_sec", 0.0))
-    capture_rate_max_images = int(capture_tbl.get("capture_rate_max_images", 0))
-    if capture_rate_window_sec < 0:
-        raise ValueError("capture_rate_window_sec must be >= 0")
-    if capture_rate_max_images < 0:
-        raise ValueError("capture_rate_max_images must be >= 0")
+    (
+        capture_min_trigger_interval_sec,
+        capture_rate_window_sec,
+        capture_rate_max_images,
+    ) = _normalize_capture_rate_limits(
+        min_trigger_interval_sec=float(
+            capture_tbl.get("capture_min_trigger_interval_sec", 1.0)
+        ),
+        capture_rate_window_sec=float(capture_tbl.get("capture_rate_window_sec", 0.0)),
+        capture_rate_max_images=int(capture_tbl.get("capture_rate_max_images", 0)),
+    )
 
     capture = CaptureConfig(
         mode=cast(Literal["mock", "pir"], capture_mode),
@@ -268,6 +298,7 @@ def load_edge_config(
             float(pir_wait_timeout_raw) if pir_wait_timeout_raw is not None else None
         ),
         capture_cooldown_sec=float(capture_tbl.get("capture_cooldown_sec", 0.1)),
+        capture_min_trigger_interval_sec=capture_min_trigger_interval_sec,
         capture_rate_window_sec=capture_rate_window_sec,
         capture_rate_max_images=capture_rate_max_images,
         image_format=str(capture_tbl.get("image_format", "jpg")).strip().lower(),

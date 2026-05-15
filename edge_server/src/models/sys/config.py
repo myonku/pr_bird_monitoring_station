@@ -84,6 +84,7 @@ class CaptureConfig:
     pir_gpio_pin: int = 17
     pir_wait_timeout_sec: float | None = None
     capture_cooldown_sec: float = 0.1
+    capture_min_trigger_interval_sec: float = 1.0
     capture_rate_window_sec: float = 0.0
     capture_rate_max_images: int = 0
     image_format: str = "jpg"

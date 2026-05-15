@@ -84,7 +84,8 @@
   - `mode`: `mock` / `pir`
   - `pir_gpio_pin`, `pir_wait_timeout_sec`
   - `capture_cooldown_sec`
-  - `capture_rate_window_sec`, `capture_rate_max_images`（窗口限频）
+  - `capture_min_trigger_interval_sec`（最短触发间隔，代码层最小值 1s，优先于窗口限频）
+  - `capture_rate_window_sec`, `capture_rate_max_images`（窗口限频；启用时会自适应到不弱于最短触发间隔）
   - `image_format`, `image_width`, `image_height`
 - `[decision_policy]`
   - `enable_local_inference`

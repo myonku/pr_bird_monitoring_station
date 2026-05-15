@@ -243,7 +243,6 @@ def main() -> None:
         if not processed:
             print("edge pipeline run_once done (no motion)")
             return
-        print("edge pipeline run_once done")
         return
 
     if is_basic_development_mode:
