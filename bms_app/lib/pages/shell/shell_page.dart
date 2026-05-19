@@ -8,7 +8,7 @@ import 'package:bms_app/pages/me/me_page.dart';
 import 'package:bms_app/pages/records/records_page.dart';
 import 'package:bms_app/pages/stats/stats_page.dart';
 
-class ShellPage extends StatelessWidget {
+class ShellPage extends StatefulWidget {
   const ShellPage({
     super.key,
     required this.controller,
@@ -19,23 +19,75 @@ class ShellPage extends StatelessWidget {
   final MonitoringController monitoringController;
 
   @override
-  Widget build(BuildContext context) {
-    final pages = [
-      HomePage(
-        controller: controller,
-        mode: monitoringController.mode,
-        monitoringController: monitoringController,
-      ),
-      RecordsPage(monitoringController: monitoringController),
-      StatsPage(monitoringController: monitoringController),
-      MePage(monitoringController: monitoringController),
-    ];
+  State<ShellPage> createState() => _ShellPageState();
+}
 
-    const titles = ['首页', '记录', '统计', '我的'];
+class _ShellPageState extends State<ShellPage> {
+  final List<Widget?> _pages = List<Widget?>.filled(4, null);
+
+  static const List<String> _titles = ['首页', '记录', '统计', '我的'];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onIndexChanged);
+    // Ensure initial page is created (usually index 0)
+    _ensurePage(widget.controller.currentIndex);
+  }
+
+  @override
+  void didUpdateWidget(covariant ShellPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onIndexChanged);
+      widget.controller.addListener(_onIndexChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onIndexChanged);
+    super.dispose();
+  }
+
+  void _onIndexChanged() {
+    final idx = widget.controller.currentIndex;
+    _ensurePage(idx);
+    setState(() {});
+  }
+
+  void _ensurePage(int index) {
+    if (_pages[index] != null) return;
+
+    switch (index) {
+      case 0:
+        _pages[0] = HomePage(
+          controller: widget.controller,
+          mode: widget.monitoringController.mode,
+          monitoringController: widget.monitoringController,
+        );
+        break;
+      case 1:
+        _pages[1] = RecordsPage(monitoringController: widget.monitoringController);
+        break;
+      case 2:
+        _pages[2] = StatsPage(monitoringController: widget.monitoringController);
+        break;
+      case 3:
+        _pages[3] = MePage(monitoringController: widget.monitoringController);
+        break;
+      default:
+        break;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentIndex = widget.controller.currentIndex;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(titles[controller.currentIndex]),
+        title: Text(_titles[currentIndex]),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -50,7 +102,7 @@ class ShellPage extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  monitoringController.mode.displayName,
+                  widget.monitoringController.mode.displayName,
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -62,10 +114,16 @@ class ShellPage extends StatelessWidget {
           ),
         ],
       ),
-      body: IndexedStack(index: controller.currentIndex, children: pages),
+      body: IndexedStack(
+        index: currentIndex,
+        children: List<Widget>.generate(
+          4,
+          (i) => _pages[i] ?? const SizedBox.shrink(),
+        ),
+      ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: controller.currentIndex,
-        onDestinationSelected: controller.setIndex,
+        selectedIndex: currentIndex,
+        onDestinationSelected: widget.controller.setIndex,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),

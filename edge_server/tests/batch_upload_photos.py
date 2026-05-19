@@ -1,6 +1,7 @@
 """
 批量上传测试图片到 data_worker。
-从本地 PHOTO_DIR 图片库随机抽样 350 张，已上传的 001、002 自动跳过。
+从本地 PHOTO_DIR 图片库随机抽样 180 张，已上传的 001、002 自动跳过。
+上传日期分散在 5 月 16 日到 6 月 1 日之间，包含两端。
 """
 import base64
 import hashlib
@@ -28,7 +29,7 @@ SKIP_CLASS_IDS = {"001", "002"}
 PHOTO_DIR = Path("E:/photos")
 LABEL_FILE = EDGE_SERVER_ROOT / "model_pack" / "labels.txt"
 SITE_A_PRIVATE_KEY_FILE = EDGE_SERVER_ROOT / "secret_keys" / "private.pem"
-UPLOAD_SAMPLE_SIZE = 350
+UPLOAD_SAMPLE_SIZE = 180
 UPLOAD_INTERVAL_SEC = 0.2
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -173,12 +174,29 @@ def extract_class_id(photo_path: Path) -> str:
     return parent_name or stem
 
 
-def build_recent_capture_datetimes(count: int) -> list[datetime]:
-    local_now = datetime.now().astimezone()
-    return [
-        local_now - timedelta(days=random.randint(0, 29), seconds=random.randint(0, 86399))
-        for _ in range(count)
-    ]
+def capture_window_for_current_year() -> tuple[date_cls, date_cls]:
+    year = datetime.now().astimezone().year
+    return date_cls(year, 5, 16), date_cls(year, 6, 1)
+
+
+def build_spread_capture_days(count: int, start_day: date_cls, end_day: date_cls) -> list[date_cls]:
+    if count <= 0:
+        return []
+    if end_day < start_day:
+        raise ValueError(f"invalid capture window: {start_day.isoformat()} > {end_day.isoformat()}")
+
+    day_count = (end_day - start_day).days + 1
+    day_pool = [start_day + timedelta(days=i) for i in range(day_count)]
+    base, remainder = divmod(count, day_count)
+    extra_days = set(random.sample(range(day_count), remainder)) if remainder else set()
+
+    capture_days: list[date_cls] = []
+    for index, day in enumerate(day_pool):
+        repeats = base + (1 if index in extra_days else 0)
+        capture_days.extend([day] * repeats)
+
+    random.shuffle(capture_days)
+    return capture_days
 
 
 def bootstrap(site: SiteSource) -> dict[str, str]:
@@ -356,13 +374,18 @@ def main():
     # 收集图片
     photo_pool = load_photo_pool(PHOTO_DIR)
     to_upload = random.sample(photo_pool, UPLOAD_SAMPLE_SIZE)
-    capture_times = build_recent_capture_datetimes(len(to_upload))
+    capture_start_day, capture_end_day = capture_window_for_current_year()
+    capture_days = build_spread_capture_days(len(to_upload), capture_start_day, capture_end_day)
     print(
         f"\n[2] 待上传: {len(to_upload)} 张 "
         f"(图片库可用 {len(photo_pool)} 张, 已跳过 {len(photo_pool) - len(to_upload)} 张)"
     )
 
-    unique_days = sorted({capture_dt.date() for capture_dt in capture_times})
+    unique_days = sorted(set(capture_days))
+    print(
+        f"  日期范围: {capture_start_day.isoformat()} ~ {capture_end_day.isoformat()} "
+        f"(共 {len(unique_days)} 天)"
+    )
     print("  日期分布: " + ", ".join(day.isoformat() for day in unique_days[:12]))
     if len(unique_days) > 12:
         print(f"  ... 另有 {len(unique_days) - 12} 个日期")
@@ -371,9 +394,9 @@ def main():
         SITE_SOURCES[0].name: to_upload[::2],
         SITE_SOURCES[1].name: to_upload[1::2],
     }
-    site_capture_times = {
-        SITE_SOURCES[0].name: capture_times[::2],
-        SITE_SOURCES[1].name: capture_times[1::2],
+    site_capture_days = {
+        SITE_SOURCES[0].name: capture_days[::2],
+        SITE_SOURCES[1].name: capture_days[1::2],
     }
     for site in SITE_SOURCES:
         group = site_groups[site.name]
@@ -385,16 +408,15 @@ def main():
     ok = fail = 0
     for site in SITE_SOURCES:
         site_photos = site_groups[site.name]
-        site_capture_schedule = site_capture_times[site.name]
+        site_capture_schedule = site_capture_days[site.name]
         headers = site_headers[site.name]
         print(f"\n[3] 开始上传站点 {site.name} 的 {len(site_photos)} 张图片...")
         for i, ph in enumerate(site_photos):
             cid = extract_class_id(ph)
             species = labels.get(cid, f"unknown_{cid}")
             is_edge = (i % 2 == 0)
-            capture_dt = site_capture_schedule[i]
-            capture_day = capture_dt.date()
-            capture_ms = int(capture_dt.timestamp() * 1000)
+            capture_day = site_capture_schedule[i]
+            capture_ms = day_to_capture_ms(capture_day)
             label = "边缘处理" if is_edge else "后端辅助"
             try:
                 status, _ = upload_photo(
