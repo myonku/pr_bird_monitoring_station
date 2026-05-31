@@ -47,7 +47,7 @@ class RecordDetailPage extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            '记录为设备自动上传，不包含人工补录描述。物种简介来自后端资料库，用于展示和科普说明。',
+            '记录为设备自动上传，不包含人工补录描述。简介内容来自资料库，仅用于展示和科普说明。',
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: Colors.black54),

@@ -93,10 +93,10 @@ class _LoginPageState extends State<LoginPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('登录系统', style: theme.textTheme.headlineMedium),
+                            Text('欢迎', style: theme.textTheme.headlineMedium),
                             const SizedBox(height: 8),
                             Text(
-                              '认证模块与页面已分离，后续可直接替换为真实后端实现。',
+                              '使用用户名或可用的邮箱、手机号码登录。',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: Colors.black54,
                               ),
@@ -200,7 +200,7 @@ class _HeroBanner extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '客户端展示骨架 · ${mode.displayName}',
+            '客户端展示 · ${mode.displayName}',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Colors.white.withValues(alpha: 0.9),
             ),

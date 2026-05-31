@@ -280,7 +280,7 @@ class _RecordsPageState extends State<RecordsPage> {
               ),
               const SizedBox(height: 6),
               Text(
-                '站点列表与日期范围通过后端接口查询；置信度与模糊搜索仅在客户端本地过滤。',
+                '最长支持30天范围查询。',
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: Colors.black54),
@@ -454,10 +454,10 @@ class _RecordsHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('自动上传记录', style: Theme.of(context).textTheme.titleMedium),
+                Text('监测事件上传记录', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
                 Text(
-                  '当前共 $totalCount 条记录，边缘设备拍摄、推理并上传，客户端提供统计查询与记录检索。',
+                  '当前共 $totalCount 条记录，边缘设备拍摄、推理并上传，此页面提供统计查询与记录检索。',
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(color: Colors.black54),

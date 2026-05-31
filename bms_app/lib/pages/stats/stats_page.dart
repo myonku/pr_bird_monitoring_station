@@ -295,7 +295,6 @@ class _StatsPageState extends State<StatsPage> {
           ),
         ],
         const SizedBox(height: 18),
-        const _StatsNoteCard(),
       ],
     );
   }
@@ -685,7 +684,7 @@ class _DailyDistributionCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            '横坐标会根据所选时间段自动展开，适合不同长度的区间。',
+            '展示所选时段中每天的识别记录数量，帮助了解整体趋势和波动情况。',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: Colors.black54),
@@ -1013,49 +1012,6 @@ class _MessagePanel extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   description,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: Colors.black54),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatsNoteCard extends StatelessWidget {
-  const _StatsNoteCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-            child: Icon(
-              Icons.analytics_outlined,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('统计说明', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text(
-                  '顶部折线图固定展示最近一周趋势；底部两张图会跟随所选时间段和站点实时刷新，时间段最长 30 天。',
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(color: Colors.black54),

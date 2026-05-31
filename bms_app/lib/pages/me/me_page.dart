@@ -64,12 +64,6 @@ class _MePageState extends State<MePage> {
                       ).textTheme.titleLarge?.copyWith(color: Colors.white),
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      '登录后会在我的页面单独拉取个人信息。',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.9),
-                      ),
-                    ),
                   ],
                 ),
               ),
