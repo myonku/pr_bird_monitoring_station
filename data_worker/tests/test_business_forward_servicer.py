@@ -9,8 +9,8 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 from src.gen.business.v1 import business_forward_pb2
+from src.iface.business.data_worker_svc import EdgeEventProcessingResult
 from src.iface.communication.routing_contract import RouteProfile
-from src.models.business.event_result import EdgeEventProcessingResult
 from src.models.business.event_req_dto import (
     CaptureContextRequest,
     EdgeEventUploadRequest,
@@ -237,7 +237,20 @@ class DataWorkerBusinessForwardTests(IsolatedAsyncioTestCase):
             inference_module=None,
         )
 
-        request = build_edge_event_request()
+        request = build_edge_event_request().model_copy(
+            update={
+                "local_inference": TwoStageInferenceResult(
+                    success=True,
+                    stage="classified",
+                    detection=DetectionResult(success=True),
+                    classification=ClassificationResult(
+                        success=True,
+                        top1_label="sparrow",
+                        top1_confidence=0.93,
+                    ),
+                )
+            }
+        )
         fake_envelope = SimpleNamespace(
             event_id=request.event_id,
             device_entity_id=UUID(request.context.device_id),
@@ -268,6 +281,55 @@ class DataWorkerBusinessForwardTests(IsolatedAsyncioTestCase):
         self.assertIs(result.monitoring_record, fake_record)
         self.assertEqual(len(envelope_manager.create_calls), 1)
         self.assertEqual(len(monitoring_record_manager.create_calls), 1)
+
+    async def test_handle_edge_upload_drops_low_confidence_records(self) -> None:
+        envelope_manager = FakeEnvelopeManager()
+        monitoring_record_manager = FakeMonitoringRecordManager()
+        species_profile_manager = FakeSpeciesProfileManager()
+        service = DataWorkerService(
+            envelope_manager=envelope_manager,
+            monitoring_record_manager=monitoring_record_manager,
+            species_profile_manager=species_profile_manager,
+            inference_module=None,
+        )
+
+        request = build_edge_event_request().model_copy(
+            update={
+                "local_inference": TwoStageInferenceResult(
+                    success=True,
+                    stage="classified",
+                    detection=DetectionResult(success=True),
+                    classification=ClassificationResult(
+                        success=True,
+                        top1_label="sparrow",
+                        top1_confidence=0.80,
+                    ),
+                )
+            }
+        )
+        fake_envelope = SimpleNamespace(
+            event_id=request.event_id,
+            device_entity_id=UUID(request.context.device_id),
+            device_name=request.context.device_name,
+            occurred_at_ms=request.context.captured_at_ms,
+            received_at_ms=request.context.captured_at_ms,
+            payload_version="edge_event_http_v1",
+            payload_type="mixed",
+            payload_body={"event_id": str(request.event_id)},
+            payload_mongo_document_id="",
+            binary_parts=[],
+            transport_meta={"source": "edge_server"},
+            metadata={"origin": "edge"},
+        )
+
+        with patch.object(EdgeEventUploadRequest, "to_document", return_value=fake_envelope):
+            result = await service.handle_edge_upload(request)
+
+        self.assertTrue(result.stage_a_enter_stage_b)
+        self.assertEqual(result.stage_a_reason, "classification_confidence_too_low")
+        self.assertIsNone(result.monitoring_record)
+        self.assertEqual(len(envelope_manager.create_calls), 1)
+        self.assertEqual(len(monitoring_record_manager.create_calls), 0)
 
     async def test_handle_edge_upload_resolves_species_profile_by_label_name(self) -> None:
         envelope_manager = FakeEnvelopeManager()
@@ -306,8 +368,23 @@ class DataWorkerBusinessForwardTests(IsolatedAsyncioTestCase):
                 )
             }
         )
+        fake_envelope = SimpleNamespace(
+            event_id=request.event_id,
+            device_entity_id=UUID(request.context.device_id),
+            device_name=request.context.device_name,
+            occurred_at_ms=request.context.captured_at_ms,
+            received_at_ms=request.context.captured_at_ms,
+            payload_version="edge_event_http_v1",
+            payload_type="mixed",
+            payload_body={"event_id": str(request.event_id)},
+            payload_mongo_document_id="",
+            binary_parts=[],
+            transport_meta={"source": "edge_server"},
+            metadata={"origin": "edge"},
+        )
 
-        result = await service.handle_edge_upload(request)
+        with patch.object(EdgeEventUploadRequest, "to_document", return_value=fake_envelope):
+            result = await service.handle_edge_upload(request)
 
         self.assertTrue(result.stage_a_enter_stage_b)
         self.assertEqual(len(monitoring_record_manager.create_calls), 1)

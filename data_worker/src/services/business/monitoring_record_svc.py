@@ -7,6 +7,9 @@ from src.iface.business.monitoring_record_svc import IMonitoringRecordManager
 from src.models.business.data import MonitoringRecord
 
 
+MIN_VISIBLE_CONFIDENCE = 0.8
+
+
 class MonitoringRecordManager(IMonitoringRecordManager):
     """监测记录的 Beanie CRUD 管理器。"""
 
@@ -16,7 +19,10 @@ class MonitoringRecordManager(IMonitoringRecordManager):
     async def get_by_id(self, record_id: UUID) -> MonitoringRecord | None:
         if record_id.int == 0:
             raise ValueError("record_id is required")
-        return await self._document_model.get(record_id)
+        record = await self._document_model.get(record_id)
+        if record is None or float(getattr(record, "confidence", 0.0) or 0.0) <= MIN_VISIBLE_CONFIDENCE:
+            return None
+        return record
 
     async def list_recent_week(
         self,
@@ -46,6 +52,7 @@ class MonitoringRecordManager(IMonitoringRecordManager):
 
         query: dict[str, object] = {
             "captured_at_ms": {"$gte": start_ms, "$lt": end_ms},
+            "confidence": {"$gt": MIN_VISIBLE_CONFIDENCE},
         }
         if device_entity_id is not None:
             if device_entity_id.int == 0:
@@ -57,7 +64,7 @@ class MonitoringRecordManager(IMonitoringRecordManager):
         return items
 
     async def list_all(self) -> list[MonitoringRecord]:
-        items = await self._document_model.find_all().to_list()
+        items = await self._document_model.find({"confidence": {"$gt": MIN_VISIBLE_CONFIDENCE}}).to_list()
         items.sort(key=lambda item: str(item.id))
         return items
 
@@ -88,10 +95,17 @@ class MonitoringRecordManager(IMonitoringRecordManager):
 
     async def count_today_monitoring_records(self) -> int:
         today_start_ms = self._day_start_ms(datetime.now(timezone.utc).date())
-        return await self._document_model.find({"captured_at_ms": {"$gte": today_start_ms}}).count()
+        return await self._document_model.find(
+            {
+                "captured_at_ms": {"$gte": today_start_ms},
+                "confidence": {"$gt": MIN_VISIBLE_CONFIDENCE},
+            }
+        ).count()
 
     async def list_latest_three(self) -> list[MonitoringRecord]:
-        items = await self._document_model.find_all().to_list()
+        items = await self._document_model.find(
+            {"confidence": {"$gt": MIN_VISIBLE_CONFIDENCE}}
+        ).to_list()
         items.sort(key=lambda item: (item.captured_at_ms, str(item.id)), reverse=True)
         return items[:3]
 
@@ -102,7 +116,10 @@ class MonitoringRecordManager(IMonitoringRecordManager):
         end_ms = self._day_start_ms(today + timedelta(days=1))
 
         items = await self._document_model.find(
-            {"captured_at_ms": {"$gte": start_ms, "$lt": end_ms}}
+            {
+                "captured_at_ms": {"$gte": start_ms, "$lt": end_ms},
+                "confidence": {"$gt": MIN_VISIBLE_CONFIDENCE},
+            }
         ).to_list()
 
         counts: dict[date, int] = {start_day + timedelta(days=offset): 0 for offset in range(7)}

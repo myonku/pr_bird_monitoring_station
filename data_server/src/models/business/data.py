@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 EventPayloadType = Literal["image", "video", "audio", "metadata", "mixed"]
 RecordStatus = Literal["received", "normalized", "stored", "published", "failed"]
 ProcessingSource = Literal["edge", "data_worker"]
+MONITORING_CONFIDENCE_MIN = 0.8
 
 
 class UUIDDocument(Document):

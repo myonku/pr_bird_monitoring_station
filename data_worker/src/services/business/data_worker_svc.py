@@ -18,6 +18,9 @@ from src.models.common.entities import SpeciesProfile
 from src.models.inference.workflow import InferenceImagePayload, TwoStageInferenceResult
 
 
+MIN_CLASSIFICATION_CONFIDENCE = 0.8
+
+
 @dataclass(slots=True, kw_only=True)
 class StageAResult:
     enter_stage_b: bool
@@ -46,7 +49,7 @@ class DataWorkerService(IDataWorkerService):
         monitoring_record_manager: IMonitoringRecordManager,
         species_profile_manager: ISpeciesProfileManager,
         inference_module: IInferenceModule | None = None,
-        min_classification_confidence: float = 0.5,
+        min_classification_confidence: float = MIN_CLASSIFICATION_CONFIDENCE,
     ) -> None:
         if envelope_manager is None:
             raise ValueError("envelope manager is required")
@@ -60,7 +63,7 @@ class DataWorkerService(IDataWorkerService):
         self._species_profile_manager = species_profile_manager
         self._inference_module = inference_module
         self._min_classification_confidence = max(
-            0.0, float(min_classification_confidence)
+            MIN_CLASSIFICATION_CONFIDENCE, float(min_classification_confidence)
         )
 
     @staticmethod
@@ -101,6 +104,24 @@ class DataWorkerService(IDataWorkerService):
                 return result
 
             stage_b = self._build_stage_b_input(request, stage_a, envelope)
+
+            confidence = self._resolve_species_confidence(stage_b.inference_result)
+            if confidence <= self._min_classification_confidence:
+                result = EdgeEventProcessingResult(
+                    request=request,
+                    envelope=envelope,
+                    processing_source=stage_b.processing_source,
+                    stage_a_enter_stage_b=True,
+                    stage_a_reason="classification_confidence_too_low",
+                    inference_result=stage_b.inference_result,
+                    monitoring_record=None,
+                )
+                self._observe_business_call(
+                    interface_name,
+                    "success",
+                    f"result=dropped source={result.processing_source} reason={result.stage_a_reason}",
+                )
+                return result
 
             species_profile = await self._resolve_species_profile(stage_b)
             monitoring_record = self._build_monitoring_record(stage_b, species_profile)
@@ -235,7 +256,7 @@ class DataWorkerService(IDataWorkerService):
             return "classification_label_missing"
 
         confidence = float(classification.top1_confidence or 0.0)
-        if confidence < self._min_classification_confidence:
+        if confidence <= self._min_classification_confidence:
             return "classification_confidence_too_low"
 
         return ""

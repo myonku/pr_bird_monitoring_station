@@ -17,7 +17,11 @@ from src.iface.business.user_entity_svc import IUserEntityManager
 from src.iface.business.user_profile_svc import IUserProfileManager
 from src.models.business.client_req_dto import *
 from src.models.business.client_resp_dto import *
-from src.models.business.data import MonitoringRecord, UserProfile
+from src.models.business.data import (
+    MONITORING_CONFIDENCE_MIN,
+    MonitoringRecord,
+    UserProfile,
+)
 from src.models.common.entities import DeviceEntity, UserEntity
 from src.utils.crypto_utils import CryptoUtils
 
@@ -60,6 +64,22 @@ class DataServerService(IDataServerService):
         if detail:
             message = f"{message} {detail}"
         print(message, flush=True)
+
+    @staticmethod
+    def _visible_monitoring_records(
+        records: list[MonitoringRecord],
+    ) -> list[MonitoringRecord]:
+        return [
+            record for record in records if record.confidence >= MONITORING_CONFIDENCE_MIN
+        ]
+
+    @staticmethod
+    def _resolve_monitoring_confidence_threshold(confidence_min: float | None) -> float:
+        if confidence_min is None:
+            return MONITORING_CONFIDENCE_MIN
+        if not 0.0 <= float(confidence_min) <= 1.0:
+            raise ValueError("confidence_min must be between 0 and 1")
+        return max(MONITORING_CONFIDENCE_MIN, float(confidence_min))
 
     async def get_user_profile(
         self,
@@ -383,12 +403,14 @@ class DataServerService(IDataServerService):
 
         try:
             if normalized_limit <= 3:
-                records = await self._record_manager.list_latest_three()
-                result = await self._records_to_client_responses(
-                    records[:normalized_limit]
+                records = self._visible_monitoring_records(
+                    await self._record_manager.list_latest_three()
                 )
+                result = await self._records_to_client_responses(records[:normalized_limit])
             else:
-                records = await self._record_manager.list_all()
+                records = self._visible_monitoring_records(
+                    await self._record_manager.list_all()
+                )
                 sorted_records = sorted(records, key=self._record_sort_key, reverse=True)
                 result = await self._records_to_client_responses(
                     sorted_records[:normalized_limit]
@@ -423,10 +445,12 @@ class DataServerService(IDataServerService):
                 self._envelope_manager.list_all(),
             )
 
+            visible_records = self._visible_monitoring_records(records)
+
             today = self._today_local()
             today_monitoring_count = sum(
                 1
-                for record in records
+                for record in visible_records
                 if self._is_same_local_day(record.captured_at_ms, today)
             )
             today_upload_count = sum(
@@ -437,7 +461,7 @@ class DataServerService(IDataServerService):
             active_station_count = len(
                 {
                     str(record.device_entity_id)
-                    for record in records
+                    for record in visible_records
                     if str(record.device_entity_id).strip()
                 }
             )
@@ -494,7 +518,7 @@ class DataServerService(IDataServerService):
                 )
 
             recent_records = await self._records_to_client_responses(
-                sorted(records, key=self._record_sort_key, reverse=True)[:3]
+                sorted(visible_records, key=self._record_sort_key, reverse=True)[:3]
             )
 
             result = ClientDashboardSnapshotResponse(
@@ -1082,12 +1106,9 @@ class DataServerService(IDataServerService):
             except ValueError as exc:
                 raise ValueError("device_id is invalid") from exc
 
-        if confidence_min is not None:
-            if not 0.0 <= float(confidence_min) <= 1.0:
-                raise ValueError("confidence_min must be between 0 and 1")
-            confidence_threshold = float(confidence_min)
-        else:
-            confidence_threshold = None
+        confidence_threshold = self._resolve_monitoring_confidence_threshold(
+            confidence_min
+        )
 
         start_ms = self._local_day_start_ms(start_day)
         end_ms = self._local_day_start_ms(end_day + timedelta(days=1))

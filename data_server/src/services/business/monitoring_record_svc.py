@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
 from src.iface.business.monitoring_record_svc import IMonitoringRecordManager
-from src.models.business.data import MonitoringRecord
+from src.models.business.data import MONITORING_CONFIDENCE_MIN, MonitoringRecord
 
 
 class MonitoringRecordManager(IMonitoringRecordManager):
@@ -46,6 +46,7 @@ class MonitoringRecordManager(IMonitoringRecordManager):
 
         query: dict[str, object] = {
             "captured_at_ms": {"$gte": start_ms, "$lt": end_ms},
+            "confidence": {"$gte": MONITORING_CONFIDENCE_MIN},
         }
         if device_entity_id is not None:
             if device_entity_id.int == 0:
@@ -88,10 +89,17 @@ class MonitoringRecordManager(IMonitoringRecordManager):
 
     async def count_today_monitoring_records(self) -> int:
         today_start_ms = self._day_start_ms(datetime.now(timezone.utc).date())
-        return await self._document_model.find({"captured_at_ms": {"$gte": today_start_ms}}).count()
+        return await self._document_model.find(
+            {
+                "captured_at_ms": {"$gte": today_start_ms},
+                "confidence": {"$gte": MONITORING_CONFIDENCE_MIN},
+            }
+        ).count()
 
     async def list_latest_three(self) -> list[MonitoringRecord]:
-        items = await self._document_model.find_all().to_list()
+        items = await self._document_model.find(
+            {"confidence": {"$gte": MONITORING_CONFIDENCE_MIN}}
+        ).to_list()
         items.sort(key=lambda item: (item.captured_at_ms, str(item.id)), reverse=True)
         return items[:3]
 
@@ -102,7 +110,10 @@ class MonitoringRecordManager(IMonitoringRecordManager):
         end_ms = self._day_start_ms(today + timedelta(days=1))
 
         items = await self._document_model.find(
-            {"captured_at_ms": {"$gte": start_ms, "$lt": end_ms}}
+            {
+                "captured_at_ms": {"$gte": start_ms, "$lt": end_ms},
+                "confidence": {"$gte": MONITORING_CONFIDENCE_MIN},
+            }
         ).to_list()
 
         counts: dict[date, int] = {start_day + timedelta(days=offset): 0 for offset in range(7)}
