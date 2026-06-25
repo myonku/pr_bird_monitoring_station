@@ -39,7 +39,7 @@ BOOTSTRAP_AUTH_ROUTE_KEY = "auth.bootstrap.authenticate"
 
 
 class BootstrapCoordinatorService(IBootstrapCoordinator):
-    """data_server 的模块级 bootstrap / refresh / revoke 协调器。"""
+    """bms_copilot 的模块级 bootstrap / refresh / revoke 协调器。"""
 
     def __init__(
         self,
@@ -355,7 +355,7 @@ class BootstrapCoordinatorService(IBootstrapCoordinator):
         user_agent = (
             (identity.user_agent if identity is not None else "")
             or (session.user_agent if session is not None else "")
-            or f"data_server/{self._runtime_cfg.service_name or 'service'}"
+            or f"bms_copilot/{self._runtime_cfg.service_name or 'service'}"
         ).strip()
 
         return TokenRefreshRequest(
@@ -383,7 +383,7 @@ class BootstrapCoordinatorService(IBootstrapCoordinator):
                 self._startup_params.entity_id
                 or self._startup_params.entity_name
                 or self._runtime_cfg.service_name
-                or "data_server"
+                or "bms_copilot"
             ).strip()
         return f"{entity_type}:{entity_id}"
 
@@ -405,7 +405,7 @@ def _build_bootstrap_challenge_request(
     ).strip()
     if not entity_id:
         entity_id = (
-            startup_params.entity_name or runtime_cfg.service_name or "data_server"
+            startup_params.entity_name or runtime_cfg.service_name or "bms_copilot"
         ).strip()
     key_id = (
         startup_params.active_key_id or startup_params.instance_id or entity_id
@@ -429,7 +429,7 @@ def _build_bootstrap_challenge_request(
         ).strip(),
         gateway_id=(startup_params.entity_name or "").strip(),
         source_ip="127.0.0.1",
-        user_agent=f"data_server/{audience}",
+        user_agent=f"bms_copilot/{audience}",
         request_id=request_id,
         trace_id=request_id,
         ttl_sec=60,

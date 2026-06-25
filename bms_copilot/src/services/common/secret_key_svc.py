@@ -32,7 +32,7 @@ class SecretKeyService(ISecretKeyManager):
         cls,
         *,
         config: ProjectConfig | None,
-        default_entity_id: str = "data_server",
+        default_entity_id: str = "bms_copilot",
         catalog: list[ServicePublicKeyRecord] | None = None,
         mysql_client: MySQLClient | None = None,
     ) -> tuple["SecretKeyService", SecretKeyStartupParams]:

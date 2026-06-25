@@ -27,7 +27,7 @@ class WorkerResult:
 
 
 class IWorkerOrchestrator(ABC):
-    """data_worker 顶层编排契约。
+    """data_server 顶层编排契约。
 
     下游接口调用：
       - communication.ITrafficStation.handle_inbound / send_outbound

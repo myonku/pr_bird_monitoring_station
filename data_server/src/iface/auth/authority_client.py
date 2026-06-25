@@ -41,7 +41,7 @@ class TokenRefreshRequest(Struct, kw_only=True):
 
 
 class IAuthAuthorityClient(ABC):
-    """data_worker 侧对认证中心的客户端调用。"""
+    """data_server 侧对认证中心的客户端调用。"""
 
     @abstractmethod
     async def init_bootstrap_challenge(self, req: ChallengeRequest) -> ChallengePayload:

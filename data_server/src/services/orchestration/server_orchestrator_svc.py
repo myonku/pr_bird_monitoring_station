@@ -15,8 +15,7 @@ from src.iface.orchestration.worker_orchestrator import (
 class ServerOrchestratorService(IWorkerOrchestrator):
     """data_server 顶层编排最小实现。
 
-    与 data_worker 的 WorkerOrchestratorService 结构一致，
-    但业务语义上是面向客户端请求的编排入口。
+    是面向客户端请求的编排入口。
     """
 
     def __init__(self, *, traffic_station: ITrafficStation | None) -> None:

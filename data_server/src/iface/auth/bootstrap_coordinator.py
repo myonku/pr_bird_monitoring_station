@@ -4,7 +4,7 @@ from src.iface.common.local_credential_manager import ModuleCredentialSnapshot
 
 
 class IBootstrapCoordinator(ABC):
-    """data_worker 引导认证生命周期编排。
+    """data_server 引导认证生命周期编排。
 
     上层只依赖模块级协调面，不直接绑定 bootstrap / refresh 的底层 RPC 细节。
     """

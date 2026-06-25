@@ -69,7 +69,7 @@ def _resolve_path(base_dir: Path, value: str) -> str:
 
 
 class InferenceConfig(Struct, kw_only=True):
-    """data_worker 启动时强制加载的标准级模型包配置。"""
+    """bms_copilot 启动时强制加载的标准级模型包配置。"""
 
     required: bool = True
     root_dir: str = "model_pack"

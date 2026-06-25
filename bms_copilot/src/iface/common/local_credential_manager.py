@@ -8,7 +8,7 @@ from src.models.auth.bootstrap import BootstrapStage
 
 @dataclass(slots=True, kw_only=True)
 class ModuleCredentialSnapshot:
-    """data_server 本模块凭证快照。"""
+    """bms_copilot 本模块凭证快照。"""
 
     principal_id: str
     stage: BootstrapStage = "uninitialized"

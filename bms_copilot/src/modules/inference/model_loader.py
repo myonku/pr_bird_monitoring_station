@@ -551,7 +551,7 @@ class LocalModelBundleLoader(IModelBundleLoader):
             contract_version="model_pack_runtime_v1",
             package_version=package_version,
             exported_at_ms=int(time.time() * 1000),
-            exported_by="data_worker",
+            exported_by="bms_copilot",
             detection=detection,
             classification=classification,
             notes="auto-derived from standard model_pack by filename + artifact metadata",
