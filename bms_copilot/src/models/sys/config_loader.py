@@ -2,7 +2,7 @@ from pathlib import Path
 import tomllib
 import msgspec
 
-from src.models.sys.config import AuthControlConfig, ProjectConfig
+from src.models.sys.config import ProjectConfig
 
 
 def load_project_config(
@@ -25,9 +25,12 @@ def load_project_config(
         cfg.auth = cfg.auth.normalized()
     if cfg.auth_control is not None:
         default_module = (
-            cfg.runtime.service_name if cfg.runtime is not None else "data_server"
+            cfg.runtime.service_name if cfg.runtime is not None else "data_worker"
         )
         cfg.auth_control = cfg.auth_control.normalized(default_module)
+    if cfg.inference is None:
+        raise ValueError("inference config is required for data_worker startup")
+    cfg.inference = cfg.inference.normalized(base_dir=base_dir)
     return cfg
 
 
@@ -43,3 +46,9 @@ def load_project_config_from_toml(
     with path.open("rb") as f:
         raw = tomllib.load(f)
     return load_project_config(raw, base_dir=path.parent)
+
+
+
+
+
+

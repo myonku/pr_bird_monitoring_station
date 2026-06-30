@@ -1,0 +1,137 @@
+[runtime]
+entity_type = "service"
+service_name = "bms_copilot"
+instance_id = "6e03780d-37b8-4665-a41d-6fe627afdf39"
+run_mode = "development"
+grpc_listen_host = "127.0.0.1"
+grpc_listen_port = 50054
+
+[auth]
+secret_key_dir = "secret_keys"
+active_key_id = "2ca73f63-e584-4a25-a6db-a558dc0cf3d9"
+
+[auth_control]
+enabled = true
+rule_id = "bms_copilot_local"
+scope = "auth"
+subject = "composite"
+algorithm = "fixed_window"
+limit = 600
+burst = 0
+window_sec = 60
+require_authenticated = false
+match_module = "bms_copilot"
+match_methods = ["POST"]
+
+[agent]
+provider = "openai"
+
+[mysql]
+DIALECT = "mysql"
+HOST = "127.0.0.1"
+PORT = 3306
+USER = "project_user"
+PASSWORD = "YourUserPassword123!"
+DATABASE = "bms_test"
+
+[mysql.CIRCUITBREAKER]
+failure_threshold = 5
+recovery_timeout = 10.0
+half_open_max_calls = 1
+
+[redis]
+MODE = "cluster"
+DIALECT = "redis"
+HOSTS = ["127.0.0.1:7001", "127.0.0.1:7002", "127.0.0.1:7003", "127.0.0.1:7004", "127.0.0.1:7005", "127.0.0.1:7006"]
+PASSWORD = "YourRedisPassword123!"
+DATABASE = 0
+
+[redis.CIRCUITBREAKER]
+failure_threshold = 5
+recovery_timeout = 10.0
+half_open_max_calls = 1
+
+[mongo]
+DIALECT = "mongodb"
+HOST = "127.0.0.1"
+PORT = 27017
+USER = "mongoadmin"
+PASSWORD = "YourMongoPassword123!"
+DATABASE = "bms_test"
+AUTHSOURCE = "admin"
+DIRECTCONNECTION = true
+TLS = false
+
+[mongo.CIRCUITBREAKER]
+failure_threshold = 5
+recovery_timeout = 10.0
+half_open_max_calls = 1
+
+[etcd]
+HOSTS = ["127.0.0.1:23791", "127.0.0.1:23811", "127.0.0.1:23813"]
+USERNAME = "root"
+PASSWORD = "YourEtcdPassword123!"
+NAMESPACE = "/bms"
+
+[etcd.CIRCUITBREAKER]
+failure_threshold = 5
+recovery_timeout = 10.0
+half_open_max_calls = 1
+
+
+[inference]
+required = true
+root_dir = "model_pack"
+detection_dir = "model_pack/detection"
+classification_dir = "model_pack/classification"
+label_dir = "model_pack"
+detection_label_file_name = ""
+classification_label_file_name = "labels.txt"
+
+[[inference.standard_candidates]]
+candidate_id = "server_frcnn_r50_det"
+file_name = "detection_standard_server_frcnn_r50_det.pth"
+task = "detection"
+framework = "pytorch"
+model_name = "fasterrcnn_resnet50_fpn"
+format = "custom"
+input_size = [640, 640]
+score_threshold = 0.25
+nms_iou_threshold = 0.45
+topk = 1
+
+[[inference.standard_candidates]]
+candidate_id = "server_yolo_m"
+file_name = "detection_standard_server_yolo_m.pt"
+task = "detection"
+framework = "yolo"
+model_name = "yolo11m"
+format = "custom"
+input_size = [640, 640]
+score_threshold = 0.25
+nms_iou_threshold = 0.45
+topk = 1
+
+[[inference.standard_candidates]]
+candidate_id = "server_yolo11m_cls"
+file_name = "classification_standard_server_yolo11m_cls.pt"
+task = "classification"
+framework = "yolo"
+model_name = "yolo11m-cls"
+format = "custom"
+input_size = [224, 224]
+score_threshold = 0.0
+nms_iou_threshold = 0.0
+topk = 5
+
+[[inference.standard_candidates]]
+candidate_id = "server_convnext_cls"
+file_name = "classification_standard_server_convnext_cls.pth"
+task = "classification"
+framework = "pytorch"
+model_name = "convnext_base"
+format = "custom"
+input_size = [224, 224]
+score_threshold = 0.0
+nms_iou_threshold = 0.0
+topk = 5

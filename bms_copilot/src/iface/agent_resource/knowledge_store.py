@@ -1,0 +1,14 @@
+from __future__ import annotations
+from typing import Any
+from abc import ABC, abstractmethod
+
+
+class IKnowledgeStore(ABC):
+    @abstractmethod
+    async def upsert_document(self, doc: dict[str, Any]) -> None: ...
+    @abstractmethod
+    async def upsert_chunks(self, chunks: list[dict[str, Any]]) -> None: ...
+    @abstractmethod
+    async def get_document(self, doc_id: str) -> dict[str, Any] | None: ...
+    @abstractmethod
+    async def list_chunks(self, doc_id: str) -> list[dict[str, Any]]: ...

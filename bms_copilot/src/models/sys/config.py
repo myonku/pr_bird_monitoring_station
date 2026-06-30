@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Literal
 from urllib.parse import quote_plus, urlencode
-import msgspec
 from msgspec import Struct, field
 
 from src.models.auth.auth import TokenType
@@ -12,10 +11,11 @@ from src.models.auth.ratelimit import (
     RateLimitSubjectType,
 )
 from src.models.common.entry_type import EntityType
+from src.models.inference.config import InferenceConfig
 
 
-DEFAULT_DATA_SERVER_GRPC_LISTEN_PORT = 50053
-DEFAULT_DATA_SERVER_GRPC_LISTEN_HOST = "127.0.0.1"
+DEFAULT_COPILOT_GRPC_LISTEN_PORT = 50054
+DEFAULT_COPILOT_GRPC_LISTEN_HOST = "127.0.0.1"
 RuntimeRunMode = Literal["development", "no_auth"]
 
 
@@ -29,6 +29,7 @@ class ProjectConfig(Struct):
     runtime: RuntimeConfig | None = None
     auth: AuthConfig | None = None
     auth_control: AuthControlConfig | None = None
+    inference: InferenceConfig | None = None
 
     def build_secret_key_startup_params(
         self,
@@ -39,7 +40,11 @@ class ProjectConfig(Struct):
             if self.runtime is not None
             else RuntimeConfig().normalized(default_entity_id)
         )
-        auth_cfg = self.auth.normalized() if self.auth is not None else AuthConfig().normalized()
+        auth_cfg = (
+            self.auth.normalized()
+            if self.auth is not None
+            else AuthConfig().normalized()
+        )
 
         return SecretKeyStartupParams(
             secret_key_dir=auth_cfg.secret_key_dir,
@@ -51,6 +56,19 @@ class ProjectConfig(Struct):
             instance_name=runtime_cfg.service_name,
         )
 
+
+class AgentConfig(Struct, kw_only=True):
+    """Agent 助手模块的提供商和模型配置"""
+
+    provider: str = "openai"
+    model: str = "gpt-3.5-turbo"
+    max_tokens: int = 2048
+    temperature: float = 0.7
+    top_p: float = 1.0
+    frequency_penalty: float = 0.0
+    presence_penalty: float = 0.0
+    
+
 class RuntimeConfig(Struct, kw_only=True):
     """服务本体运行时标识配置。"""
 
@@ -58,8 +76,8 @@ class RuntimeConfig(Struct, kw_only=True):
     service_name: str = ""
     instance_id: str = ""
     run_mode: RuntimeRunMode = "development"
-    grpc_listen_host: str = DEFAULT_DATA_SERVER_GRPC_LISTEN_HOST
-    grpc_listen_port: int = DEFAULT_DATA_SERVER_GRPC_LISTEN_PORT
+    grpc_listen_host: str = DEFAULT_COPILOT_GRPC_LISTEN_HOST
+    grpc_listen_port: int = DEFAULT_COPILOT_GRPC_LISTEN_PORT
 
     def normalized(self, default_entity_id: str = "") -> "RuntimeConfig":
         entity_type = self.entity_type.strip().lower() or "service"
@@ -73,13 +91,14 @@ class RuntimeConfig(Struct, kw_only=True):
             run_mode=normalize_runtime_run_mode(self.run_mode),
             grpc_listen_host=(
                 self.grpc_listen_host.strip()
-                if isinstance(self.grpc_listen_host, str) and self.grpc_listen_host.strip()
-                else DEFAULT_DATA_SERVER_GRPC_LISTEN_HOST
+                if isinstance(self.grpc_listen_host, str)
+                and self.grpc_listen_host.strip()
+                else DEFAULT_COPILOT_GRPC_LISTEN_HOST
             ),
             grpc_listen_port=(
                 self.grpc_listen_port
                 if isinstance(self.grpc_listen_port, int) and self.grpc_listen_port > 0
-                else DEFAULT_DATA_SERVER_GRPC_LISTEN_PORT
+                else DEFAULT_COPILOT_GRPC_LISTEN_PORT
             ),
         )
 
