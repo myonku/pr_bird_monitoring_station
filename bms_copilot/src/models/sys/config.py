@@ -30,6 +30,7 @@ class ProjectConfig(Struct):
     auth: AuthConfig | None = None
     auth_control: AuthControlConfig | None = None
     inference: InferenceConfig | None = None
+    milvus: MilvusConfig | None = None
 
     def build_secret_key_startup_params(
         self,
@@ -67,7 +68,34 @@ class AgentConfig(Struct, kw_only=True):
     top_p: float = 1.0
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
-    
+
+
+class MilvusConfig(Struct, kw_only=True):
+    """Milvus 配置模型"""
+
+    HOST: str = "127.0.0.1"
+    PORT: int = 19530
+    URI: str | None = None
+    TOKEN: str | None = None
+    DB_NAME: str = "default"
+    CIRCUITBREAKER: CircuitBreakerConfig | None = None
+
+    def normalized(self) -> "MilvusConfig":
+        uri = self.URI.strip() if isinstance(self.URI, str) and self.URI.strip() else None
+        host = self.HOST.strip() if isinstance(self.HOST, str) and self.HOST.strip() else "127.0.0.1"
+        port = self.PORT if isinstance(self.PORT, int) and self.PORT > 0 else 19530
+        token = self.TOKEN.strip() if isinstance(self.TOKEN, str) and self.TOKEN.strip() else None
+        db_name = self.DB_NAME.strip() if isinstance(self.DB_NAME, str) and self.DB_NAME.strip() else "default"
+
+        return MilvusConfig(
+            HOST=host,
+            PORT=port,
+            URI=uri,
+            TOKEN=token,
+            DB_NAME=db_name,
+            CIRCUITBREAKER=self.CIRCUITBREAKER,
+        )
+
 
 class RuntimeConfig(Struct, kw_only=True):
     """服务本体运行时标识配置。"""

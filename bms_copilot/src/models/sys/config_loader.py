@@ -28,6 +28,8 @@ def load_project_config(
             cfg.runtime.service_name if cfg.runtime is not None else "data_worker"
         )
         cfg.auth_control = cfg.auth_control.normalized(default_module)
+    if cfg.milvus is not None:
+        cfg.milvus = cfg.milvus.normalized()
     if cfg.inference is None:
         raise ValueError("inference config is required for data_worker startup")
     cfg.inference = cfg.inference.normalized(base_dir=base_dir)

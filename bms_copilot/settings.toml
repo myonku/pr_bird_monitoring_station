@@ -67,6 +67,16 @@ failure_threshold = 5
 recovery_timeout = 10.0
 half_open_max_calls = 1
 
+[milvus]
+HOST = "127.0.0.1"
+PORT = 19530
+DB_NAME = "default"
+
+[milvus.CIRCUITBREAKER]
+failure_threshold = 5
+recovery_timeout = 10.0
+half_open_max_calls = 1
+
 [etcd]
 HOSTS = ["127.0.0.1:23791", "127.0.0.1:23811", "127.0.0.1:23813"]
 USERNAME = "root"
