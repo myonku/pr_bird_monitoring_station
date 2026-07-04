@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any
+
 from msgspec import Struct, field
 
 
@@ -12,7 +16,8 @@ class SessionWorkingState(Struct):
     last_intent_type: str | None = None
     last_tool_name: str | None = None
     last_tool_status: str | None = None
-    last_tool_result: dict[str, str] = field(default_factory=dict)
+    last_tool_result: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class InFlightRunLock(Struct):
@@ -21,6 +26,7 @@ class InFlightRunLock(Struct):
     session_id: str
     user_id: str
     request_id: str
+    acquired_at_ms: int | None = None
 
 
 class IdempotencyKey(Struct):
@@ -29,3 +35,4 @@ class IdempotencyKey(Struct):
     request_id: str
     session_id: str
     user_id: str
+    created_at_ms: int | None = None

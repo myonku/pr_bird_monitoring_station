@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from typing import Protocol, TypedDict
+from typing import Any, Protocol, TypedDict
+
+from msgspec import Struct, field
 
 
-class RetrievedChunk(TypedDict):
+class RetrievedChunk(Struct, kw_only=True):
     source_id: str
     title: str
     snippet: str
     score: float
-    metadata: dict
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class IKnowledgeRetriever(Protocol):

@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any
+
 from msgspec import Struct, field
 
 
@@ -22,7 +26,7 @@ class ModelRoutingPolicy(Struct):
     provider: str
     model: str
     policy_name: str
-    policy_params: dict[str, str] = field(default_factory=dict)
+    policy_params: dict[str, Any] = field(default_factory=dict)
 
 
 class PromptTemplateVersion(Struct):

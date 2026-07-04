@@ -1,12 +1,11 @@
 from __future__ import annotations
-from typing import Any
-from abc import ABC, abstractmethod
+
+from typing import Protocol
+
+from src.models.agent.snapshot import AttachmentMeta
 
 
-class IAttachmentStore(ABC):
-    @abstractmethod
-    async def save_attachment_meta(self, meta: dict[str, Any]) -> None: ...
-    @abstractmethod
-    async def get_attachment_meta(
-        self, attachment_id: str
-    ) -> dict[str, Any] | None: ...
+class IAttachmentStore(Protocol):
+    async def save_attachment_meta(self, meta: AttachmentMeta) -> None: ...
+
+    async def get_attachment_meta(self, attachment_id: str) -> AttachmentMeta | None: ...
