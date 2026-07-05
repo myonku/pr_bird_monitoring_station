@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, Sequence
-
+from typing import Any, Protocol
 from msgspec import Struct, field
+from src.models.agent.api import ChatRequest, EmbeddingRequest
 
 
 class ChatMessage(Struct, kw_only=True):
@@ -33,23 +33,10 @@ class EmbeddingResult(Struct, kw_only=True):
 class IChatProvider(Protocol):
     provider_name: str
 
-    async def generate(
-        self,
-        messages: Sequence[ChatMessage],
-        *,
-        model: str,
-        temperature: float = 0.2,
-        max_tokens: int = 1024,
-        response_format: dict[str, Any] | None = None,
-    ) -> ChatResult: ...
+    async def generate(self, request: ChatRequest) -> ChatResult: ...
 
 
 class IEmbeddingProvider(Protocol):
     provider_name: str
 
-    async def embed(
-        self,
-        texts: Sequence[str],
-        *,
-        model: str,
-    ) -> EmbeddingResult: ...
+    async def embed(self, request: EmbeddingRequest) -> EmbeddingResult: ...

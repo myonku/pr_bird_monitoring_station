@@ -62,8 +62,10 @@ class AgentConfig(Struct, kw_only=True):
     """Agent 助手模块的提供商和模型配置"""
 
     provider: str = "openai"
-    model: str = "gpt-3.5-turbo"
-    max_tokens: int = 2048
+    api_key: str = ""
+    api_base: str = ""
+    model: str = "unknown"
+    max_tokens: int = 256000
     temperature: float = 0.7
     top_p: float = 1.0
     frequency_penalty: float = 0.0

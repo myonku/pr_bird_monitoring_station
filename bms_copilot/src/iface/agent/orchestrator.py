@@ -8,13 +8,25 @@ from src.models.agent.schemas import (
     ToolCall,
     ToolResult,
 )
+from src.iface.agent.knowledge import RetrievedChunk
+from src.iface.agent.runtime import AgentRuntimeContext
+
 
 class IIntentClassifier(Protocol):
-    async def classify(self, req: AgentRequest) -> IntentResult: ...
+    async def classify(
+        self,
+        req: AgentRequest,
+        context: AgentRuntimeContext | None = None,
+    ) -> IntentResult: ...
 
 
 class IPlanner(Protocol):
-    async def plan(self, req: AgentRequest, intent: IntentResult) -> list[ToolCall]: ...
+    async def plan(
+        self,
+        req: AgentRequest,
+        intent: IntentResult,
+        context: AgentRuntimeContext | None = None,
+    ) -> list[ToolCall]: ...
 
 
 class IResponseSynthesizer(Protocol):
@@ -23,9 +35,14 @@ class IResponseSynthesizer(Protocol):
         req: AgentRequest,
         intent: IntentResult,
         tool_results: list[ToolResult],
-        retrieved_chunks: list[dict] | None = None,
+        retrieved_chunks: list[RetrievedChunk] | None = None,
+        context: AgentRuntimeContext | None = None,
     ) -> AgentResponse: ...
 
 
 class IAgentOrchestrator(Protocol):
-    async def run(self, req: AgentRequest) -> AgentResponse: ...
+    async def run(
+        self,
+        req: AgentRequest,
+        context: AgentRuntimeContext | None = None,
+    ) -> AgentResponse: ...

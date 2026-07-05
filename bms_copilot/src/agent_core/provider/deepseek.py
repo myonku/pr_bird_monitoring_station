@@ -1,71 +1,42 @@
 from __future__ import annotations
 
-from typing import Any
-
-from bms_copilot.src.iface.agent.api_base import (
-    IChatProviderAdapter,
-    IEmbeddingProviderAdapter,
-    ProviderRequestContext,
+from src.models.agent.api import ChatRequest, EmbeddingRequest
+from src.iface.agent.providers import (
+    ChatResult,
+    EmbeddingResult,
+    IChatProvider,
+    IEmbeddingProvider,
 )
-from src.iface.agent.providers import ChatMessage, ChatResult, EmbeddingResult
 
 
-class DeepSeekChatProvider(IChatProviderAdapter):
+class DeepSeekChatProvider(IChatProvider):
     provider_name = "deepseek"
 
-    async def generate(
-        self,
-        messages: list[ChatMessage],
-        *,
-        model: str,
-        temperature: float = 0.2,
-        max_tokens: int = 1024,
-        response_format: dict[str, Any] | None = None,
-        context: ProviderRequestContext | None = None,
-    ) -> ChatResult:
-        prompt_head = messages[-1].content if messages else ""
+    async def generate(self, request: ChatRequest) -> ChatResult:
+        prompt_head = request.messages[-1].content if request.messages else ""
         return ChatResult(
-            text=f"[deepseek:{model}] {prompt_head[:200]}",
-            raw={
-                "provider_request": {
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "response_format": response_format,
-                    "context": context.to_dict() if context else {},
-                }
-            },
+            text=f"[deepseek:{request.model}] {prompt_head[:200]}",
+            raw={"provider_request": request.to_dict()},
             usage={
                 "input_tokens": sum(
-                    len(message.content.split()) for message in messages
+                    len(message.content.split()) for message in request.messages
                 ),
                 "output_tokens": 24,
             },
             finish_reason="stop",
             provider=self.provider_name,
-            model=model,
+            model=request.model,
         )
 
 
-class DeepSeekEmbeddingProvider(IEmbeddingProviderAdapter):
+class DeepSeekEmbeddingProvider(IEmbeddingProvider):
     provider_name = "deepseek"
 
-    async def embed(
-        self,
-        texts: list[str],
-        *,
-        model: str,
-        context: ProviderRequestContext | None = None,
-    ) -> EmbeddingResult:
-        vectors = [[float(len(text)), 0.5, 0.5] for text in texts]
+    async def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
+        vectors = [[float(len(text)), 0.5, 0.5] for text in request.texts]
         return EmbeddingResult(
             vectors=vectors,
-            raw={
-                "provider_request": {
-                    "texts": texts,
-                    "context": context.to_dict() if context else {},
-                }
-            },
+            raw={"provider_request": request.to_dict()},
             provider=self.provider_name,
-            model=model,
+            model=request.model,
         )
