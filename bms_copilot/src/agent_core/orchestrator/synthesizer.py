@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 from typing import Any
 
@@ -10,13 +8,15 @@ from src.agent_core.prompot.answer import ANSWER_PROMPT
 from src.models.agent.api import (
     ChatRequest,
     ProviderRequestContext,
-    ConversationPolicy,
 )
 from src.iface.agent.audit import IAgentAuditRecorder
 from src.iface.agent.orchestrator import IResponseSynthesizer
-from src.iface.agent.providers import ChatMessage, ChatResult, IChatProvider
+from src.models.agent.api import ChatMessage, ChatResult
+from src.iface.agent.providers import IChatProvider
 from src.iface.agent.runtime import AgentRuntimeContext
+from src.iface.agent_resource.usage_store import IUsageStore
 from src.models.agent.audit import ProviderUsageRecord
+from src.models.agent.usage import UsageRecord
 from src.models.agent.schemas import (
     AgentRequest,
     AgentResponse,
@@ -42,10 +42,12 @@ class PromptResponseSynthesizer(IResponseSynthesizer):
         *,
         model: str = "gpt-4o-mini",
         audit_recorder: IAgentAuditRecorder | None = None,
+        usage_store: IUsageStore | None = None,
     ) -> None:
         self.provider = provider
         self.model = model
         self._audit_recorder = audit_recorder
+        self._usage_store = usage_store
 
     async def synthesize(
         self,
@@ -155,7 +157,7 @@ class PromptResponseSynthesizer(IResponseSynthesizer):
                 },
             ),
         )
-        await self._record_usage(req, response)
+        await self._record_usage(req, response, context)
         return response.text or _fallback_answer_text(
             req.text, intent, tool_results, retrieved_chunks
         )
@@ -164,27 +166,49 @@ class PromptResponseSynthesizer(IResponseSynthesizer):
         self,
         req: AgentRequest,
         result: ChatResult,
+        context: AgentRuntimeContext | None = None,
     ) -> None:
-        recorder = self._audit_recorder
-        if recorder is None:
-            return
         usage = result.usage or {}
-        await recorder.usage_record(
-            ProviderUsageRecord(
-                request_id=req.request_id,
-                session_id=req.session_id,
-                user_id=req.user_id,
-                provider=result.provider or "",
-                model=result.model or self.model,
-                prompt_tokens=usage.get("input_tokens"),
-                completion_tokens=usage.get("output_tokens"),
-                total_tokens=(
-                    (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0)
+        prompt_tokens = usage.get("input_tokens") or 0
+        completion_tokens = usage.get("output_tokens") or 0
+        total_tokens = prompt_tokens + completion_tokens
+
+        # 1. 审计记录
+        recorder = self._audit_recorder
+        if recorder is not None:
+            await recorder.usage_record(
+                ProviderUsageRecord(
+                    request_id=req.request_id,
+                    session_id=req.session_id,
+                    user_id=req.user_id,
+                    provider=result.provider or "",
+                    model=result.model or self.model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
                 )
-                if usage.get("input_tokens") is not None
-                else None,
             )
-        )
+
+        # 2. 用量存储
+        usage_store = self._usage_store
+        if usage_store is not None:
+            run_id = ""
+            if context is not None:
+                run_id = str(context.metadata.get("run_id") or "")
+            await usage_store.record_usage(
+                UsageRecord(
+                    run_id=run_id,
+                    request_id=req.request_id,
+                    session_id=req.session_id,
+                    user_id=req.user_id,
+                    stage="answer_synthesis",
+                    provider=result.provider or "",
+                    model=result.model or self.model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                )
+            )
 
 
 def _derive_run_status(tool_results: list[ToolResult]) -> RunStatus:

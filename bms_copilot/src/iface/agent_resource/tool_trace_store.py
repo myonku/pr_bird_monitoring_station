@@ -1,10 +1,9 @@
-from abc import abstractmethod
-from typing import Protocol
+from abc import ABC, abstractmethod
 
 from src.models.agent.tool_record import ToolCallRecord, ToolResultRecord
 
 
-class IToolTraceStore(Protocol):
+class IToolTraceStore(ABC):
     @abstractmethod
     async def save_tool_call(self, record: ToolCallRecord) -> None: ...
     @abstractmethod

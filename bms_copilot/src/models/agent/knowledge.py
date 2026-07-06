@@ -1,8 +1,16 @@
-from __future__ import annotations
-
 from typing import Any
 
+
 from msgspec import Struct, field
+
+
+class RetrievedChunk(Struct, kw_only=True):
+    """检索到的知识块模型，包含知识块的基本信息和检索相关信息"""
+    source_id: str
+    title: str
+    snippet: str
+    score: float
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class KnowledgeDocument(Struct):

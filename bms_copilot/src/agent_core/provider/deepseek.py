@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -11,12 +9,9 @@ from openai import (
 )
 
 from src.agent_core.common.func import error_result
-from src.iface.agent.providers import (
-    ChatMessage,
-    ChatResult,
-    IChatProvider,
-)
-from src.models.agent.api import ChatRequest
+from src.iface.agent.providers import IChatProvider
+
+from src.models.agent.api import ChatRequest, ChatResult, ChatMessage
 from src.models.sys.config import AgentConfig
 
 
@@ -105,7 +100,7 @@ class DeepSeekChatProvider(IChatProvider):
 
 def _build_openai_messages(messages: list[Any]) -> list[dict[str, Any]]:
     """将 ChatRequest.messages 转换为 OpenAI API 格式的 dict 列表。"""
-    
+
     result: list[dict[str, Any]] = []
     for msg in messages:
         if isinstance(msg, ChatMessage):

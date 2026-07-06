@@ -1,15 +1,17 @@
-from __future__ import annotations
-
-from typing import Protocol
+from abc import ABC, abstractmethod
 
 from src.models.agent.session import AgentSession
 
 
-class ISessionStore(Protocol):
+class ISessionStore(ABC):
+    @abstractmethod
     async def create_session(self, session: AgentSession) -> None: ...
 
+    @abstractmethod
     async def get_session(self, session_id: str) -> AgentSession | None: ...
 
+    @abstractmethod
     async def touch_session(self, session_id: str) -> None: ...
-
+    
+    @abstractmethod
     async def delete_session(self, session_id: str) -> None: ...

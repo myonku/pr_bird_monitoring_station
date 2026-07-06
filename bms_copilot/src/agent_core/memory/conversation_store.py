@@ -5,7 +5,7 @@ from typing import Any
 from redis.asyncio import Redis
 
 from src.iface.agent.memory import ISessionMemory
-from src.iface.agent.providers import ChatMessage
+from src.models.agent.api import ChatMessage
 from src.iface.agent_resource.session_store import ISessionStore
 from src.iface.agent_resource.turn_store import ITurnStore
 from src.iface.agent_resource.working_state_cache import IWorkingStateCache

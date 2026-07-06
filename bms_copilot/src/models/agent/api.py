@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Any, Literal
-
+from msgspec import Struct
 import msgspec
 
 ProviderStage = Literal[
@@ -126,3 +124,34 @@ class ProviderResponseContext:
             "conversation": self.conversation.to_dict() if self.conversation else None,
             "metadata": dict(self.metadata),
         }
+
+
+class ChatMessage(Struct, kw_only=True):
+    """统一的 chat 消息样例。"""
+
+    role: str
+    content: str
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class ChatResult(Struct, kw_only=True):
+    """统一的 chat 调用结果样例。"""
+
+    text: str
+    raw: Any | None = None
+    usage: dict[str, int] = field(default_factory=dict)
+    finish_reason: str | None = None
+    provider: str | None = None
+    model: str | None = None
+
+
+class EmbeddingResult(Struct, kw_only=True):
+    """统一的 embedding 调用结果样例。"""
+
+    vectors: list[list[float]]
+    raw: Any | None = None
+    provider: str | None = None
+    model: str | None = None

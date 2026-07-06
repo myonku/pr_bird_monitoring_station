@@ -1,7 +1,3 @@
-"""基于 MongoDB (Beanie) 的 Agent 运行记录存储。"""
-
-from __future__ import annotations
-
 import time
 from typing import Any
 

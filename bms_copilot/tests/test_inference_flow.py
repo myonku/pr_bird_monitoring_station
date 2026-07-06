@@ -49,7 +49,7 @@ from src.agent_core.orchestrator.agent import AgentOrchestrator
 from src.agent_core.orchestrator.router import PromptIntentClassifier
 from src.agent_core.orchestrator.planner import PromptToolPlanner
 from src.agent_core.orchestrator.synthesizer import PromptResponseSynthesizer
-from src.modules.inference.tool import ImageInferenceTool
+from src.agent_core.tools.inference import ImageInferenceTool
 
 
 # ==================================================================

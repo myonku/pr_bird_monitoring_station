@@ -1,13 +1,7 @@
-from __future__ import annotations
+from src.models.agent.api import ChatRequest, EmbeddingRequest, EmbeddingResult
+from src.iface.agent.providers import IChatProvider, IEmbeddingProvider
 
-from src.models.agent.api import ChatRequest, EmbeddingRequest
-from src.iface.agent.providers import (
-    ChatResult,
-    EmbeddingResult,
-    IChatProvider,
-    IEmbeddingProvider,
-)
-
+from src.models.agent.api import ChatRequest, ChatResult
 
 class OpenAIChatProvider(IChatProvider):
     provider_name = "openai"

@@ -1,8 +1,7 @@
-from abc import abstractmethod
-from typing import Protocol
+from abc import ABC, abstractmethod
 
 
-class IIdempotencyCache(Protocol):
+class IIdempotencyCache(ABC):
     @abstractmethod
     async def acquire(self, key: str, ttl_sec: int = 30) -> bool: ...
     @abstractmethod

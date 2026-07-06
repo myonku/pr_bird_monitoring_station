@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.iface.agent.providers import ChatMessage
+from src.models.agent.api import ChatMessage
 from src.iface.agent.knowledge import RetrievedChunk
 
 
@@ -11,7 +9,7 @@ from src.iface.agent.knowledge import RetrievedChunk
 class AgentRuntimeContext:
     """可扩展的 Agent 运行时上下文。
 
-    这里预留 memory、RAG、audit 等未来组件的挂载位，但默认不强制使用。
+    预留 memory、RAG、audit 等未来组件的挂载位，但默认不强制使用。
     """
 
     recent_messages: list[ChatMessage] = field(default_factory=list)

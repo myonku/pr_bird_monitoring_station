@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -25,8 +23,10 @@ from src.iface.agent.orchestrator import (
     IPlanner,
     IResponseSynthesizer,
 )
+from src.iface.agent_resource.idempotency_cache import IIdempotencyCache
 from src.iface.agent_resource.run_store import IRunStore
 from src.iface.agent_resource.tool_trace_store import IToolTraceStore
+from src.iface.agent_resource.usage_store import IUsageStore
 from src.iface.agent.runtime import AgentRuntimeContext
 from src.iface.agent.tools import IToolRegistry
 from src.models.agent.schemas import (
@@ -65,25 +65,33 @@ class AgentOrchestrator(IAgentOrchestrator):
         audit_recorder: IAgentAuditRecorder | None = None,
         run_store: IRunStore | None = None,
         trace_store: IToolTraceStore | None = None,
+        usage_store: IUsageStore | None = None,
+        idempotency_cache: IIdempotencyCache | None = None,
     ) -> None:
         self.tool_registry = tool_registry
         self.classifier = classifier or PromptIntentClassifier(
-            audit_recorder=audit_recorder
+            audit_recorder=audit_recorder,
+            usage_store=usage_store,
         )
-        self.planner = planner or PromptToolPlanner(audit_recorder=audit_recorder)
+        self.planner = planner or PromptToolPlanner(
+            audit_recorder=audit_recorder,
+            usage_store=usage_store,
+        )
         self.executor = ToolExecutor(
             tool_registry,
             audit_sink=audit_sink,
             trace_store=trace_store,
         )
         self.synthesizer = synthesizer or PromptResponseSynthesizer(
-            audit_recorder=audit_recorder
+            audit_recorder=audit_recorder,
+            usage_store=usage_store,
         )
         self.memory = memory
         self.retriever = retriever
         self.audit_sink = audit_sink
         self._audit_recorder = audit_recorder
         self._run_store = run_store
+        self._idempotency_cache = idempotency_cache
 
     async def run(
         self,
@@ -91,6 +99,8 @@ class AgentOrchestrator(IAgentOrchestrator):
         context: AgentRuntimeContext | None = None,
     ) -> AgentResponse:
         runtime_context = _merge_runtime_context(context)
+        if not await self._acquire_idempotency(req):
+            return _duplicate_response(req)
         await self._append_memory_request(req)
         await self._audit("agent_start", req, runtime_context, {"text": req.text})
         await self._record_model_policy(req)
@@ -239,6 +249,12 @@ class AgentOrchestrator(IAgentOrchestrator):
             )
         )
 
+    async def _acquire_idempotency(self, req: AgentRequest) -> bool:
+        cache = self._idempotency_cache
+        if cache is None:
+            return True
+        return await cache.acquire(req.request_id, ttl_sec=30)
+
     async def _start_run(
         self,
         req: AgentRequest,
@@ -285,9 +301,11 @@ class AgentOrchestrator(IAgentOrchestrator):
             return
         await store.finish_run(
             run_id,
-            status=response.status.value
-            if hasattr(response.status, "value")
-            else str(response.status),
+            status=(
+                response.status.value
+                if hasattr(response.status, "value")
+                else str(response.status)
+            ),
             summary={
                 "answer_text": response.answer.text or "",
                 "intent_type": response.debug.intent,
@@ -314,6 +332,22 @@ class AgentOrchestrator(IAgentOrchestrator):
                 payload={**payload, **context.audit_metadata},
             )
         )
+
+
+def _duplicate_response(req: AgentRequest) -> AgentResponse:
+    """当请求被幂等缓存拦截时返回的重复响应。"""
+    from src.models.agent.schemas import AnswerPayload, DebugTrace, RunStatus
+
+    return AgentResponse(
+        request_id=req.request_id,
+        session_id=req.session_id,
+        status=RunStatus.OK,
+        answer=AnswerPayload(
+            text="(duplicate request — already processed)",
+            structured={"duplicate": True},
+        ),
+        debug=DebugTrace(intent="unknown"),
+    )
 
 
 def _merge_runtime_context(context: AgentRuntimeContext | None) -> AgentRuntimeContext:

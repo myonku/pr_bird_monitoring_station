@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -147,7 +145,11 @@ class ToolExecutor:
                 session_id=req.session_id,
                 user_id=req.user_id,
                 tool_name=call.tool_name,
-                status=result.status.value if hasattr(result.status, "value") else str(result.status),
+                status=(
+                    result.status.value
+                    if hasattr(result.status, "value")
+                    else str(result.status)
+                ),
                 payload=dict(result.payload),
                 error_code=result.error.code if result.error else None,
                 error_message=result.error.message if result.error else None,

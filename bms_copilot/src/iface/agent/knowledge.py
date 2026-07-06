@@ -1,19 +1,10 @@
-from __future__ import annotations
+from abc import ABC, abstractmethod
 
-from typing import Any, Protocol
-
-from msgspec import Struct, field
+from src.models.agent.knowledge import RetrievedChunk
 
 
-class RetrievedChunk(Struct, kw_only=True):
-    source_id: str
-    title: str
-    snippet: str
-    score: float
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-class IKnowledgeRetriever(Protocol):
+class IKnowledgeRetriever(ABC):
+    @abstractmethod
     async def retrieve(
         self,
         query: str,

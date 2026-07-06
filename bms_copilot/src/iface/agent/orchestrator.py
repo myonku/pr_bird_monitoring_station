@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import Protocol
+from abc import ABC, abstractmethod
 from src.models.agent.schemas import (
     AgentRequest,
     AgentResponse,
@@ -12,7 +10,8 @@ from src.iface.agent.knowledge import RetrievedChunk
 from src.iface.agent.runtime import AgentRuntimeContext
 
 
-class IIntentClassifier(Protocol):
+class IIntentClassifier(ABC):
+    @abstractmethod
     async def classify(
         self,
         req: AgentRequest,
@@ -20,7 +19,8 @@ class IIntentClassifier(Protocol):
     ) -> IntentResult: ...
 
 
-class IPlanner(Protocol):
+class IPlanner(ABC):
+    @abstractmethod
     async def plan(
         self,
         req: AgentRequest,
@@ -29,7 +29,8 @@ class IPlanner(Protocol):
     ) -> list[ToolCall]: ...
 
 
-class IResponseSynthesizer(Protocol):
+class IResponseSynthesizer(ABC):
+    @abstractmethod
     async def synthesize(
         self,
         req: AgentRequest,
@@ -40,7 +41,8 @@ class IResponseSynthesizer(Protocol):
     ) -> AgentResponse: ...
 
 
-class IAgentOrchestrator(Protocol):
+class IAgentOrchestrator(ABC):
+    @abstractmethod
     async def run(
         self,
         req: AgentRequest,

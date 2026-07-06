@@ -1,5 +1,5 @@
-from bms_copilot.src.iface.agent_resource.tool_trace_store import IToolTraceStore
-from bms_copilot.src.models.agent.tool_record import ToolCallRecord, ToolResultRecord
+from src.iface.agent_resource.tool_trace_store import IToolTraceStore
+from src.models.agent.tool_record import ToolCallRecord, ToolResultRecord
 
 
 class ToolTraceStore(IToolTraceStore):
