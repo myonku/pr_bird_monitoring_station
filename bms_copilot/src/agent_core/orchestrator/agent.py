@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 import msgspec
 
@@ -9,8 +11,13 @@ from src.agent_core.orchestrator.executor import ToolExecutor
 from src.agent_core.orchestrator.planner import PromptToolPlanner
 from src.agent_core.orchestrator.router import PromptIntentClassifier
 from src.agent_core.orchestrator.synthesizer import PromptResponseSynthesizer
-from src.iface.agent.audit import AgentAuditEvent, IAgentAuditSink
+from src.iface.agent.audit import (
+    AgentAuditEvent,
+    IAgentAuditRecorder,
+    IAgentAuditSink,
+)
 from src.iface.agent.knowledge import IKnowledgeRetriever, RetrievedChunk
+from src.models.agent.audit import ModelRoutingPolicy
 from src.iface.agent.memory import ISessionMemory
 from src.iface.agent.orchestrator import (
     IAgentOrchestrator,
@@ -18,6 +25,8 @@ from src.iface.agent.orchestrator import (
     IPlanner,
     IResponseSynthesizer,
 )
+from src.iface.agent_resource.run_store import IRunStore
+from src.iface.agent_resource.tool_trace_store import IToolTraceStore
 from src.iface.agent.runtime import AgentRuntimeContext
 from src.iface.agent.tools import IToolRegistry
 from src.models.agent.schemas import (
@@ -53,15 +62,28 @@ class AgentOrchestrator(IAgentOrchestrator):
         memory: ISessionMemory | None = None,
         retriever: IKnowledgeRetriever | None = None,
         audit_sink: IAgentAuditSink | None = None,
+        audit_recorder: IAgentAuditRecorder | None = None,
+        run_store: IRunStore | None = None,
+        trace_store: IToolTraceStore | None = None,
     ) -> None:
         self.tool_registry = tool_registry
-        self.classifier = classifier or PromptIntentClassifier()
-        self.planner = planner or PromptToolPlanner()
-        self.executor = ToolExecutor(tool_registry, audit_sink=audit_sink)
-        self.synthesizer = synthesizer or PromptResponseSynthesizer()
+        self.classifier = classifier or PromptIntentClassifier(
+            audit_recorder=audit_recorder
+        )
+        self.planner = planner or PromptToolPlanner(audit_recorder=audit_recorder)
+        self.executor = ToolExecutor(
+            tool_registry,
+            audit_sink=audit_sink,
+            trace_store=trace_store,
+        )
+        self.synthesizer = synthesizer or PromptResponseSynthesizer(
+            audit_recorder=audit_recorder
+        )
         self.memory = memory
         self.retriever = retriever
         self.audit_sink = audit_sink
+        self._audit_recorder = audit_recorder
+        self._run_store = run_store
 
     async def run(
         self,
@@ -71,6 +93,10 @@ class AgentOrchestrator(IAgentOrchestrator):
         runtime_context = _merge_runtime_context(context)
         await self._append_memory_request(req)
         await self._audit("agent_start", req, runtime_context, {"text": req.text})
+        await self._record_model_policy(req)
+        run_id = await self._start_run(req, runtime_context)
+        if run_id:
+            runtime_context.metadata["run_id"] = run_id
 
         if self.memory is not None:
             recent_messages = await self.memory.get_recent_messages(req.session_id)
@@ -120,6 +146,7 @@ class AgentOrchestrator(IAgentOrchestrator):
         )
         await self._append_response(response)
         await self._audit("agent_finish", req, runtime_context, response.model_dump())
+        await self._finish_run(run_id, response)
         return response
 
     def build_default_components(self) -> AgentComponentBundle:
@@ -183,6 +210,90 @@ class AgentOrchestrator(IAgentOrchestrator):
     async def _append_response(self, response: AgentResponse) -> None:
         if self.memory is not None:
             await self.memory.append_assistant_response(response)
+
+    async def _record_model_policy(self, req: AgentRequest) -> None:
+        recorder = self._audit_recorder
+        if recorder is None:
+            return
+        # 从第一个有 provider 的组件中提取名称
+        provider_name = ""
+        model_name = ""
+        for comp in (self.classifier, self.planner, self.synthesizer):
+            pn = getattr(comp, "provider", None)
+            if pn is not None:
+                provider_name = getattr(pn, "provider_name", "") or ""
+                break
+        for comp in (self.classifier, self.planner, self.synthesizer):
+            mn = getattr(comp, "model", None)
+            if mn:
+                model_name = mn
+                break
+
+        await recorder.policy_record(
+            ModelRoutingPolicy(
+                session_id=req.session_id,
+                user_id=req.user_id,
+                provider=provider_name,
+                model=model_name,
+                policy_name="default",
+            )
+        )
+
+    async def _start_run(
+        self,
+        req: AgentRequest,
+        context: AgentRuntimeContext,
+    ) -> str:
+        store = self._run_store
+        if store is None:
+            return ""
+        run_id = str(uuid4())
+        provider_name = ""
+        model_name = ""
+        for comp in (self.classifier, self.planner, self.synthesizer):
+            pn = getattr(comp, "provider", None)
+            if pn is not None:
+                provider_name = getattr(pn, "provider_name", "") or ""
+                break
+        for comp in (self.classifier, self.planner, self.synthesizer):
+            mn = getattr(comp, "model", None)
+            if mn:
+                model_name = mn
+                break
+        now = int(time.time() * 1000)
+        await store.start_run(
+            {
+                "run_id": run_id,
+                "request_id": req.request_id,
+                "session_id": req.session_id,
+                "user_id": req.user_id,
+                "provider": provider_name,
+                "model": model_name,
+                "status": "started",
+                "started_at_ms": now,
+            }
+        )
+        return run_id
+
+    async def _finish_run(
+        self,
+        run_id: str,
+        response: AgentResponse,
+    ) -> None:
+        store = self._run_store
+        if store is None or not run_id:
+            return
+        await store.finish_run(
+            run_id,
+            status=response.status.value
+            if hasattr(response.status, "value")
+            else str(response.status),
+            summary={
+                "answer_text": response.answer.text or "",
+                "intent_type": response.debug.intent,
+                "tool_names": list(response.debug.tools),
+            },
+        )
 
     async def _audit(
         self,

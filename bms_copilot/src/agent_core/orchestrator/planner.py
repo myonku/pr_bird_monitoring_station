@@ -9,9 +9,11 @@ from src.agent_core.common.func import (
 )
 from src.agent_core.prompot.tool_router import TOOL_ROUTER_PROMPT
 from src.models.agent.api import ChatRequest, ProviderRequestContext
+from src.iface.agent.audit import IAgentAuditRecorder
 from src.iface.agent.orchestrator import IPlanner
-from src.iface.agent.providers import ChatMessage, IChatProvider
+from src.iface.agent.providers import ChatMessage, ChatResult, IChatProvider
 from src.iface.agent.runtime import AgentRuntimeContext
+from src.models.agent.audit import ProviderUsageRecord
 from src.models.agent.schemas import AgentRequest, IntentResult, ToolCall, IntentType
 
 
@@ -27,9 +29,11 @@ class PromptToolPlanner(IPlanner):
         *,
         model: str = "gpt-4o-mini",
         tool_catalog: dict[str, str] | None = None,
+        audit_recorder: IAgentAuditRecorder | None = None,
     ) -> None:
         self.provider = provider
         self.model = model
+        self._audit_recorder = audit_recorder
         self.tool_catalog = tool_catalog or {
             "search_records_tool": "记录检索",
             "stats_query_tool": "统计查询",
@@ -87,6 +91,7 @@ class PromptToolPlanner(IPlanner):
                     metadata={"intent": intent.model_dump()},
                 ),
             )
+            await self._record_usage(req, provider_response)
             parsed = parse_json_like(provider_response.text)
             if isinstance(parsed, dict):
                 tools = parsed.get("tools")
@@ -98,6 +103,35 @@ class PromptToolPlanner(IPlanner):
                     ]
 
         return _fallback_plan(req, intent, context)
+
+    async def _record_usage(
+        self,
+        req: AgentRequest,
+        result: ChatResult,
+    ) -> None:
+        recorder = self._audit_recorder
+        if recorder is None:
+            return
+        usage = result.usage or {}
+        await recorder.usage_record(
+            ProviderUsageRecord(
+                request_id=req.request_id,
+                session_id=req.session_id,
+                user_id=req.user_id,
+                provider=result.provider or "",
+                model=result.model or self.model,
+                prompt_tokens=usage.get("input_tokens"),
+                completion_tokens=usage.get("output_tokens"),
+                total_tokens=(
+                    (
+                        (usage.get("input_tokens") or 0)
+                        + (usage.get("output_tokens") or 0)
+                    )
+                    if usage.get("input_tokens") is not None
+                    else None
+                ),
+            )
+        )
 
 
 def _fallback_plan(

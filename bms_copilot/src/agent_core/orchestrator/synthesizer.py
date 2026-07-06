@@ -12,9 +12,11 @@ from src.models.agent.api import (
     ProviderRequestContext,
     ConversationPolicy,
 )
+from src.iface.agent.audit import IAgentAuditRecorder
 from src.iface.agent.orchestrator import IResponseSynthesizer
 from src.iface.agent.providers import ChatMessage, ChatResult, IChatProvider
 from src.iface.agent.runtime import AgentRuntimeContext
+from src.models.agent.audit import ProviderUsageRecord
 from src.models.agent.schemas import (
     AgentRequest,
     AgentResponse,
@@ -39,9 +41,11 @@ class PromptResponseSynthesizer(IResponseSynthesizer):
         provider: IChatProvider | None = None,
         *,
         model: str = "gpt-4o-mini",
+        audit_recorder: IAgentAuditRecorder | None = None,
     ) -> None:
         self.provider = provider
         self.model = model
+        self._audit_recorder = audit_recorder
 
     async def synthesize(
         self,
@@ -151,8 +155,35 @@ class PromptResponseSynthesizer(IResponseSynthesizer):
                 },
             ),
         )
+        await self._record_usage(req, response)
         return response.text or _fallback_answer_text(
             req.text, intent, tool_results, retrieved_chunks
+        )
+
+    async def _record_usage(
+        self,
+        req: AgentRequest,
+        result: ChatResult,
+    ) -> None:
+        recorder = self._audit_recorder
+        if recorder is None:
+            return
+        usage = result.usage or {}
+        await recorder.usage_record(
+            ProviderUsageRecord(
+                request_id=req.request_id,
+                session_id=req.session_id,
+                user_id=req.user_id,
+                provider=result.provider or "",
+                model=result.model or self.model,
+                prompt_tokens=usage.get("input_tokens"),
+                completion_tokens=usage.get("output_tokens"),
+                total_tokens=(
+                    (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0)
+                )
+                if usage.get("input_tokens") is not None
+                else None,
+            )
         )
 
 

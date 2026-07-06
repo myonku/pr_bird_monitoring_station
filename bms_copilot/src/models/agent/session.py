@@ -1,8 +1,11 @@
-from __future__ import annotations
-
+import time
 from typing import Any, Literal
+from uuid import UUID
 
 from msgspec import Struct, field
+from pydantic import Field
+
+from src.models.common.types import UUIDDocument
 
 SessionStatus = Literal["active", "idle", "closed", "failed"]
 
@@ -54,37 +57,6 @@ class IntentRecord(Struct, kw_only=True):
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-class ToolCallRecord(Struct, kw_only=True):
-    """一次工具调用的持久化记录。"""
-
-    run_id: str
-    request_id: str
-    session_id: str
-    user_id: str
-    tool_name: str
-    arguments: dict[str, Any] = field(default_factory=dict)
-    timeout_ms: int = 3000
-    created_at_ms: int | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-class ToolResultRecord(Struct, kw_only=True):
-    """一次工具执行结果的持久化记录。"""
-
-    run_id: str
-    request_id: str
-    session_id: str
-    user_id: str
-    tool_name: str
-    status: str
-    payload: dict[str, Any] = field(default_factory=dict)
-    error_code: str | None = None
-    error_message: str | None = None
-    latency_ms: int | None = None
-    created_at_ms: int | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
 class AgentRunRecord(Struct, kw_only=True):
     """一次完整 Agent 运行的聚合记录。"""
 
@@ -102,3 +74,29 @@ class AgentRunRecord(Struct, kw_only=True):
     finished_at_ms: int | None = None
     latency_ms: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class RunRecord(UUIDDocument):
+    """一次完整 Agent 运行的持久化记录（MongoDB/Beanie 版本）。"""
+
+    run_id: str
+    request_id: str
+    session_id: str
+    user_id: str
+    provider: str | None = None
+    model: str | None = None
+    status: str | None = None
+    intent_type: str | None = None
+    tool_names: list[str] = Field(default_factory=list)
+    answer_text: str | None = None
+    started_at_ms: int | None = None
+    finished_at_ms: int | None = None
+    latency_ms: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    class Settings:
+        name = "agent_run_records"
+
+    @property
+    def record_id(self) -> UUID:
+        return self.id

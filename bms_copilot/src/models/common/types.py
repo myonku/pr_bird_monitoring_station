@@ -1,8 +1,8 @@
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from beanie import Document
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 
 class UUIDDocument(Document):
