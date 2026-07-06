@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Literal
 from urllib.parse import quote_plus, urlencode
 from msgspec import Struct, field
@@ -31,6 +32,7 @@ class ProjectConfig(Struct):
     auth_control: AuthControlConfig | None = None
     inference: InferenceConfig | None = None
     milvus: MilvusConfig | None = None
+    agent: AgentConfig | None = None
 
     def build_secret_key_startup_params(
         self,
@@ -59,17 +61,65 @@ class ProjectConfig(Struct):
 
 
 class AgentConfig(Struct, kw_only=True):
-    """Agent 助手模块的提供商和模型配置"""
+    """Agent 助手模块的提供商和模型配置。"""
 
-    provider: str = "openai"
+    provider: str = "deepseek"
     api_key: str = ""
     api_base: str = ""
-    model: str = "unknown"
-    max_tokens: int = 256000
+    model: str = ""
+    max_tokens: int = 4096
     temperature: float = 0.7
     top_p: float = 1.0
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
+
+    def normalized(self) -> "AgentConfig":
+        provider = self.provider.strip().lower() or "openai"
+        defaults = _PROVIDER_DEFAULTS.get(provider, {})
+
+        # api_key: 配置文件值优先，缺失时读取环境变量
+        api_key = self.api_key.strip()
+        if not api_key:
+            env_key = f"{provider.upper()}_API_KEY"
+            api_key = os.environ.get(env_key, "")
+
+        # api_base
+        api_base = self.api_base.strip() or defaults.get("api_base", "")
+
+        # model
+        model = self.model.strip() or defaults.get("model", "")
+
+        return AgentConfig(
+            provider=provider,
+            api_key=api_key,
+            api_base=api_base,
+            model=model,
+            max_tokens=max(1, self.max_tokens or 4096),
+            temperature=_clamp(0.0, 2.0, self.temperature or 0.7),
+            top_p=_clamp(0.0, 1.0, self.top_p or 1.0),
+            frequency_penalty=_clamp(-2.0, 2.0, self.frequency_penalty or 0.0),
+            presence_penalty=_clamp(-2.0, 2.0, self.presence_penalty or 0.0),
+        )
+
+
+_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
+    "deepseek": {
+        "api_base": "https://api.deepseek.com",
+        "model": "deepseek-pro-flash",
+    },
+    "openai": {
+        "api_base": "https://api.openai.com/v1",
+        "model": "gpt-5.4-mini",
+    },
+    "anthropic": {
+        "api_base": "",
+        "model": "claude-4.5-haiku",
+    },
+}
+
+
+def _clamp(lo: float, hi: float, value: float) -> float:
+    return max(lo, min(hi, value))
 
 
 class MilvusConfig(Struct, kw_only=True):

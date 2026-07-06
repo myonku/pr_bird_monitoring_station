@@ -9,7 +9,7 @@ from src.agent_core.orchestrator.executor import ToolExecutor
 from src.agent_core.orchestrator.planner import PromptToolPlanner
 from src.agent_core.orchestrator.router import PromptIntentClassifier
 from src.agent_core.orchestrator.synthesizer import PromptResponseSynthesizer
-from src.iface.agent.audit import IAgentAuditSink
+from src.iface.agent.audit import AgentAuditEvent, IAgentAuditSink
 from src.iface.agent.knowledge import IKnowledgeRetriever, RetrievedChunk
 from src.iface.agent.memory import ISessionMemory
 from src.iface.agent.orchestrator import (
@@ -193,7 +193,6 @@ class AgentOrchestrator(IAgentOrchestrator):
     ) -> None:
         if self.audit_sink is None:
             return
-        from src.iface.agent.audit import AgentAuditEvent
 
         await self.audit_sink.record(
             AgentAuditEvent(

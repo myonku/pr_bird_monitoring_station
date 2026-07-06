@@ -33,6 +33,8 @@ def load_project_config(
     if cfg.inference is None:
         raise ValueError("inference config is required for data_worker startup")
     cfg.inference = cfg.inference.normalized(base_dir=base_dir)
+    if cfg.agent is not None:
+        cfg.agent = cfg.agent.normalized()
     return cfg
 
 

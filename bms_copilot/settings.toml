@@ -24,7 +24,13 @@ match_module = "bms_copilot"
 match_methods = ["POST"]
 
 [agent]
-provider = "openai"
+provider = "deepseek"
+api_key = ""
+api_base = "https://api.deepseek.com"
+model = "deepseek-pro-flash"
+max_tokens = 4096
+temperature = 0.0
+top_p = 1.0
 
 [mysql]
 DIALECT = "mysql"

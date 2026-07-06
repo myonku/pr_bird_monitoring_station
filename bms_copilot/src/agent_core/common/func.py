@@ -2,7 +2,10 @@ import json
 import re
 from typing import Any
 
-from src.models.agent.api import ConversationPolicy
+from src.iface.agent.providers import ChatResult
+
+from src.models.sys.config import AgentConfig
+from src.models.agent.api import ChatRequest, ConversationPolicy
 from src.iface.agent.runtime import AgentRuntimeContext
 
 
@@ -48,3 +51,24 @@ def conversation_handle(context: AgentRuntimeContext | None, stage: str) -> Any 
     if isinstance(handle, dict):
         return handle
     return None
+
+
+def error_result(
+    code: str,
+    message: str,
+    request: ChatRequest,
+    config: AgentConfig,
+    provider: str,
+) -> ChatResult:
+    """构造携带错误信息的 ChatResult，避免直接抛异常。"""
+    return ChatResult(
+        text="",
+        raw={
+            "error": {"code": code, "message": message},
+            "provider_request": request.to_dict(),
+        },
+        usage={"input_tokens": 0, "output_tokens": 0},
+        finish_reason="error",
+        provider=provider,
+        model=request.model or config.model,
+    )
