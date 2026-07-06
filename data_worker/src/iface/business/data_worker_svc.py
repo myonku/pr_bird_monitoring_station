@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from src.models.business.event_req_dto import EdgeEventUploadRequest
 
-from src.models.business.data import (
+from src.models.business.event import (
     EdgeEventEnvelope,
     MonitoringRecord,
     ProcessingSource,

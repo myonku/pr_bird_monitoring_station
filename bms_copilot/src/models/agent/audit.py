@@ -1,8 +1,17 @@
-from __future__ import annotations
-
 from typing import Any
-
 from msgspec import Struct, field
+from src.models.common.types import UUIDDocument
+
+
+
+class AgentAuditEvent(UUIDDocument):
+    """Agent审计事件"""
+
+    event_name: str
+    request_id: str
+    session_id: str
+    stage: str = ""
+    payload: dict[str, Any] = field(default_factory=dict)
 
 
 class ProviderUsageRecord(Struct):

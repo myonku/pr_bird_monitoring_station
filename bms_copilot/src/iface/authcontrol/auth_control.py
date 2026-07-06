@@ -6,7 +6,7 @@ from src.models.auth.auth import IdentityContext
 from src.models.auth.ratelimit import RateLimitScope
 from src.models.auth.auth import TokenType
 from src.models.auth.ratelimit import RateLimitDecision, RateLimitDescriptor
-from src.models.common.entry_type import EntityType
+from src.models.common.types import EntityType
 
 
 @dataclass(slots=True, kw_only=True)

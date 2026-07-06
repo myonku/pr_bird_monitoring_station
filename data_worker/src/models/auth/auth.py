@@ -2,7 +2,7 @@ from typing import Literal
 from uuid import UUID
 from msgspec import Struct
 
-from src.models.common.entry_type import EntityType
+from src.models.common.types import EntityType
 
 
 SessionStatus = Literal["active", "blocked", "revoked", "expired"]

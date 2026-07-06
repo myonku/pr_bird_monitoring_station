@@ -1,8 +1,8 @@
 from typing import Literal
 from uuid import UUID, uuid4
 
-from beanie import Document
 from pydantic import BaseModel, ConfigDict, Field
+from src.models.common.types import UUIDDocument
 
 
 EventPayloadType = Literal["image", "video", "audio", "metadata", "mixed"]
@@ -10,15 +10,6 @@ RecordStatus = Literal["received", "normalized", "stored", "published", "failed"
 ProcessingSource = Literal["edge", "data_worker"]
 MONITORING_CONFIDENCE_MIN = 0.8
 
-
-class UUIDDocument(Document):
-    id: UUID = Field(default_factory=uuid4, alias="_id") # type: ignore
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    @property
-    def document_id(self) -> UUID:
-        return self.id
 
 
 class UserProfile(UUIDDocument):

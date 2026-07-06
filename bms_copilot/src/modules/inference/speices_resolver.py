@@ -4,7 +4,7 @@ import json
 from typing import Any
 from uuid import UUID
 
-from src.models.common.entities import SpeciesProfile
+from src.models.business.entities import SpeciesProfile
 from src.repo.mysql_client import MySQLClient
 from src.repo.mysql_dao import EntitySpeciesProfilesDAO
 

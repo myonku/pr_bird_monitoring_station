@@ -17,12 +17,12 @@ from src.iface.business.user_entity_svc import IUserEntityManager
 from src.iface.business.user_profile_svc import IUserProfileManager
 from src.models.business.client_req_dto import *
 from src.models.business.client_resp_dto import *
-from src.models.business.data import (
+from src.models.business.event import (
     MONITORING_CONFIDENCE_MIN,
     MonitoringRecord,
     UserProfile,
 )
-from src.models.common.entities import DeviceEntity, UserEntity
+from src.models.business.entities import DeviceEntity, UserEntity
 from src.utils.crypto_utils import CryptoUtils
 
 
@@ -193,7 +193,7 @@ class DataServerService(IDataServerService):
         now_ms = DataServerService._now_ms()
 
         profile = UserProfile(
-            _id=uuid4(),
+            id=uuid4(),
             username=normalized_username,
             display_name=display_name or normalized_username,
             email=normalized_email,

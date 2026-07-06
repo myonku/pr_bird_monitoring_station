@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timezone
 from uuid import UUID
 
 from src.iface.business.envelope_svc import IEnvelopeManager
-from src.models.business.data import EdgeEventEnvelope
+from src.models.business.event import EdgeEventEnvelope
 
 
 class EnvelopeManager(IEnvelopeManager):

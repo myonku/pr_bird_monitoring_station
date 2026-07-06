@@ -17,7 +17,7 @@ from src.models.business.event_req_dto import (
     ImagePayloadRequest,
     TemperatureHumiditySnapshotRequest,
 )
-from src.models.common.entities import SpeciesProfile
+from src.models.business.entities import SpeciesProfile
 from src.models.inference.workflow import (
     ClassificationResult,
     DetectionResult,

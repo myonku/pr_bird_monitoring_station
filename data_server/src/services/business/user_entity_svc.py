@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from src.iface.business.user_entity_svc import IUserEntityManager
-from src.models.common.entities import UserEntity, UserRole, UserStatus
+from src.models.business.entities import UserEntity, UserRole, UserStatus
 from src.repo.mysql_client import MySQLClient
 from src.repo.mysql_dao import EntityUsersDAO
 

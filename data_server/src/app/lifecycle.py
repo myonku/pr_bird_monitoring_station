@@ -15,7 +15,7 @@ from src.iface.common.local_credential_manager import ModuleCredentialSnapshot
 from src.iface.auth.bootstrap_coordinator import IBootstrapCoordinator
 from src.iface.communication.traffic_station import ITrafficStation
 from src.models.common.instance import ServiceInstance
-from src.models.business.data import BUSINESS_DOCUMENT_MODELS
+from src.models.business.event import BUSINESS_DOCUMENT_MODELS
 from src.models.sys.config import (
     EtcdConfig,
     ProjectConfig,

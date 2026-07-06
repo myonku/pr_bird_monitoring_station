@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import date
 from uuid import UUID
 
-from src.models.business.data import MonitoringRecord
+from src.models.business.event import MonitoringRecord
 
 
 class IMonitoringRecordManager(ABC):

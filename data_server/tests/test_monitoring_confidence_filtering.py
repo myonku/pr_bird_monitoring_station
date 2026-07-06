@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 from src.models.business.client_req_dto import ClientRecordsCursorRequest
-from src.models.business.data import MONITORING_CONFIDENCE_MIN, MonitoringRecord
+from src.models.business.event import MONITORING_CONFIDENCE_MIN, MonitoringRecord
 from src.services.business.data_server_svc import DataServerService
 from src.services.business.monitoring_record_svc import MonitoringRecordManager
 

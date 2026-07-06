@@ -13,7 +13,7 @@ from src.models.auth.ratelimit import (
     RateLimitScope,
     RateLimitSubjectType,
 )
-from src.models.common.entry_type import EntityType
+from src.models.common.types import EntityType
 from src.models.inference.config import InferenceConfig
 
 

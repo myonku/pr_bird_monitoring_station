@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from uuid import UUID
 
-from src.models.common.entities import DeviceEntity
+from src.models.business.entities import DeviceEntity
 
 
 class IDeviceEntityManager(ABC):

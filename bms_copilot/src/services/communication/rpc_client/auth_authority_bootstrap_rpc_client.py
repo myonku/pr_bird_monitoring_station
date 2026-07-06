@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import grpc
 
-from src.models.common.entry_type import EntityType
+from src.models.common.types import EntityType
 from src.gen.auth.v1 import auth_authority_bootstrap_pb2 as bootstrap_pb2
 from src.gen.auth.v1 import auth_authority_bootstrap_pb2_grpc as bootstrap_pb2_grpc
 from src.models.auth.auth import (

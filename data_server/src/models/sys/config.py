@@ -11,7 +11,7 @@ from src.models.auth.ratelimit import (
     RateLimitScope,
     RateLimitSubjectType,
 )
-from src.models.common.entry_type import EntityType
+from src.models.common.types import EntityType
 
 
 DEFAULT_DATA_SERVER_GRPC_LISTEN_PORT = 50053

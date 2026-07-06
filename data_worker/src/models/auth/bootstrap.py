@@ -4,7 +4,7 @@ from uuid import UUID
 from msgspec import Struct
 
 from src.models.auth.auth import IdentityContext, Session, TokenBundle
-from src.models.common.entry_type import EntityType
+from src.models.common.types import EntityType
 from src.models.commsec.commsec import SignatureAlgorithm
 
 

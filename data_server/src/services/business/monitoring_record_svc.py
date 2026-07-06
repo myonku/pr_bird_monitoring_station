@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
 from src.iface.business.monitoring_record_svc import IMonitoringRecordManager
-from src.models.business.data import MONITORING_CONFIDENCE_MIN, MonitoringRecord
+from src.models.business.event import MONITORING_CONFIDENCE_MIN, MonitoringRecord
 
 
 class MonitoringRecordManager(IMonitoringRecordManager):

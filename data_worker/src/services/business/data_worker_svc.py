@@ -12,9 +12,9 @@ from src.iface.business.envelope_svc import IEnvelopeManager
 from src.iface.business.monitoring_record_svc import IMonitoringRecordManager
 from src.iface.business.species_profile_svc import ISpeciesProfileManager
 from src.iface.inference.inference import IInferenceModule
-from src.models.business.data import EdgeEventEnvelope, MonitoringRecord, ProcessingSource
+from src.models.business.event import EdgeEventEnvelope, MonitoringRecord, ProcessingSource
 from src.models.business.event_req_dto import EdgeEventUploadRequest
-from src.models.common.entities import SpeciesProfile
+from src.models.business.entities import SpeciesProfile
 from src.models.inference.workflow import InferenceImagePayload, TwoStageInferenceResult
 
 

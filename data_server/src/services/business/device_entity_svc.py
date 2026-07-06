@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from src.iface.business.device_entity_svc import IDeviceEntityManager
-from src.models.common.entities import DeviceEntity, DeviceStatus
+from src.models.business.entities import DeviceEntity, DeviceStatus
 from src.repo.mysql_client import MySQLClient
 from src.repo.mysql_dao import EntityDevicesDAO
 

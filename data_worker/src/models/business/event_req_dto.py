@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.models.business.data import EdgeEventEnvelope
+from src.models.business.event import EdgeEventEnvelope
 from src.models.inference.workflow import (
     TwoStageInferenceResult,
 )
@@ -74,7 +74,7 @@ class EdgeEventUploadRequest(BaseModel):
         device_entity_id = self._parse_uuid(self.context.device_id, field_name="context.device_id")
         payload_body = self.model_dump(mode="python")
         return EdgeEventEnvelope(
-            _id=self.event_id,
+            id=self.event_id,
             device_entity_id=device_entity_id,
             device_name=self.context.device_name,
             occurred_at_ms=self.context.captured_at_ms,

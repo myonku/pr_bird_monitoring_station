@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, TypedDict
+from typing import Any, Protocol
 
 from msgspec import Struct, field
 

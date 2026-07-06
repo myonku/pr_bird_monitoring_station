@@ -3,7 +3,7 @@ from typing import Literal
 from msgspec import Struct, field
 
 from src.models.auth.auth import TokenType
-from src.models.common.entry_type import EntityType
+from src.models.common.types import EntityType
 
 RateLimitSubjectType = Literal["ip", "entity", "session", "token", "client", "gateway", "route", "composite"]
 RateLimitScope = Literal["edge_inbound", "internal_grpc", "auth"]

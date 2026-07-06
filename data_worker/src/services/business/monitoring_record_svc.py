@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
 from src.iface.business.monitoring_record_svc import IMonitoringRecordManager
-from src.models.business.data import MonitoringRecord
+from src.models.business.event import MonitoringRecord
 
 
 MIN_VISIBLE_CONFIDENCE = 0.8

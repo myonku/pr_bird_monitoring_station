@@ -18,7 +18,7 @@ from src.iface.communication.traffic_station import (
 )
 from src.models.auth.auth import IssuedToken, TokenBundle
 from src.models.auth.bootstrap import ChallengeRequest
-from src.models.common.entry_type import EntityType
+from src.models.common.types import EntityType
 from src.models.sys.config import RuntimeConfig, SecretKeyStartupParams
 from src.services.communication.rpc_client.auth_authority_bootstrap_rpc_client import (
     BOOTSTRAP_AUTH_METHOD,

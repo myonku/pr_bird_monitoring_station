@@ -3,7 +3,7 @@ from uuid import UUID
 
 from typing import Any
 
-from src.models.business.data import EdgeEventEnvelope
+from src.models.business.event import EdgeEventEnvelope
 
 
 class IEnvelopeManager(ABC):

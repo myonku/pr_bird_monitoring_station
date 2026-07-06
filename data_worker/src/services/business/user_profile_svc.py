@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from src.iface.business.user_profile_svc import IUserProfileManager
-from src.models.business.data import UserProfile
+from src.models.business.event import UserProfile
 
 
 class UserProfileManager(IUserProfileManager):
