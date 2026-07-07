@@ -30,7 +30,7 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 # 在加载配置前注入环境变量，config_loader 会通过 AgentConfig.normalized()
 # 读取 DEEPSEEK_API_KEY
 # ------------------------------------------------------------------
-os.environ["DEEPSEEK_API_KEY"] = "sk-ef96483db18e4cad96e7579d849d023c"
+os.environ["DEEPSEEK_API_KEY"] = "sk"
 
 from src.iface.agent.tools import ITool, IToolRegistry
 from src.iface.agent.runtime import AgentRuntimeContext
@@ -44,7 +44,7 @@ from src.models.agent.schemas import (
     ToolStatus,
 )
 from src.models.sys.config_loader import load_project_config_from_toml
-from src.agent_core.provider.deepseek import DeepSeekChatProvider
+from src.agent_core.provider.chat_provider.deepseek import DeepSeekChatProvider
 from src.agent_core.orchestrator.agent import AgentOrchestrator
 from src.agent_core.orchestrator.router import PromptIntentClassifier
 from src.agent_core.orchestrator.planner import PromptToolPlanner

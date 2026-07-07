@@ -2,6 +2,8 @@
 bms_test/
 **/tests/photos/
 
+*.key
+
 # yolo/pytorh models and logs
 weights/
 runs/
