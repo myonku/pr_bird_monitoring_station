@@ -223,6 +223,9 @@ func resolveBusinessTargetServiceName(flow *commonif.FlowRouteInput) string {
 	if strings.HasPrefix(path, "/v1/client/auth/") {
 		return ""
 	}
+	if strings.HasPrefix(path, "/v1/client/chat/") {
+		return "bms_copilot"
+	}
 	if strings.HasPrefix(path, "/v1/client/") {
 		return "data_server"
 	}

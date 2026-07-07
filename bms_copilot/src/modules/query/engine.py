@@ -69,13 +69,10 @@ class QueryEngine:
         filter_dict = spec.get("filter") or {}
         sort_dict = spec.get("sort") or {}
         limit = min(int(spec.get("limit", 20)), _MAX_LIMIT)
-        projection = spec.get("projection")
 
         query = doc_cls.find(filter_dict)
         if sort_dict:
             query = query.sort([(k, v) for k, v in sort_dict.items()])
-        if projection:
-            query = query.project(projection)
         query = query.limit(limit)
 
         results = await query.to_list()
@@ -174,6 +171,11 @@ def _serialize_doc(doc: Document) -> dict[str, Any]:
     for key, value in data.items():
         if hasattr(value, "hex"):  # ObjectId / UUID
             data[key] = str(value)
+    # 兜底：任何单个字符串字段超过 10KB 则截断
+    _MAX_STR_LEN = 10 * 1024
+    for key, value in data.items():
+        if isinstance(value, str) and len(value) > _MAX_STR_LEN:
+            data[key] = value[:_MAX_STR_LEN] + "...(truncated)"
     return data
 
 

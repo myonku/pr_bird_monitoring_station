@@ -17,11 +17,18 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+_USER_KEY_PREFIX = "bms_copilot:user"
+
+
+def _uk(user_id: str) -> str:
+    return f"{_USER_KEY_PREFIX}:{user_id}:sessions"
+
+
 class RedisSessionStore(ISessionStore):
     """基于 Redis Hash 的会话存储。
 
-    Key: ``bms_copilot:session:{session_id}``
-    Field: AgentSession 的每个字段。
+    Key: ``bms_copilot:session:{session_id}`` (Hash)
+    Secondary index: ``bms_copilot:user:{user_id}:sessions`` (Sorted Set, score=updated_at_ms)
     """
 
     def __init__(self, redis: Redis) -> None:
@@ -33,6 +40,9 @@ class RedisSessionStore(ISessionStore):
         now = _now_ms()
         data = _session_to_hash(session, now)
         await self._redis.hset(_sk(session.session_id), mapping=data)  # type: ignore[arg-type]
+        # 维护用户索引
+        score = float(session.updated_at_ms or now)
+        await self._redis.zadd(_uk(session.user_id), {session.session_id: score})
 
     async def get_session(self, session_id: str) -> AgentSession | None:
         raw: Any = await self._redis.hgetall(_sk(session_id))
@@ -41,10 +51,34 @@ class RedisSessionStore(ISessionStore):
         return _hash_to_session(dict(raw))
 
     async def touch_session(self, session_id: str) -> None:
-        await self._redis.hset(_sk(session_id), "updated_at_ms", str(_now_ms()))
+        now = _now_ms()
+        await self._redis.hset(_sk(session_id), "updated_at_ms", str(now))
+        # 同步更新用户索引分数
+        session = await self.get_session(session_id)
+        if session is not None:
+            await self._redis.zadd(_uk(session.user_id), {session_id: float(now)})
 
     async def delete_session(self, session_id: str) -> None:
+        session = await self.get_session(session_id)
+        if session is not None:
+            await self._redis.zrem(_uk(session.user_id), session_id)
         await self._redis.delete(_sk(session_id))
+
+    async def list_sessions_by_user(
+        self, user_id: str, limit: int = 20, offset: int = 0
+    ) -> list[AgentSession]:
+        """按 updated_at 降序返回用户的会话列表。"""
+        session_ids = await self._redis.zrevrange(
+            _uk(user_id), offset, offset + limit - 1
+        )
+        if not session_ids:
+            return []
+        results: list[AgentSession] = []
+        for sid in session_ids:
+            session = await self.get_session(str(sid))
+            if session is not None:
+                results.append(session)
+        return results
 
 
 def _session_to_hash(session: AgentSession, now: int) -> dict[str, str]:

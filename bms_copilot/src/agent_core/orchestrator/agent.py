@@ -47,10 +47,7 @@ class AgentComponentBundle:
 
 
 class AgentOrchestrator(IAgentOrchestrator):
-    """Agent 核心编排器样例。
-
-    未来扩展 memory / RAG / audit 时，只需要把依赖注入进来，主流程不必重写。
-    """
+    """Agent 核心编排器样例。"""
 
     def __init__(
         self,

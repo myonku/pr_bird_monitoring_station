@@ -61,11 +61,19 @@ def error_result(
     provider: str,
 ) -> ChatResult:
     """构造携带错误信息的 ChatResult，避免直接抛异常。"""
+    try:
+        request_dict = request.to_dict()
+    except Exception:
+        request_dict = {
+            "stage": request.stage,
+            "model": request.model,
+            "error": "serialization_failed",
+        }
     return ChatResult(
         text="",
         raw={
             "error": {"code": code, "message": message},
-            "provider_request": request.to_dict(),
+            "provider_request": request_dict,
         },
         usage={"input_tokens": 0, "output_tokens": 0},
         finish_reason="error",

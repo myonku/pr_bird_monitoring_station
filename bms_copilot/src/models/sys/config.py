@@ -105,7 +105,7 @@ class AgentConfig(Struct, kw_only=True):
 _PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "deepseek": {
         "api_base": "https://api.deepseek.com",
-        "model": "deepseek-pro-flash",
+        "model": "deepseek-v4-flash",
     },
     "openai": {
         "api_base": "https://api.openai.com/v1",
@@ -113,7 +113,7 @@ _PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     },
     "anthropic": {
         "api_base": "",
-        "model": "claude-4.5-haiku",
+        "model": "claude-haiku-4.5",
     },
 }
 

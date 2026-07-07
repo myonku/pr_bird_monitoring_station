@@ -24,6 +24,8 @@ MONGO_VIEWS: dict[str, dict[str, Any]] = {
         ],
         "sortable_fields": ["captured_at_ms", "confidence"],
         "time_field": "captured_at_ms",
+        "large_fields": ["image_b64"],
+        "note": "image_b64 是超大 base64 字段（~500KB+），默认不返回。如需请显式在 projection 中包含。",
     },
     "edge_event_envelopes": {
         "description": "边缘端上传事件：每次边缘设备上报的原始记录，无论是否识别成功",
@@ -84,6 +86,9 @@ AGGREGATION_HELP = """
 ALLOWED_COLLECTIONS = list(MONGO_VIEWS.keys())
 ALLOWED_TABLES = list(MYSQL_VIEWS.keys())
 
+# 默认排除的大字段（未指定 projection 时自动剔除）
+DEFAULT_EXCLUDED_FIELDS = {"image_b64"}
+
 
 def build_schema_prompt() -> str:
     """生成供 LLM 使用的 schema 描述文本。"""
@@ -112,8 +117,8 @@ def build_schema_prompt() -> str:
     lines.append("### 查询格式\n")
     lines.append("""返回 JSON 格式的查询描述，不要包含多余解释。示例如下：
 
-简单查询：
-{"source": "mongo", "collection": "monitoring_records", "filter": {"species_name": "白颊噪鹛"}, "sort": {"captured_at_ms": -1}, "limit": 10}
+简单查询（推荐用 projection 限定返回字段，减少数据体积）：
+{"source": "mongo", "collection": "monitoring_records", "filter": {"species_name": "白颊噪鹛"}, "projection": ["species_name", "captured_at_ms"], "sort": {"captured_at_ms": -1}, "limit": 10}
 
 聚合查询：
 {"source": "mongo", "collection": "monitoring_records", "aggregate": [{"$group": {"_id": "$species_name", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 10}]}
@@ -123,5 +128,7 @@ MySQL 查询：
 
 统计总数：
 {"source": "mongo", "collection": "edge_event_envelopes", "aggregate": [{"$count": "total"}]}
+
+⚠️ 注意：image_b64 是超大 base64 字段（~500KB+），仅当用户明确要求图片时才在 projection 中包含它。其他情况不要返回 image_b64。
 """)
     return "\n".join(lines)

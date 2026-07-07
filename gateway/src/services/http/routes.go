@@ -195,6 +195,65 @@ func LookupRouteSpec(method string, path string) (RouteSpec, bool) {
 				authRequired:          true,
 			}, true
 		}
+	case "/v1/client/chat/send":
+		if method == "POST" {
+			return RouteSpec{
+				Kind:                  RouteKindBusiness,
+				Method:                method,
+				path:                  path,
+				routeKey:              businessForwardRouteKey,
+				operation:             "client.chat.send",
+				ExpectedTargetService: "bms_copilot",
+				authRequired:          true,
+			}, true
+		}
+	case "/v1/client/chat/sessions":
+		if method == "GET" {
+			return RouteSpec{
+				Kind:                  RouteKindBusiness,
+				Method:                method,
+				path:                  path,
+				routeKey:              businessForwardRouteKey,
+				operation:             "client.chat.sessions.list",
+				ExpectedTargetService: "bms_copilot",
+				authRequired:          true,
+			}, true
+		}
+		if method == "POST" {
+			return RouteSpec{
+				Kind:                  RouteKindBusiness,
+				Method:                method,
+				path:                  path,
+				routeKey:              businessForwardRouteKey,
+				operation:             "client.chat.sessions.create",
+				ExpectedTargetService: "bms_copilot",
+				authRequired:          true,
+			}, true
+		}
+	case "/v1/client/chat/sessions/detail":
+		if method == "POST" {
+			return RouteSpec{
+				Kind:                  RouteKindBusiness,
+				Method:                method,
+				path:                  path,
+				routeKey:              businessForwardRouteKey,
+				operation:             "client.chat.sessions.detail",
+				ExpectedTargetService: "bms_copilot",
+				authRequired:          true,
+			}, true
+		}
+	case "/v1/client/chat/sessions/delete":
+		if method == "POST" {
+			return RouteSpec{
+				Kind:                  RouteKindBusiness,
+				Method:                method,
+				path:                  path,
+				routeKey:              businessForwardRouteKey,
+				operation:             "client.chat.sessions.delete",
+				ExpectedTargetService: "bms_copilot",
+				authRequired:          true,
+			}, true
+		}
 	case "/v1/edge/events":
 		if method == "POST" {
 			return RouteSpec{

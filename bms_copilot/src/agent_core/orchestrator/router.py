@@ -146,25 +146,48 @@ def _heuristic_intent(
 ) -> IntentResult:
     normalized = text.lower().strip()
     has_image = len(images) > 0
-    if any(
-        keyword in normalized for keyword in ["统计", "趋势", "count", "top", "分布"]
-    ):
-        intent_type = IntentType.STATISTICS
-    elif (
+
+    # 检测各意图类别的关键词是否命中
+    is_statistics = any(
+        kw in normalized for kw in ["统计", "趋势", "count", "top", "分布"]
+    )
+    is_inference = (
         any(
-            keyword in normalized
-            for keyword in ["识别", "图片", "图像", "检测", "分类"]
+            kw in normalized
+            for kw in ["图片", "图像", "检测", "分类"]
         )
         or has_image
-    ):
+        or (
+            "识别" in normalized
+            and not any(
+                exclude in normalized
+                for exclude in ["被识别", "识别到"]
+            )
+        )
+    )
+    is_knowledge = any(
+        kw in normalized
+        for kw in ["知识", "百科", "说明", "介绍", "简介"]
+    ) or (
+        "是什么" in normalized
+        and "什么时候" not in normalized
+        and "是什么时候" not in normalized
+    )
+    is_composite_word = any(
+        kw in normalized for kw in ["和", "以及", "同时", "综合", "组合"]
+    )
+
+    # 复合意图：同时命中多个类别 → COMPOSITE
+    multiple_intents = sum([is_statistics, is_inference, is_knowledge])
+    if multiple_intents >= 2:
+        intent_type = IntentType.COMPOSITE
+    elif is_statistics:
+        intent_type = IntentType.STATISTICS
+    elif is_inference:
         intent_type = IntentType.INFERENCE
-    elif any(
-        keyword in normalized for keyword in ["知识", "百科", "说明", "是什么", "介绍"]
-    ):
+    elif is_knowledge:
         intent_type = IntentType.KNOWLEDGE
-    elif any(
-        keyword in normalized for keyword in ["和", "以及", "同时", "综合", "组合"]
-    ):
+    elif is_composite_word:
         intent_type = IntentType.COMPOSITE
     elif normalized:
         intent_type = IntentType.SEARCH

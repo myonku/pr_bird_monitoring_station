@@ -12,6 +12,11 @@ class ISessionStore(ABC):
 
     @abstractmethod
     async def touch_session(self, session_id: str) -> None: ...
-    
+
     @abstractmethod
     async def delete_session(self, session_id: str) -> None: ...
+
+    @abstractmethod
+    async def list_sessions_by_user(
+        self, user_id: str, limit: int = 20, offset: int = 0
+    ) -> list[AgentSession]: ...
