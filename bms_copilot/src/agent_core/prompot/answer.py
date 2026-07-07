@@ -1,7 +1,4 @@
-from __future__ import annotations
-
 from src.agent_core.prompot.base import PromptTemplate
-
 
 ANSWER_PROMPT = PromptTemplate(
     name="answer.synthesizer",

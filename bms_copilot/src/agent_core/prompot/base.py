@@ -1,16 +1,12 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Any, Literal
-
 
 PromptKind = Literal["system", "intent", "tool_router", "answer"]
 
 
 @dataclass(slots=True)
 class PromptTemplate:
-    """prompt 协议样例。存放可版本化、可渲染、可组合的模板资产。
-    """
+    """prompt 协议样例。存放可版本化、可渲染、可组合的模板资产。"""
 
     name: str
     kind: PromptKind

@@ -217,16 +217,12 @@ def _intent_from_payload(payload: dict[str, Any], raw_text: str) -> IntentResult
 
 
 def _tool_hints_for_intent(intent_type: IntentType) -> list[str]:
-    if intent_type == IntentType.SEARCH:
-        return ["search_records_tool"]
-    if intent_type == IntentType.STATISTICS:
-        return ["stats_query_tool"]
+    if intent_type in {IntentType.SEARCH, IntentType.STATISTICS, IntentType.KNOWLEDGE}:
+        return ["query_records_tool"]
     if intent_type == IntentType.INFERENCE:
         return ["image_inference_tool"]
-    if intent_type == IntentType.KNOWLEDGE:
-        return ["species_kb_tool"]
     if intent_type == IntentType.COMPOSITE:
-        return ["search_records_tool", "species_kb_tool"]
+        return ["query_records_tool", "image_inference_tool"]
     return []
 
 

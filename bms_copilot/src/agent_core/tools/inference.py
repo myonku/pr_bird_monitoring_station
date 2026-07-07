@@ -171,7 +171,11 @@ class ImageInferenceTool(ITool):
             else:
                 item["detected"] = True
                 # 如果 SpeciesResolver 可用，补充物种详情
-                if label and self._species_resolver is not None and self._enable_species:
+                if (
+                    label
+                    and self._species_resolver is not None
+                    and self._enable_species
+                ):
                     item["species"] = await self._resolve_species(label)
 
         return item
@@ -197,6 +201,7 @@ class ImageInferenceTool(ITool):
             "habitat": profile.habitat,
             "protection_level": profile.protection_level,
         }
+
 
 def _build_inference_payload(img: ImageRef) -> InferenceImagePayload:
     """将 AgentRequest 中的 ImageRef 转换为推理引擎所需的载荷。"""

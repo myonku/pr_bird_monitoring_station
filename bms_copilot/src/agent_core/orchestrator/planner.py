@@ -38,10 +38,8 @@ class PromptToolPlanner(IPlanner):
         self._audit_recorder = audit_recorder
         self._usage_store = usage_store
         self.tool_catalog = tool_catalog or {
-            "search_records_tool": "记录检索",
-            "stats_query_tool": "统计查询",
+            "query_records_tool": "数据查询（监测记录、设备信息、鸟种简介、统计聚合）",
             "image_inference_tool": "图片识别编排",
-            "species_kb_tool": "物种知识检索",
         }
 
     async def plan(
@@ -51,23 +49,27 @@ class PromptToolPlanner(IPlanner):
         context: AgentRuntimeContext | None = None,
     ) -> list[ToolCall]:
         if self.provider is not None:
+            context_data: dict[str, Any] = {
+                "session_id": req.session_id,
+                "history_messages": (len(context.recent_messages) if context else 0),
+                "retrieved_chunks": (len(context.retrieved_chunks) if context else 0),
+                "metadata": context.metadata if context else {},
+            }
+            schema_text = ""
+            if intent.intent_type in IntentType:
+                from src.modules.query.schema import build_schema_prompt
+
+                schema_text = build_schema_prompt()
+
             messages = [
                 ChatMessage(role="system", content=TOOL_ROUTER_PROMPT.render()),
                 ChatMessage(
                     role="user",
                     content=TOOL_ROUTER_PROMPT.render(
                         intent=intent.model_dump(),
-                        context={
-                            "session_id": req.session_id,
-                            "history_messages": (
-                                len(context.recent_messages) if context else 0
-                            ),
-                            "retrieved_chunks": (
-                                len(context.retrieved_chunks) if context else 0
-                            ),
-                            "metadata": context.metadata if context else {},
-                        },
+                        context=context_data,
                         available_tools=self.tool_catalog,
+                        schema=schema_text,
                     ),
                 ),
             ]
@@ -165,7 +167,7 @@ def _fallback_plan(
     if not hints:
         hints = _tool_hints_for_intent(intent.intent_type)
     if intent.intent_type == IntentType.COMPOSITE and len(hints) < 2:
-        hints = ["search_records_tool", "species_kb_tool"]
+        hints = ["query_records_tool", "image_inference_tool"]
 
     plan: list[ToolCall] = []
     seen: set[str] = set()
@@ -173,10 +175,8 @@ def _fallback_plan(
         if tool_name in seen:
             continue
         if tool_name not in {
-            "search_records_tool",
-            "stats_query_tool",
+            "query_records_tool",
             "image_inference_tool",
-            "species_kb_tool",
         }:
             continue
         seen.add(tool_name)
@@ -192,7 +192,7 @@ def _fallback_plan(
         tool_name = (
             _tool_hints_for_intent(intent.intent_type)[0]
             if _tool_hints_for_intent(intent.intent_type)
-            else "search_records_tool"
+            else "query_records_tool"
         )
         plan.append(
             ToolCall(
@@ -205,16 +205,12 @@ def _fallback_plan(
 
 
 def _tool_hints_for_intent(intent_type: IntentType) -> list[str]:
-    if intent_type == IntentType.SEARCH:
-        return ["search_records_tool"]
-    if intent_type == IntentType.STATISTICS:
-        return ["stats_query_tool"]
+    if intent_type in {IntentType.SEARCH, IntentType.STATISTICS, IntentType.KNOWLEDGE}:
+        return ["query_records_tool"]
     if intent_type == IntentType.INFERENCE:
         return ["image_inference_tool"]
-    if intent_type == IntentType.KNOWLEDGE:
-        return ["species_kb_tool"]
     if intent_type == IntentType.COMPOSITE:
-        return ["search_records_tool", "species_kb_tool"]
+        return ["query_records_tool", "image_inference_tool"]
     return []
 
 
@@ -224,7 +220,7 @@ def _default_tool_arguments(
     intent: IntentResult,
     context: AgentRuntimeContext | None,
 ) -> dict[str, Any]:
-    base = {
+    return {
         "request_id": req.request_id,
         "session_id": req.session_id,
         "user_id": req.user_id,
@@ -236,18 +232,13 @@ def _default_tool_arguments(
         ),
         "metadata": context.metadata if context else {},
     }
-    if tool_name == "image_inference_tool":
-        base["images"] = [image.model_dump() for image in req.images]
-    return base
 
 
 def _timeout_for_tool(tool_name: str) -> int:
     return {
-        "search_records_tool": 3000,
-        "stats_query_tool": 2500,
+        "query_records_tool": 10000,
         "image_inference_tool": 8000,
-        "species_kb_tool": 3500,
-    }.get(tool_name, 3000)
+    }.get(tool_name, 10000)
 
 
 def _tool_call_from_payload(payload: dict[str, Any]) -> ToolCall:
