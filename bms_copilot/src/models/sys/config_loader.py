@@ -34,7 +34,7 @@ def load_project_config(
         raise ValueError("inference config is required for data_worker startup")
     cfg.inference = cfg.inference.normalized(base_dir=base_dir)
     if cfg.agent is not None:
-        cfg.agent = cfg.agent.normalized()
+        cfg.agent = cfg.agent.normalized(base_dir=base_dir)
     return cfg
 
 
@@ -50,9 +50,3 @@ def load_project_config_from_toml(
     with path.open("rb") as f:
         raw = tomllib.load(f)
     return load_project_config(raw, base_dir=path.parent)
-
-
-
-
-
-

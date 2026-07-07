@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Literal
 from urllib.parse import quote_plus, urlencode
 from msgspec import Struct, field
@@ -13,7 +14,6 @@ from src.models.auth.ratelimit import (
 )
 from src.models.common.types import EntityType
 from src.models.inference.config import InferenceConfig
-
 
 DEFAULT_COPILOT_GRPC_LISTEN_PORT = 50054
 DEFAULT_COPILOT_GRPC_LISTEN_HOST = "127.0.0.1"
@@ -73,15 +73,17 @@ class AgentConfig(Struct, kw_only=True):
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
 
-    def normalized(self) -> "AgentConfig":
+    def normalized(self, base_dir: str | Path = ".") -> "AgentConfig":
         provider = self.provider.strip().lower() or "openai"
         defaults = _PROVIDER_DEFAULTS.get(provider, {})
 
-        # api_key: 配置文件值优先，缺失时读取环境变量
+        # api_key: 配置文件 > 环境变量 > api_key.key 文件
         api_key = self.api_key.strip()
         if not api_key:
             env_key = f"{provider.upper()}_API_KEY"
             api_key = os.environ.get(env_key, "")
+        if not api_key:
+            api_key = _read_api_key_file(Path(base_dir), provider)
 
         # api_base
         api_base = self.api_base.strip() or defaults.get("api_base", "")
@@ -122,6 +124,32 @@ def _clamp(lo: float, hi: float, value: float) -> float:
     return max(lo, min(hi, value))
 
 
+def _read_api_key_file(base_dir: Path, provider: str) -> str:
+    """从 ``api_key.key`` 文件中读取指定 provider 的 API key。
+
+    文件格式为每行 ``provider = key``，如::
+
+        deepseek = ...
+        openai = ...
+    """
+    key_path = base_dir / "api_key.key"
+    if not key_path.exists() or not key_path.is_file():
+        return ""
+    try:
+        for line in key_path.read_text("utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            if k.strip().lower() == provider:
+                return v.strip()
+    except (OSError, UnicodeError):
+        pass
+    return ""
+
+
 class MilvusConfig(Struct, kw_only=True):
     """Milvus 配置模型"""
 
@@ -133,11 +161,25 @@ class MilvusConfig(Struct, kw_only=True):
     CIRCUITBREAKER: CircuitBreakerConfig | None = None
 
     def normalized(self) -> "MilvusConfig":
-        uri = self.URI.strip() if isinstance(self.URI, str) and self.URI.strip() else None
-        host = self.HOST.strip() if isinstance(self.HOST, str) and self.HOST.strip() else "127.0.0.1"
+        uri = (
+            self.URI.strip() if isinstance(self.URI, str) and self.URI.strip() else None
+        )
+        host = (
+            self.HOST.strip()
+            if isinstance(self.HOST, str) and self.HOST.strip()
+            else "127.0.0.1"
+        )
         port = self.PORT if isinstance(self.PORT, int) and self.PORT > 0 else 19530
-        token = self.TOKEN.strip() if isinstance(self.TOKEN, str) and self.TOKEN.strip() else None
-        db_name = self.DB_NAME.strip() if isinstance(self.DB_NAME, str) and self.DB_NAME.strip() else "default"
+        token = (
+            self.TOKEN.strip()
+            if isinstance(self.TOKEN, str) and self.TOKEN.strip()
+            else None
+        )
+        db_name = (
+            self.DB_NAME.strip()
+            if isinstance(self.DB_NAME, str) and self.DB_NAME.strip()
+            else "default"
+        )
 
         return MilvusConfig(
             HOST=host,
