@@ -30,9 +30,9 @@ EXPECTED_TARGET_SERVICE_TYPE = "internal_service"
 
 
 class BusinessForwardServicer(business_forward_pb2_grpc.BusinessForwardServiceServicer):
-    """bms_copilot 业务通道 gRPC 上层适配器�?
+    """bms_copilot 业务通道 gRPC 上层适配器
 
-    将统一业务请求�?operation 分发�?IChatService 对应方法�?
+    将统一业务请求 operation 分发到 IChatService 对应方法
     """
 
     def __init__(

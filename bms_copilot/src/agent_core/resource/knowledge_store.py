@@ -1,5 +1,11 @@
 from typing import Any
-from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient
+from pymilvus import (
+    CollectionSchema,
+    DataType,
+    FieldSchema,
+    MilvusClient,
+)
+from pymilvus.milvus_client import IndexParams
 
 from src.iface.agent_resource.knowledge_store import IKnowledgeStore
 from src.models.agent.knowledge import KnowledgeChunk, RetrievedChunk
@@ -67,11 +73,11 @@ class MilvusKnowledgeStore(IKnowledgeStore):
                 schema=schema,
             )
             # 创建 IVF_FLAT 索引加速搜索
-            index_params: Any = {
-                "metric_type": "IP",
-                "index_type": "IVF_FLAT",
-                "params": {"nlist": 128},
-            }
+            index_params = IndexParams(
+                metric_type="IP",
+                index_type="IVF_FLAT",
+                params={"nlist": 128},
+            )
             self._client.create_index(
                 collection_name=_COLLECTION_NAME,
                 index_params=index_params,

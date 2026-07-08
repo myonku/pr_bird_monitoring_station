@@ -16,6 +16,10 @@ class ClientApiPaths {
     this.records = '/v1/client/records',
     this.weeklyTrend = '/v1/client/stats/weekly-trend',
     this.rangeSummary = '/v1/client/stats/range-summary',
+    this.chatSend = '/v1/client/chat/send',
+    this.chatSessions = '/v1/client/chat/sessions',
+    this.chatSessionDetail = '/v1/client/chat/sessions/detail',
+    this.chatSessionDelete = '/v1/client/chat/sessions/delete',
   });
 
   final String signIn;
@@ -27,6 +31,10 @@ class ClientApiPaths {
   final String records;
   final String weeklyTrend;
   final String rangeSummary;
+  final String chatSend;
+  final String chatSessions;
+  final String chatSessionDetail;
+  final String chatSessionDelete;
 }
 
 class HttpMonitoringClient implements MonitoringClient {
@@ -213,6 +221,106 @@ class HttpMonitoringClient implements MonitoringClient {
       options: options,
     );
     return _parseRangeSummary(_asMap(response.data));
+  }
+
+  // ── Chat methods ────────────────────────────────────────────────
+
+  @override
+  Future<ChatSendResponse> chatSend(
+    ChatSendRequest request, {
+    ClientRequestOptions options = const ClientRequestOptions(),
+  }) async {
+    final imageList = request.images
+        .map(
+          (img) => <String, dynamic>{
+            'image_id': img.imageId,
+            'data': img.data,
+            'mime_type': img.mimeType,
+            'filename': img.filename,
+          },
+        )
+        .toList(growable: false);
+
+    final response = await _post(
+      paths.chatSend,
+      data: <String, dynamic>{
+        'session_id': request.sessionId,
+        'user_id': request.userId,
+        'text': request.text,
+        'images': imageList,
+        'locale': request.locale,
+        'timezone': request.timezone,
+        'trace_id': request.traceId,
+      },
+      options: options,
+    );
+    return _parseChatSend(_asMap(response.data));
+  }
+
+  @override
+  Future<ChatSessionListResponse> chatSessionList(
+    ChatSessionListRequest request, {
+    ClientRequestOptions options = const ClientRequestOptions(),
+  }) async {
+    final response = await _get(
+      paths.chatSessions,
+      query: <String, dynamic>{
+        'user_id': request.userId,
+        'limit': request.limit,
+        'offset': request.offset,
+      },
+      options: options,
+    );
+    return _parseChatSessionList(_asMap(response.data));
+  }
+
+  @override
+  Future<ChatSessionDetailResponse> chatSessionDetail(
+    ChatSessionGetRequest request, {
+    ClientRequestOptions options = const ClientRequestOptions(),
+  }) async {
+    final response = await _post(
+      paths.chatSessionDetail,
+      data: <String, dynamic>{
+        'session_id': request.sessionId,
+        'user_id': request.userId,
+        'message_limit': request.messageLimit,
+      },
+      options: options,
+    );
+    return _parseChatSessionDetail(_asMap(response.data));
+  }
+
+  @override
+  Future<ChatSessionDeleteResponse> chatSessionDelete(
+    ChatSessionDeleteRequest request, {
+    ClientRequestOptions options = const ClientRequestOptions(),
+  }) async {
+    final response = await _post(
+      paths.chatSessionDelete,
+      data: <String, dynamic>{
+        'session_id': request.sessionId,
+        'user_id': request.userId,
+      },
+      options: options,
+    );
+    return _parseChatSessionDelete(_asMap(response.data));
+  }
+
+  @override
+  Future<ChatSessionCreateResponse> chatSessionCreate(
+    ChatSessionCreateRequest request, {
+    ClientRequestOptions options = const ClientRequestOptions(),
+  }) async {
+    final response = await _post(
+      paths.chatSessions,
+      data: <String, dynamic>{
+        'user_id': request.userId,
+        'title': request.title,
+      },
+      options: options,
+    );
+    return _parseChatSessionCreate(_asMap(response.data));
   }
 
   Future<Response<dynamic>> _get(
@@ -583,6 +691,114 @@ class HttpMonitoringClient implements MonitoringClient {
       deviceId: _string(json['device_id']),
       deviceName: _string(json['device_name']),
       recordCount: _int(json['record_count']),
+    );
+  }
+
+  // ── Chat response parsers ───────────────────────────────────────
+
+  ChatSendResponse _parseChatSend(Map<String, dynamic> json) {
+    final structured = json['structured'];
+    final citationsRaw = json['citations'];
+
+    return ChatSendResponse(
+      sessionId: _string(json['session_id']),
+      requestId: _string(json['request_id']),
+      status: _string(json['status']),
+      text: _string(json['text']),
+      intentType: _string(json['intent_type']),
+      toolNames: _stringList(json['tool_names']),
+      structured: structured is Map<String, dynamic>
+          ? structured
+          : const <String, dynamic>{},
+      citations: citationsRaw is List
+          ? citationsRaw
+              .map(
+                (c) => _stringMap(c)
+                    .map((k, v) => MapEntry(k, v.toString())),
+              )
+              .toList(growable: false)
+          : const [],
+      latencyMs: _int(json['latency_ms']),
+    );
+  }
+
+  ChatSessionSummaryResponse _parseChatSessionSummary(
+    Map<String, dynamic> json,
+  ) {
+    return ChatSessionSummaryResponse(
+      sessionId: _string(json['session_id']),
+      title: _string(json['title']),
+      status: _string(json['status']),
+      messageCount: _int(json['message_count']),
+      lastText: _string(json['last_text']),
+      createdAtMs: _int(json['created_at_ms']),
+      updatedAtMs: _int(json['updated_at_ms']),
+    );
+  }
+
+  ChatMessageItemResponse _parseChatMessageItem(Map<String, dynamic> json) {
+    return ChatMessageItemResponse(
+      turnIndex: _int(json['turn_index']),
+      requestId: _string(json['request_id']),
+      role: _string(json['role']),
+      text: _string(json['text']),
+      intentType: _string(json['intent_type']),
+      toolNames: _stringList(json['tool_names']),
+      createdAtMs: _int(json['created_at_ms']),
+    );
+  }
+
+  ChatSessionDetailResponse _parseChatSessionDetail(
+    Map<String, dynamic> json,
+  ) {
+    final messagesRaw = json['messages'];
+    final messages = messagesRaw is List
+        ? messagesRaw
+            .map((item) => _parseChatMessageItem(_asMap(item)))
+            .toList(growable: false)
+        : const <ChatMessageItemResponse>[];
+
+    return ChatSessionDetailResponse(
+      sessionId: _string(json['session_id']),
+      userId: _string(json['user_id']),
+      status: _string(json['status']),
+      provider: _string(json['provider']),
+      model: _string(json['model']),
+      messages: messages,
+      createdAtMs: _int(json['created_at_ms']),
+      updatedAtMs: _int(json['updated_at_ms']),
+    );
+  }
+
+  ChatSessionListResponse _parseChatSessionList(Map<String, dynamic> json) {
+    final sessionsRaw = json['sessions'];
+    final sessions = sessionsRaw is List
+        ? sessionsRaw
+            .map((item) => _parseChatSessionSummary(_asMap(item)))
+            .toList(growable: false)
+        : const <ChatSessionSummaryResponse>[];
+
+    return ChatSessionListResponse(
+      sessions: sessions,
+      total: _int(json['total']),
+    );
+  }
+
+  ChatSessionDeleteResponse _parseChatSessionDelete(
+    Map<String, dynamic> json,
+  ) {
+    return ChatSessionDeleteResponse(
+      sessionId: _string(json['session_id']),
+      deleted: _bool(json['deleted']),
+    );
+  }
+
+  ChatSessionCreateResponse _parseChatSessionCreate(
+    Map<String, dynamic> json,
+  ) {
+    return ChatSessionCreateResponse(
+      sessionId: _string(json['session_id']),
+      createdAtMs: _int(json['created_at_ms']),
     );
   }
 }

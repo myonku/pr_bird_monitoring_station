@@ -8,6 +8,7 @@ from typing import Any
 from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 import grpc
+from pymilvus import MilvusClient
 
 from src.gen.business.v1 import business_forward_pb2_grpc
 from src.models.agent.audit import AgentAuditEvent
@@ -74,6 +75,10 @@ async def run_bms_copilot() -> None:
     stop_event = asyncio.Event()
     server: grpc.aio.Server | None = None
     bootstrapped = False
+    milvus_client_raw: MilvusClient | None = None
+    embedding_provider = None
+    knowledge_store = None
+    retriever = None
 
     try:
         etcd_client = EtcdAsyncClient(config)
@@ -116,6 +121,50 @@ async def run_bms_copilot() -> None:
             await mc.connect()
             mysql_client = mc
             logger.info("stage=mysql_connected service=%s", runtime_cfg.service_name)
+
+        if config.milvus is not None:
+            from src.repo.milvus_client import Milvus as MilvusClientWrapper
+
+            milvus_wrapper = MilvusClientWrapper(config)
+            await asyncio.to_thread(milvus_wrapper.connect)
+            milvus_client_raw = milvus_wrapper.client
+            if not milvus_client_raw:
+                raise RuntimeError("milvus client is not available")
+            logger.info("stage=milvus_connected service=%s", runtime_cfg.service_name)
+
+            from src.agent_core.resource.knowledge_store import (
+                MilvusKnowledgeStore,
+            )
+
+            knowledge_store = MilvusKnowledgeStore(milvus=milvus_client_raw)
+
+            from src.agent_core.provider.embedding_provider.sentence_tf import (
+                SentenceEmbeddingProvider,
+            )
+
+            embedding_provider = SentenceEmbeddingProvider()
+            logger.info(
+                "stage=embedding_provider_ready service=%s dim=%d",
+                runtime_cfg.service_name,
+                embedding_provider.dimension,
+            )
+
+            await knowledge_store.ensure_collection(
+                dimension=embedding_provider.dimension
+            )
+            logger.info(
+                "stage=knowledge_store_ready service=%s", runtime_cfg.service_name
+            )
+
+            from src.agent_core.knowledge.retriever import (
+                MilvusKnowledgeRetriever,
+            )
+
+            retriever = MilvusKnowledgeRetriever(
+                embedder=embedding_provider,
+                knowledge_store=knowledge_store,
+            )
+            logger.info("stage=retriever_ready service=%s", runtime_cfg.service_name)
 
         resource_stores: dict[str, Any] | None = None
         rc: Any = redis_client
@@ -211,6 +260,7 @@ async def run_bms_copilot() -> None:
                 synthesizer=PromptResponseSynthesizer(
                     provider=chat_provider, model=model_name
                 ),
+                retriever=retriever,
             )
 
         conversation_memory = None
@@ -309,6 +359,13 @@ async def run_bms_copilot() -> None:
         if etcd_client is not None:
             with contextlib.suppress(Exception):
                 await etcd_client.close()
+        if milvus_client_raw is not None:
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(milvus_client_raw.close)
+                logger.info(
+                    "stage=milvus_disconnected service=%s",
+                    runtime_cfg.service_name,
+                )
         logger.info("stage=shutdown service=%s", runtime_cfg.service_name)
 
 

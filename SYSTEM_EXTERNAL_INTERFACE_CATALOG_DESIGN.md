@@ -38,6 +38,13 @@
 | `/v1/client/records` | `GET` | `ClientRecordsCursorRequest` | `ClientRecordsCursorResponse` | 记录页游标分页接口。 |
 | `/v1/client/stats/weekly-trend` | `GET` | `ClientWeeklyTrendRequest` | `ClientWeeklyTrendResponse` | 最近七日趋势接口。 |
 | `/v1/client/stats/range-summary` | `GET` | `ClientRangeSummaryRequest` | `ClientRangeSummaryResponse` | 时间段统计接口。 |
+| `/v1/client/chat/send` | `POST` | `ChatSendRequest` | `ChatSendResponse` | 发送聊天消息并获取 AI 回复。 |
+| `/v1/client/chat/sessions` | `GET` | `ChatSessionListRequest` | `ChatSessionListResponse` | 获取当前用户的会话列表，按 ``updated_at_ms`` 降序。 |
+| `/v1/client/chat/sessions` | `POST` | `ChatSessionCreateRequest` | `ChatSessionCreateResponse` | 创建新的空会话，返回 ``session_id``。 |
+| `/v1/client/chat/sessions/detail` | `POST` | `ChatSessionGetRequest` | `ChatSessionDetail` | 获取指定会话的完整消息历史。 |
+| `/v1/client/chat/sessions/delete` | `POST` | `ChatSessionDeleteRequest` | `ChatSessionDeleteResponse` | 删除指定会话。 |
+
+以上接口的前 7 项目标服务为 ``data_server``；chat 相关接口（``/v1/client/chat/*``）目标服务为 ``bms_copilot``。
 
 客户端业务接口字段语义说明：
 
@@ -45,6 +52,7 @@
 - `ClientRecordsCursorRequest` 的 `sort` 当前固定为 `captured_at_ms_desc`。
 - `ClientRangeSummaryRequest` 的查询区间建议限制在 30 天内。
 - `ClientAuthCredentialsResponse` 仅用于认证接口返回，不属于业务接口返回体。
+- Chat 接口的请求/响应 DTO 定义见 ``bms_copilot/src/models/business/chat_req_dto.py`` / ``chat_resp_dto.py``。
 
 ### 3.2 边缘端业务接口
 

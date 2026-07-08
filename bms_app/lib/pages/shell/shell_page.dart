@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:bms_app/app/app_controller.dart';
 import 'package:bms_app/controller/controller.dart';
 import 'package:bms_app/models/common.dart';
+import 'package:bms_app/pages/chat/chat_list_page.dart';
 import 'package:bms_app/pages/home/home_page.dart';
 import 'package:bms_app/pages/me/me_page.dart';
 import 'package:bms_app/pages/records/records_page.dart';
@@ -23,9 +24,9 @@ class ShellPage extends StatefulWidget {
 }
 
 class _ShellPageState extends State<ShellPage> {
-  final List<Widget?> _pages = List<Widget?>.filled(4, null);
+  final List<Widget?> _pages = List<Widget?>.filled(5, null);
 
-  static const List<String> _titles = ['首页', '记录', '统计', '我的'];
+  static const List<String> _titles = ['首页', '记录', '统计', '智能助手', '我的'];
 
   @override
   void initState() {
@@ -74,7 +75,11 @@ class _ShellPageState extends State<ShellPage> {
         _pages[2] = StatsPage(monitoringController: widget.monitoringController);
         break;
       case 3:
-        _pages[3] = MePage(monitoringController: widget.monitoringController);
+        _pages[3] = ChatListPage(
+            monitoringController: widget.monitoringController);
+        break;
+      case 4:
+        _pages[4] = MePage(monitoringController: widget.monitoringController);
         break;
       default:
         break;
@@ -117,7 +122,7 @@ class _ShellPageState extends State<ShellPage> {
       body: IndexedStack(
         index: currentIndex,
         children: List<Widget>.generate(
-          4,
+          5,
           (i) => _pages[i] ?? const SizedBox.shrink(),
         ),
       ),
@@ -139,6 +144,11 @@ class _ShellPageState extends State<ShellPage> {
             icon: Icon(Icons.bar_chart_outlined),
             selectedIcon: Icon(Icons.bar_chart),
             label: '统计',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.smart_toy_outlined),
+            selectedIcon: Icon(Icons.smart_toy),
+            label: '智能助手',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),

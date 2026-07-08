@@ -109,6 +109,86 @@ class ClientRecordsCursorRequest {
   final String sort;
 }
 
+// ── Chat request DTOs ──────────────────────────────────────────────
+
+class ChatImageRef {
+  const ChatImageRef({
+    this.imageId = '',
+    this.data = '',
+    this.mimeType = 'image/jpeg',
+    this.filename = '',
+  });
+
+  final String imageId;
+  final String data;
+  final String mimeType;
+  final String filename;
+}
+
+class ChatSendRequest {
+  const ChatSendRequest({
+    required this.sessionId,
+    required this.userId,
+    required this.text,
+    this.images = const [],
+    this.locale = 'zh-CN',
+    this.timezone = 'Asia/Shanghai',
+    this.traceId = '',
+  });
+
+  final String sessionId;
+  final String userId;
+  final String text;
+  final List<ChatImageRef> images;
+  final String locale;
+  final String timezone;
+  final String traceId;
+}
+
+class ChatSessionListRequest {
+  const ChatSessionListRequest({
+    required this.userId,
+    this.limit = 20,
+    this.offset = 0,
+  });
+
+  final String userId;
+  final int limit;
+  final int offset;
+}
+
+class ChatSessionGetRequest {
+  const ChatSessionGetRequest({
+    required this.sessionId,
+    required this.userId,
+    this.messageLimit = 50,
+  });
+
+  final String sessionId;
+  final String userId;
+  final int messageLimit;
+}
+
+class ChatSessionDeleteRequest {
+  const ChatSessionDeleteRequest({
+    required this.sessionId,
+    required this.userId,
+  });
+
+  final String sessionId;
+  final String userId;
+}
+
+class ChatSessionCreateRequest {
+  const ChatSessionCreateRequest({
+    required this.userId,
+    this.title = '',
+  });
+
+  final String userId;
+  final String title;
+}
+
 class ClientWeeklyTrendRequest {
   const ClientWeeklyTrendRequest({this.days = 7, this.deviceId});
 

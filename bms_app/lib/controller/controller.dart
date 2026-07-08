@@ -534,4 +534,65 @@ class MonitoringController extends ChangeNotifier {
     final hash = response.species.hashCode.abs();
     return palette[hash % palette.length];
   }
+
+  // ── Chat controller methods ─────────────────────────────────────
+
+  Future<ChatSendResponse> chatSend(ChatSendRequest request) {
+    return _client.chatSend(
+      request,
+      options: ClientRequestOptions(headers: _authHeadersSync()),
+    );
+  }
+
+  Future<ChatSessionListResponse> chatSessionList(
+    ChatSessionListRequest request,
+  ) {
+    return _client.chatSessionList(
+      request,
+      options: ClientRequestOptions(headers: _authHeadersSync()),
+    );
+  }
+
+  Future<ChatSessionDetailResponse> chatSessionDetail(
+    ChatSessionGetRequest request,
+  ) {
+    return _client.chatSessionDetail(
+      request,
+      options: ClientRequestOptions(headers: _authHeadersSync()),
+    );
+  }
+
+  Future<ChatSessionDeleteResponse> chatSessionDelete(
+    ChatSessionDeleteRequest request,
+  ) {
+    return _client.chatSessionDelete(
+      request,
+      options: ClientRequestOptions(headers: _authHeadersSync()),
+    );
+  }
+
+  Future<ChatSessionCreateResponse> chatSessionCreate(
+    ChatSessionCreateRequest request,
+  ) {
+    return _client.chatSessionCreate(
+      request,
+      options: ClientRequestOptions(headers: _authHeadersSync()),
+    );
+  }
+
+  /// 同步获取 auth headers（不需要 refresh 的场景可直接用）。
+  Map<String, String> _authHeadersSync() {
+    if (_credentials.mode == AppMode.noAuth) {
+      return const {};
+    }
+    final session = _credentials.session;
+    if (session == null) {
+      return const {};
+    }
+    final headers = session.credentials.toAuthHeaders();
+    if (!headers.isReadyForHttp) {
+      return const {};
+    }
+    return headers.toHttpHeaders();
+  }
 }

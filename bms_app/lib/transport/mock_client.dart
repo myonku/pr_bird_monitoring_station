@@ -391,4 +391,104 @@ class MockMonitoringClient implements MonitoringClient {
     final rgb = value & 0x00FFFFFF;
     return '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
   }
+
+  // ── Chat mock methods ───────────────────────────────────────────
+
+  @override
+  Future<ChatSendResponse> chatSend(
+    ChatSendRequest request, {
+    ClientRequestOptions options = const ClientRequestOptions(),
+  }) async {
+    final now = DateTime.now();
+    return ChatSendResponse(
+      sessionId: request.sessionId,
+      requestId: 'mock-req-${now.millisecondsSinceEpoch}',
+      status: 'ok',
+      text: '这是一个模拟回复。您说："${request.text}"',
+      intentType: 'CHAT',
+      toolNames: const [],
+      structured: const {},
+      citations: const [],
+      latencyMs: 42,
+    );
+  }
+
+  @override
+  Future<ChatSessionListResponse> chatSessionList(
+    ChatSessionListRequest request, {
+    ClientRequestOptions options = const ClientRequestOptions(),
+  }) async {
+    final now = DateTime.now();
+    return ChatSessionListResponse(
+      sessions: [
+        ChatSessionSummaryResponse(
+          sessionId: 'mock-session-001',
+          title: '模拟会话',
+          status: 'active',
+          messageCount: 3,
+          lastText: '这是一个模拟会话',
+          createdAtMs: now.subtract(const Duration(hours: 2)).millisecondsSinceEpoch,
+          updatedAtMs: now.millisecondsSinceEpoch,
+        ),
+      ],
+      total: 1,
+    );
+  }
+
+  @override
+  Future<ChatSessionDetailResponse> chatSessionDetail(
+    ChatSessionGetRequest request, {
+    ClientRequestOptions options = const ClientRequestOptions(),
+  }) async {
+    final now = DateTime.now();
+    return ChatSessionDetailResponse(
+      sessionId: request.sessionId,
+      userId: request.userId,
+      status: 'active',
+      provider: 'mock',
+      model: 'mock-v1',
+      messages: [
+        ChatMessageItemResponse(
+          turnIndex: 0,
+          requestId: 'mock-req-1',
+          role: 'user',
+          text: '你好',
+          createdAtMs: now.subtract(const Duration(minutes: 10)).millisecondsSinceEpoch,
+        ),
+        ChatMessageItemResponse(
+          turnIndex: 0,
+          requestId: 'mock-req-1',
+          role: 'assistant',
+          text: '你好！我是鸟类监测助手，有什么可以帮你的？',
+          intentType: 'CHAT',
+          createdAtMs: now.subtract(const Duration(minutes: 9)).millisecondsSinceEpoch,
+        ),
+      ],
+      createdAtMs: now.subtract(const Duration(hours: 2)).millisecondsSinceEpoch,
+      updatedAtMs: now.millisecondsSinceEpoch,
+    );
+  }
+
+  @override
+  Future<ChatSessionDeleteResponse> chatSessionDelete(
+    ChatSessionDeleteRequest request, {
+    ClientRequestOptions options = const ClientRequestOptions(),
+  }) async {
+    return ChatSessionDeleteResponse(
+      sessionId: request.sessionId,
+      deleted: true,
+    );
+  }
+
+  @override
+  Future<ChatSessionCreateResponse> chatSessionCreate(
+    ChatSessionCreateRequest request, {
+    ClientRequestOptions options = const ClientRequestOptions(),
+  }) async {
+    final now = DateTime.now();
+    return ChatSessionCreateResponse(
+      sessionId: 'mock-session-${now.millisecondsSinceEpoch}',
+      createdAtMs: now.millisecondsSinceEpoch,
+    );
+  }
 }

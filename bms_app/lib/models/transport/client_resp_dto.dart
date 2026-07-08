@@ -224,3 +224,121 @@ class ClientRangeSummaryResponse {
   final ClientPeakDayResponse peakDay;
   final ClientPeakDeviceSummaryResponse peakDevice;
 }
+
+// ── Chat response DTOs ─────────────────────────────────────────────
+
+class ChatSessionSummaryResponse {
+  const ChatSessionSummaryResponse({
+    required this.sessionId,
+    this.title = '',
+    this.status = 'active',
+    this.messageCount = 0,
+    this.lastText = '',
+    this.createdAtMs = 0,
+    this.updatedAtMs = 0,
+  });
+
+  final String sessionId;
+  final String title;
+  final String status;
+  final int messageCount;
+  final String lastText;
+  final int createdAtMs;
+  final int updatedAtMs;
+}
+
+class ChatMessageItemResponse {
+  const ChatMessageItemResponse({
+    this.turnIndex = 0,
+    this.requestId = '',
+    this.role = 'user',
+    this.text = '',
+    this.intentType = '',
+    this.toolNames = const [],
+    this.createdAtMs = 0,
+  });
+
+  final int turnIndex;
+  final String requestId;
+  final String role;
+  final String text;
+  final String intentType;
+  final List<String> toolNames;
+  final int createdAtMs;
+}
+
+class ChatSessionDetailResponse {
+  const ChatSessionDetailResponse({
+    required this.sessionId,
+    required this.userId,
+    this.status = 'active',
+    this.provider = '',
+    this.model = '',
+    this.messages = const [],
+    this.createdAtMs = 0,
+    this.updatedAtMs = 0,
+  });
+
+  final String sessionId;
+  final String userId;
+  final String status;
+  final String provider;
+  final String model;
+  final List<ChatMessageItemResponse> messages;
+  final int createdAtMs;
+  final int updatedAtMs;
+}
+
+class ChatSendResponse {
+  const ChatSendResponse({
+    required this.sessionId,
+    this.requestId = '',
+    this.status = '',
+    this.text = '',
+    this.intentType = '',
+    this.toolNames = const [],
+    this.structured = const {},
+    this.citations = const [],
+    this.latencyMs = 0,
+  });
+
+  final String sessionId;
+  final String requestId;
+  final String status;
+  final String text;
+  final String intentType;
+  final List<String> toolNames;
+  final Map<String, dynamic> structured;
+  final List<Map<String, String>> citations;
+  final int latencyMs;
+}
+
+class ChatSessionListResponse {
+  const ChatSessionListResponse({
+    this.sessions = const [],
+    this.total = 0,
+  });
+
+  final List<ChatSessionSummaryResponse> sessions;
+  final int total;
+}
+
+class ChatSessionDeleteResponse {
+  const ChatSessionDeleteResponse({
+    required this.sessionId,
+    this.deleted = false,
+  });
+
+  final String sessionId;
+  final bool deleted;
+}
+
+class ChatSessionCreateResponse {
+  const ChatSessionCreateResponse({
+    required this.sessionId,
+    this.createdAtMs = 0,
+  });
+
+  final String sessionId;
+  final int createdAtMs;
+}
